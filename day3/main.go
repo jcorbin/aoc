@@ -70,6 +70,25 @@ func run(r io.Reader) error {
 	}
 	log.Printf("%v squares overlap", n)
 
+	for _, c := range claims {
+		if func() bool {
+			pt := c.Min
+			for ; pt.Y < c.Max.Y; pt.Y++ {
+				pt.X = c.Min.X
+				i := max.X*pt.Y + pt.X
+				for ; pt.X < c.Max.X; pt.X++ {
+					if counts[i] != 1 {
+						return false
+					}
+					i++
+				}
+			}
+			return true
+		}() {
+			log.Printf("claim %#v is clean", c)
+		}
+	}
+
 	return nil
 }
 
