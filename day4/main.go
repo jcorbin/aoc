@@ -107,18 +107,14 @@ func run(r io.Reader) error {
 	}
 	log.Printf("Guard #%v is the worst with %v total minutes asleep", worstGuard, mostTimeAsleep)
 
+	// for that guard, find its worst minute
 	var counts [60]int
 	fmt.Printf("      Date 000000000011111111112222222222333333333344444444445555555555\n")
 	fmt.Printf("           012345678901234567890123456789012345678901234567890123456789\n")
 	for _, sched := range schedules[worstGuard] {
 		fmt.Printf("%v %s\n", sched.logDate, schedBytes(sched.sched))
-		for i, b := range sched.sched {
-			if b {
-				counts[i]++
-			}
-		}
+		sched.incrementCounts(&counts)
 	}
-
 	var worstMinute, maxCount int
 	for minute, count := range counts {
 		if maxCount < count {
@@ -126,10 +122,44 @@ func run(r io.Reader) error {
 		}
 	}
 	log.Printf("worst minute is %v, seen asleep %v times", worstMinute, maxCount)
+	log.Printf("answer (part 1): %v", worstGuard*worstMinute)
 
-	log.Printf("answer: %v", worstGuard*worstMinute)
+	// now find the guard with the most frequent / consistent worst minute
+	worstGuard, mostTimeAsleep = 0, 0
+	var worstGuardMinute int
+	for guard, scheds := range schedules {
+		var counts [60]int
+		for _, sched := range scheds {
+			sched.incrementCounts(&counts)
+		}
+		var worstMinute, maxCount int
+		for minute, count := range counts {
+			if maxCount < count {
+				worstMinute, maxCount = minute, count
+			}
+		}
+
+		if mostTimeAsleep < maxCount {
+			worstGuard, mostTimeAsleep = guard, maxCount
+			worstGuardMinute = worstMinute
+		}
+
+		// log.Printf("#% 5v worst minute is %v seen %v times", guard, worstMinute, maxCount)
+	}
+
+	log.Printf("#%v worst minute is %v, seen %v times, that was the worst",
+		worstGuard, worstGuardMinute, mostTimeAsleep)
+	log.Printf("answer (part 2): %v", worstGuard*worstGuardMinute)
 
 	return nil
+}
+
+func (sched schedule) incrementCounts(counts *[60]int) {
+	for i, b := range sched.sched {
+		if b {
+			counts[i]++
+		}
+	}
 }
 
 func (sched schedule) totalAsleep() (n int) {
