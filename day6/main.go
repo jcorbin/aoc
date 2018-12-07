@@ -19,7 +19,10 @@ import (
 	"github.com/jcorbin/anansi/ansi"
 )
 
-var interactive = flag.Bool("i", false, "interactive mode")
+var (
+	interactive = flag.Bool("i", false, "interactive mode")
+	dump        = flag.Bool("d", false, "dump populated grid")
+)
 
 func main() {
 	flag.Parse()
@@ -34,18 +37,25 @@ func run(r io.Reader) error {
 		return err
 	}
 
+	var prob ui
+
 	if *interactive {
-		var prob ui
 		prob.points = points
 		prob.init()
 		return prob.interact()
 	}
 
-	var prob problem
 	prob.points = points
 	prob.init()
 	if err := prob.populate(); err != nil {
 		return err
+	}
+
+	if *dump {
+		prob.render()
+		if _, err := writeGrid(os.Stdout, prob.g); err != nil {
+			return err
+		}
 	}
 
 	counts := prob.countArea()
@@ -55,7 +65,14 @@ func run(r io.Reader) error {
 			best, most = id, count
 		}
 	}
-	log.Printf("the best is #%v with %v cells", best, most)
+	log.Printf(
+		"the best is #%v(%q) @%v (off %v) with %v cells",
+		best,
+		prob.names[best],
+		prob.points[best-1],
+		prob.points[best-1].Sub(prob.Min),
+		most,
+	)
 	return nil
 }
 
@@ -170,11 +187,28 @@ func (prob *problem) countArea() map[int]int {
 	for _, id := range prob.interiors {
 		counts[id] = 0
 	}
+
+	// prune interior points that escape to infinity
+	n := len(prob.pointID)
+	for i := 0; i < prob.Stride; i++ {
+		delete(counts, prob.pointID[i])
+	}
+	for i := 0; i < n; i += prob.Stride {
+		delete(counts, prob.pointID[i])
+	}
+	for i := prob.Stride - 1; i < n; i += prob.Stride {
+		delete(counts, prob.pointID[i])
+	}
+	for i := n - prob.Stride; i < n; i++ {
+		delete(counts, prob.pointID[i])
+	}
+
 	for _, id := range prob.pointID {
 		if n, counted := counts[id]; counted {
 			counts[id] = n + 1
 		}
 	}
+
 	return counts
 }
 
