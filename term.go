@@ -1,6 +1,7 @@
 package anansi
 
 import (
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -142,6 +143,31 @@ func (term *Term) Suspend() error {
 	sig := <-cont
 	log.Printf("resumed, signal: %v", sig)
 	return nil
+}
+
+// TermLoopClient is a client ran under Term.Loop.
+type TermLoopClient interface {
+	// Update should block until and handle the next client relevant event,
+	// such as signals, user input, or a timer. The redraw return requests a
+	// term.Flush of the client's WriterTo.
+	Update(term *Term) (redraw bool, _ error)
+
+	// WriterTo is ran under term.Flush, and should build and write any output
+	// to the given io.Writer.
+	io.WriterTo
+}
+
+// Loop calls client.Update in a loop, flushing the client when Update
+// returns redraw=true, and stopping on first error.
+func (term *Term) Loop(client TermLoopClient) (err error) {
+	for err == nil {
+		var redraw bool
+		redraw, err = client.Update(term)
+		if redraw && err == nil {
+			err = term.Flush(client)
+		}
+	}
+	return err
 }
 
 // ExitError may be implemented by an error to customize the exit code under
