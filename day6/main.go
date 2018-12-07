@@ -27,9 +27,7 @@ var (
 
 func main() {
 	flag.Parse()
-	if err := run(os.Stdin); err != nil {
-		log.Fatalln(err)
-	}
+	anansi.MustRun(run(os.Stdin))
 }
 
 func run(r io.Reader) error {
@@ -140,6 +138,11 @@ type problem struct {
 
 type ui struct {
 	problem
+
+	haveInput anansi.InputSignal
+	timer     *time.Timer
+	expanding bool
+	interval  time.Duration
 
 	names  []rune
 	colors []ansi.SGRColor
@@ -360,70 +363,89 @@ func (prob *ui) interact() error {
 	if err != nil {
 		return err
 	}
+	return anansi.NewTerm(in, os.Stdout,
+		&prob.haveInput,
+		anansi.RawMode,
+	).RunWith(prob)
+}
 
-	haveInput := anansi.InputSignal{}
-	timer := time.NewTimer(0)
+func (prob *ui) Run(term *anansi.Term) error {
+	prob.timer = time.NewTimer(0)
+	err := term.Loop(prob)
+	if err == errDone {
+		err = nil
+	}
+	return err
+}
 
-	term := anansi.NewTerm(in, os.Stdout, &haveInput)
-	term.SetRaw(true)
-	term.SetEcho(false)
+func (prob *ui) Update(term *anansi.Term) (redraw bool, _ error) {
+	select {
+	// user input
+	case <-prob.haveInput.C:
+		if _, err := term.ReadAny(); err != nil {
+			return false, err
+		}
+		any := false
+		for e, _, ok := term.Decode(); ok; e, _, ok = term.Decode() {
+			switch e {
+			// Ctrl-C to quit
+			case 0x03:
+				return false, errors.New("goodbye")
 
-	return term.RunWith(func(term *anansi.Term) error {
-		expanding := false
-		interval := time.Second / 10
+			// step with '.' key
+			case ansi.Escape('.'):
+				return true, prob.expand()
 
-		for {
-			select {
-			case <-haveInput.C:
-				if _, err := term.ReadAny(); err != nil {
-					return err
-				}
-				for e, _, ok := term.Decode(); ok; e, _, ok = term.Decode() {
-					switch e {
-					case 0x03:
-						return errors.New("goodbye")
-
-					case ansi.Escape('.'):
-						if err := prob.expand(); err != nil {
-							return err
+			// play/pause with <Space>
+			case ansi.Escape(' '):
+				if prob.expanding = !prob.expanding; !prob.expanding {
+					if !prob.timer.Stop() {
+						select {
+						case <-prob.timer.C:
+						default:
 						}
-
-					case ansi.Escape(' '):
-						expanding = !expanding
-						if expanding {
-							fmt.Printf("playing...\r\n")
-						} else {
-							timer.Stop()
-							fmt.Printf("paused.\r\n")
-						}
-
-					case ansi.Escape('-'):
-						interval *= 2
-					case ansi.Escape('+'):
-						interval /= 2
-
 					}
+					fmt.Printf("paused.\r\n")
+					return false, nil
 				}
+				fmt.Printf("playing...\r\n")
+				any = true
 
-			case <-timer.C:
-				if expanding {
-					if err := prob.expand(); err != nil {
-						return err
-					}
-				}
-			}
-
-			prob.render()
-
-			if _, err := writeGrid(os.Stdout, prob.g); err != nil {
-				return err
-			}
-			if expanding {
-				timer.Reset(interval)
+			// speed control
+			case ansi.Escape('-'):
+				prob.interval *= 2
+				any = true
+			case ansi.Escape('+'):
+				prob.interval /= 2
+				any = true
 			}
 		}
+		if !any {
+			return false, nil
+		}
 
-	})
+	// timer tick, mostly when playing back; also used to draw initial frame.
+	case <-prob.timer.C:
+
+	}
+
+	// advance the expansion, and (re)set the timer
+	if prob.expanding {
+		if err := prob.expand(); err != nil {
+			return false, err
+		}
+		if prob.interval == 0 {
+			prob.interval = time.Second / 10
+		}
+		prob.timer.Reset(prob.interval)
+	}
+
+	return true, nil
+}
+
+func (prob *ui) WriteTo(w io.Writer) (n int64, err error) {
+	prob.render()
+	return writeGrid(w, prob.g)
 }
 
 func (prob *ui) init() {
