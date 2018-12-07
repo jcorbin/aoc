@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"flag"
 	"fmt"
 	"image"
 	"io"
@@ -18,47 +19,257 @@ import (
 	"github.com/jcorbin/anansi/ansi"
 )
 
+var interactive = flag.Bool("i", false, "interactive mode")
+
 func main() {
+	flag.Parse()
 	if err := run(os.Stdin); err != nil {
 		log.Fatalln(err)
 	}
 }
 
-var (
-	// world state
-	rc        RCore
-	pointID   []int
-	pointDist []int
-
-	// processing
-	frontier []cursor
-
-	// output
-	names  []rune
-	colors []ansi.SGRColor
-	g      anansi.Grid
-)
-
-type cursor struct {
-	image.Point
-	i, id, dist int
-}
-
-func (cur cursor) String() string {
-	return fmt.Sprintf("@%v i:%v id:%v dist:%v", cur.Point, cur.i, cur.id, cur.dist)
-}
-
 func run(r io.Reader) error {
-	// read points
 	points, err := readPoints(r)
 	if err != nil {
 		return err
 	}
 
-	setup(points)
-	placePoints(points)
-	assignNames(points)
+	if *interactive {
+		var prob ui
+		prob.points = points
+		prob.init()
+		return prob.interact()
+	}
 
+	var prob problem
+	prob.points = points
+	prob.init()
+	if err := prob.populate(); err != nil {
+		return err
+	}
+
+	counts := prob.countArea()
+	best, most := 0, 0
+	for id, count := range counts {
+		if best == 0 || count > most {
+			best, most = id, count
+		}
+	}
+	log.Printf("the best is #%v with %v cells", best, most)
+	return nil
+}
+
+type problem struct {
+	// input
+	points []image.Point
+
+	// world state
+	RCore
+	interiors []int
+	pointID   []int
+	pointDist []int
+
+	// processing
+	frontier []cursor
+}
+
+type ui struct {
+	problem
+
+	names  []rune
+	colors []ansi.SGRColor
+	g      anansi.Grid
+}
+
+type cursor struct {
+	pt, origin image.Point
+	i, id      int
+}
+
+func (cur cursor) String() string {
+	return fmt.Sprintf(
+		"@%v from %v i:%v id:%v",
+		cur.pt, cur.origin,
+		cur.i, cur.id,
+	)
+}
+
+func (cur cursor) distance() (n int) {
+	d := cur.pt.Sub(cur.origin)
+	if d.X < 0 {
+		d.X = -d.X
+	}
+	if d.Y < 0 {
+		d.Y = -d.Y
+	}
+	return d.X + d.Y
+}
+
+func (prob *problem) init() {
+	// compute bounding box
+	prob.Min = prob.points[0]
+	prob.Max = prob.points[1]
+	for _, pt := range prob.points[1:] {
+		if prob.Min.X > pt.X {
+			prob.Min.X = pt.X
+		}
+		if prob.Min.Y > pt.Y {
+			prob.Min.Y = pt.Y
+		}
+		if prob.Max.X < pt.X {
+			prob.Max.X = pt.X
+		}
+		if prob.Max.Y < pt.Y {
+			prob.Max.Y = pt.Y
+		}
+	}
+
+	for i, pt := range prob.points {
+		if pt.X == prob.Min.X {
+			continue
+		}
+		if pt.Y == prob.Min.Y {
+			continue
+		}
+		if pt.X == prob.Max.X {
+			continue
+		}
+		if pt.Y == prob.Max.Y {
+			continue
+		}
+		id := i + 1
+		prob.interiors = append(prob.interiors, id)
+	}
+
+	prob.Max.X++
+	prob.Max.Y++
+
+	// setup state
+	prob.Origin = prob.Min
+	prob.Stride = prob.Dx()
+	sz := prob.Size()
+	prob.pointID = make([]int, sz.X*sz.Y)
+	prob.pointDist = make([]int, sz.X*sz.Y)
+
+	prob.frontier = prob.frontier[:0]
+	prob.placePoints()
+}
+
+func (prob *problem) populate() (err error) {
+	for len(prob.frontier) > 0 && err == nil {
+		err = prob.expand()
+	}
+	if err == errDone {
+		err = nil
+	}
+	return err
+}
+
+func (prob *problem) countArea() map[int]int {
+	counts := make(map[int]int, len(prob.interiors))
+	for _, id := range prob.interiors {
+		counts[id] = 0
+	}
+	for _, id := range prob.pointID {
+		if n, counted := counts[id]; counted {
+			counts[id] = n + 1
+		}
+	}
+	return counts
+}
+
+func (prob *problem) placePoints() {
+	for i, pt := range prob.points {
+		id := i + 1
+		j, _ := prob.Index(pt)
+		prob.pointID[j] = id
+		prob.pointDist[j] = 0
+		prob.frontier = append(prob.frontier, cursor{pt, pt, j, id})
+	}
+}
+
+func (prob *problem) pop() cursor {
+	cur := prob.frontier[len(prob.frontier)-1]
+	prob.frontier = prob.frontier[:len(prob.frontier)-1]
+	return cur
+}
+
+var errDone = errors.New("done")
+
+func (prob *problem) expand() error {
+	if len(prob.frontier) == 0 {
+		return errDone
+	}
+	cur := prob.pop()
+	// skip already processed cursors
+	for prob.pointID[cur.i] != cur.id {
+		// log.Printf("skip %v", cur)
+		if len(prob.frontier) == 0 {
+			return errDone
+		}
+		cur = prob.pop()
+	}
+	// log.Printf("#%v expanding %v priorID:%v priorDist:%v",
+	// 	len(prob.frontier), cur, prob.pointID[cur.i], prob.pointDist[cur.i])
+
+	// expand in cardinal directions
+	for _, dir := range []image.Point{
+		image.Pt(1, 0),
+		image.Pt(0, 1),
+		image.Pt(0, -1),
+		image.Pt(-1, 0),
+	} {
+		var in bool
+		next := cur
+		next.pt = next.pt.Add(dir)
+		if next.i, in = prob.Index(next.pt); in {
+			priorID := prob.pointID[next.i]
+			priorDist := prob.pointDist[next.i]
+			dist := next.distance()
+
+			if priorID > 0 {
+
+				// break loop
+				if priorID == next.id {
+					continue
+				}
+
+				// beaten by prior
+				if dist > priorDist {
+					continue
+				}
+
+				// nobody wins ties
+				if dist == priorDist {
+					// log.Printf("%v tied with #%v(%v)", next, priorID, priorDist)
+					prob.pointID[next.i] = -1
+					continue
+				}
+
+			} else if priorID < 0 {
+				// prior tie still stands
+				if dist >= priorDist {
+					continue
+				}
+			}
+
+			// log.Printf(
+			// 	"@%v replace #%v(%v) with #%v(%v)",
+			// 	next.pt,
+			// 	priorID, priorDist,
+			// 	next.id, dist,
+			// )
+
+			prob.pointID[next.i] = next.id
+			prob.pointDist[next.i] = dist
+			prob.frontier = append(prob.frontier, next)
+		}
+	}
+
+	return nil
+}
+
+func (prob *ui) interact() error {
 	in, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
 	if err != nil {
 		return err
@@ -87,7 +298,7 @@ func run(r io.Reader) error {
 						return errors.New("goodbye")
 
 					case ansi.Escape('.'):
-						if err := expand(); err != nil {
+						if err := prob.expand(); err != nil {
 							return err
 						}
 
@@ -110,13 +321,15 @@ func run(r io.Reader) error {
 
 			case <-timer.C:
 				if expanding {
-					if err := expand(); err != nil {
+					if err := prob.expand(); err != nil {
 						return err
 					}
 				}
 			}
 
-			if err := render(); err != nil {
+			prob.render()
+
+			if _, err := writeGrid(os.Stdout, prob.g); err != nil {
 				return err
 			}
 			if expanding {
@@ -127,170 +340,50 @@ func run(r io.Reader) error {
 	})
 }
 
-func setup(points []image.Point) {
-	// compute bounding box
-	rc.Min = points[0]
-	rc.Max = points[1]
-	for _, pt := range points[1:] {
-		if rc.Min.X > pt.X {
-			rc.Min.X = pt.X
-		}
-		if rc.Min.Y > pt.Y {
-			rc.Min.Y = pt.Y
-		}
-		if rc.Max.X < pt.X {
-			rc.Max.X = pt.X
-		}
-		if rc.Max.Y < pt.Y {
-			rc.Max.Y = pt.Y
-		}
-	}
-	rc.Max.X++
-	rc.Max.Y++
+func (prob *ui) init() {
+	prob.problem.init()
 
-	// setup state
-	rc.Origin = rc.Min
-	rc.Stride = rc.Dx()
-	sz := rc.Size()
-	pointID = make([]int, sz.X*sz.Y)
-	pointDist = make([]int, sz.X*sz.Y)
-}
-
-func placePoints(points []image.Point) {
-	for i, pt := range points {
+	// assignNames
+	prob.names = make([]rune, len(prob.points)+1)
+	prob.colors = make([]ansi.SGRColor, len(prob.points)+1)
+	prob.names[0] = '.'
+	prob.colors[0] = ansi.RGB(colorOff/2, colorOff/2, colorOff/2)
+	for i := range prob.points {
 		id := i + 1
-		j, _ := rc.Index(pt)
-		pointID[j] = id
-		pointDist[j] = 0
-		frontier = append(frontier, cursor{pt, j, id, 0})
+		prob.names[id] = rune(glyphs[i%len(glyphs)])
+		prob.colors[id] = n2color(colorOff, i/len(glyphs))
 	}
 }
 
-const (
-	glyphs     = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	colorOff   = 128
-	colorStep  = 8
-	colorSteps = 16
-)
-
-func n2color(off, n int) ansi.SGRColor {
-	var r, g, b uint8
-	r = uint8(off + colorStep*(n%colorSteps))
-	n /= colorSteps
-	g = uint8(off + colorStep*(n%colorSteps))
-	n /= colorSteps
-	b = uint8(off + colorStep*(n%colorSteps))
-	return ansi.RGB(r, g, b)
-}
-
-func assignNames(points []image.Point) {
-	names = make([]rune, len(points)+1)
-	colors = make([]ansi.SGRColor, len(points)+1)
-	names[0] = '.'
-	colors[0] = ansi.RGB(colorOff/2, colorOff/2, colorOff/2)
-	for i := range points {
-		id := i + 1
-		names[id] = rune(glyphs[i%len(glyphs)])
-		colors[id] = n2color(colorOff, i/len(glyphs))
-	}
-}
-
-func pop() cursor {
-	cur := frontier[len(frontier)-1]
-	frontier = frontier[:len(frontier)-1]
-	return cur
-}
-
-func expand() error {
-	if len(frontier) == 0 {
-		return errors.New("done")
-	}
-	cur := pop()
-	// skip already processed cursors
-	for pointID[cur.i] != cur.id {
-		if len(frontier) == 0 {
-			return errors.New("done")
-		}
-		cur = pop()
-		fmt.Printf("skip %v\r\n", cur)
-	}
-	fmt.Printf("#%v expanding %v priorID:%v priorDist:%v\r\n",
-		len(frontier), cur, pointID[cur.i], pointDist[cur.i])
-
-	// expand in cardinal directions
-	for _, dir := range []image.Point{
-		image.Pt(1, 0),
-		image.Pt(0, 1),
-		image.Pt(0, -1),
-		image.Pt(-1, 0),
-	} {
-		var in bool
-		next := cur
-		next.Point = next.Point.Add(dir)
-		next.dist++
-		if next.i, in = rc.Index(next.Point); in {
-			priorID := pointID[next.i]
-			priorDist := pointDist[next.i]
-
-			if priorID > 0 {
-
-				// break loop
-				if priorID == next.id {
-					continue
-				}
-
-				// beaten by prior
-				if next.dist > priorDist {
-					continue
-				}
-
-				// nobody wins ties
-				if next.dist == priorDist {
-					pointID[next.i] = -1
-					continue
-				}
-
-			} else if priorID < 0 {
-				// XXX can we beat a prior tie?
-				continue
-			}
-
-			pointID[next.i] = next.id
-			pointDist[next.i] = next.dist
-			frontier = append(frontier, next)
-		}
-	}
-
-	return nil
-}
-
-func render() error {
-	g.Resize(rc.Size())
-	for pt := rc.Min; pt.Y < rc.Max.Y; pt.Y++ {
-		pt.X = rc.Min.X
-		i, _ := rc.Index(pt)
-		j, _ := g.CellOffset(ansi.PtFromImage(pt.Sub(rc.Origin)))
-		for ; pt.X < rc.Max.X; pt.X++ {
-			id := pointID[i]
-			dist := pointDist[i]
+func (prob *ui) render() {
+	prob.g.Resize(prob.Size())
+	for pt := prob.Min; pt.Y < prob.Max.Y; pt.Y++ {
+		pt.X = prob.Min.X
+		i, _ := prob.Index(pt)
+		j, _ := prob.g.CellOffset(ansi.PtFromImage(pt.Sub(prob.Origin)))
+		for ; pt.X < prob.Max.X; pt.X++ {
+			id := prob.pointID[i]
+			dist := prob.pointDist[i]
 			if id < 0 {
 				id = 0
 			}
-			name := names[id]
-			c := colors[id].FG()
-			if id != 0 && dist > 0 {
-				name = unicode.ToLower(name)
-				// c |= n2color(32, dist).BG()
+			name := prob.names[id]
+			attr := prob.colors[id].FG()
+			if id != 0 {
+				if dist == 0 {
+					attr |= ansi.SGRAttrBold
+				}
+				if dist > 0 {
+					name = unicode.ToLower(name)
+					// attr |= n2color(32, dist).BG()
+				}
 			}
-			g.Rune[j] = name
-			g.Attr[j] = c
+			prob.g.Rune[j] = name
+			prob.g.Attr[j] = attr
 			i++
 			j++
 		}
 	}
-
-	_, err := writeGrid(os.Stdout, g)
-	return err
 }
 
 var pointPattern = regexp.MustCompile(`^(\d+), *(\d+)$`)
@@ -311,4 +404,21 @@ func readPoints(r io.Reader) (points []image.Point, _ error) {
 		points = append(points, pt)
 	}
 	return points, sc.Err()
+}
+
+const (
+	glyphs     = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	colorOff   = 128
+	colorStep  = 8
+	colorSteps = 16
+)
+
+func n2color(off, n int) ansi.SGRColor {
+	var r, g, b uint8
+	r = uint8(off + colorStep*(n%colorSteps))
+	n /= colorSteps
+	g = uint8(off + colorStep*(n%colorSteps))
+	n /= colorSteps
+	b = uint8(off + colorStep*(n%colorSteps))
+	return ansi.RGB(r, g, b)
 }
