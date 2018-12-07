@@ -22,6 +22,7 @@ import (
 var (
 	interactive = flag.Bool("i", false, "interactive mode")
 	dump        = flag.Bool("d", false, "dump populated grid")
+	region      = flag.Int("r", 0, "region threshold to sum (part 2)")
 )
 
 func main() {
@@ -47,8 +48,68 @@ func run(r io.Reader) error {
 
 	prob.points = points
 	prob.init()
-	if err := prob.populate(); err != nil {
-		return err
+
+	// part 1
+	if *region == 0 {
+		if err := prob.populate(); err != nil {
+			return err
+		}
+
+		if *dump {
+			prob.render()
+			if _, err := writeGrid(os.Stdout, prob.g); err != nil {
+				return err
+			}
+		}
+
+		counts := prob.countArea()
+		best, most := 0, 0
+		for id, count := range counts {
+			if best == 0 || count > most {
+				best, most = id, count
+			}
+		}
+		log.Printf(
+			"the best is #%v(%q) @%v (off %v) with %v cells",
+			best,
+			prob.names[best],
+			prob.points[best-1],
+			prob.points[best-1].Sub(prob.Min),
+			most,
+		)
+		return nil
+	}
+
+	// part 2
+	n := 0
+	limit := *region
+	for pt := prob.Min; pt.Y < prob.Max.Y; pt.Y++ {
+		var markID int
+		if *dump {
+			markID = len(prob.names)
+			const v = 2 * colorOff / 3
+			prob.names = append(prob.names, '#')
+			prob.colors = append(prob.colors, ansi.RGB(v, v, v))
+		}
+
+		for pt.X = prob.Min.X; pt.X < prob.Max.X; pt.X++ {
+			total := 0
+			// var ds []int
+			for _, loc := range prob.points {
+				d := distance(pt, loc)
+				// ds = append(ds, d)
+				total += d
+			}
+			// log.Printf("@%v Σ %v = %v", pt, ds, total)
+			if total < limit {
+				if *dump {
+					if i, _ := prob.Index(pt); prob.pointID[i] == 0 {
+						prob.pointID[i] = markID
+					}
+				}
+				n++
+			}
+		}
 	}
 
 	if *dump {
@@ -58,21 +119,8 @@ func run(r io.Reader) error {
 		}
 	}
 
-	counts := prob.countArea()
-	best, most := 0, 0
-	for id, count := range counts {
-		if best == 0 || count > most {
-			best, most = id, count
-		}
-	}
-	log.Printf(
-		"the best is #%v(%q) @%v (off %v) with %v cells",
-		best,
-		prob.names[best],
-		prob.points[best-1],
-		prob.points[best-1].Sub(prob.Min),
-		most,
-	)
+	log.Printf("%v cells within %v limit of all locs", n, limit)
+
 	return nil
 }
 
@@ -112,7 +160,11 @@ func (cur cursor) String() string {
 }
 
 func (cur cursor) distance() (n int) {
-	d := cur.pt.Sub(cur.origin)
+	return distance(cur.origin, cur.pt)
+}
+
+func distance(a, b image.Point) (n int) {
+	d := b.Sub(a)
 	if d.X < 0 {
 		d.X = -d.X
 	}
