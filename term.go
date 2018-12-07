@@ -35,18 +35,18 @@ type Term struct {
 	ctx    Context
 }
 
-// RunWith runs the given function within the terminal's context, Enter()ing it
-// if necessary, and Exit()ing it if Enter() was called after the given
-// function returns. Exit() is called even if the within function returns an
-// error or panics.
+// RunWith runs the given runner within the terminal's context, Enter()ing it
+// if necessary, and Exit()ing it if Enter() was called after the given runner
+// returns. Exit() is called even if the within runner returns an error or
+// panics.
 //
 // If the context implements a `Close() error` method, then it will also be
 // called immediately after Exit(). This allows a Context implementation to
 // differentiate between temporary teardown, e.g. suspending under RunWithout,
 // and final teardown as RunWith returns.
-func (term *Term) RunWith(within func(*Term) error) (err error) {
+func (term *Term) RunWith(runner Runner) (err error) {
 	if term.active {
-		return within(term)
+		return runner.Run(term)
 	}
 
 	term.active = true
@@ -79,22 +79,22 @@ func (term *Term) RunWith(within func(*Term) error) (err error) {
 		}
 	}()
 	if err = term.ctx.Enter(term); err == nil {
-		err = within(term)
+		err = runner.Run(term)
 	}
 	return err
 }
 
-// RunWithout runs the given function without the terminal's context, Exit()ing
+// RunWithout runs the given runner without the terminal's context, Exit()ing
 // it if necessary, and Enter()ing it if deactivation was necessary.
 // Re-Enter() is not called is not done if a non-nil error is returned, or if
-// the without function panics.
-func (term *Term) RunWithout(without func(*Term) error) (err error) {
+// the without runner panics.
+func (term *Term) RunWithout(runner Runner) (err error) {
 	if !term.active {
-		return without(term)
+		return runner.Run(term)
 	}
 	if err = term.ctx.Exit(term); err == nil {
 		term.active = false
-		if err = without(term); err == nil {
+		if err = runner.Run(term); err == nil {
 			if err = term.ctx.Enter(term); err == nil {
 				term.active = true
 			}
@@ -103,12 +103,33 @@ func (term *Term) RunWithout(without func(*Term) error) (err error) {
 	return err
 }
 
+// RunWithFunc is a convenience for RunWith around a function.
+func (term *Term) RunWithFunc(f func(*Term) error) error {
+	return term.RunWith(RunnerFunc(f))
+}
+
+// RunWithoutFunc is a convenience for RunWithout around a function.
+func (term *Term) RunWithoutFunc(f func(*Term) error) error {
+	return term.RunWithout(RunnerFunc(f))
+}
+
+// Runner runs under term.RunWith or term.RunWithout.
+type Runner interface {
+	Run(*Term) error
+}
+
+// RunnerFunc is a convenience for implementing Runner.
+type RunnerFunc func(*Term) error
+
+// Run calls the function.
+func (f RunnerFunc) Run(term *Term) error { return f(term) }
+
 // Suspend signals the process to stop, and blocks on its later restart. If the
 // terminal is currently active, this is done under RunWithout to restore prior
 // terminal state.
 func (term *Term) Suspend() error {
 	if term.active {
-		return term.RunWithout((*Term).Suspend)
+		return term.RunWithoutFunc((*Term).Suspend)
 	}
 
 	cont := make(chan os.Signal)
