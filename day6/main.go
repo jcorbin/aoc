@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"container/heap"
 	"errors"
 	"flag"
 	"fmt"
@@ -299,7 +300,7 @@ func (prob *problem) expand() error {
 		if next, ok := prob.advance(cur, move); ok && prob.better(next) {
 			prob.pointID[next.i] = next.id
 			prob.pointDist[next.i] = next.distance()
-			prob.frontier.push(next)
+			heap.Push(&prob.frontier, next)
 			if n := prob.frontier.Len(); prob.maxFL < n {
 				prob.maxFL = n
 			}
@@ -321,7 +322,7 @@ func (prob *problem) pop() (cur cursor, _ bool) {
 		if prob.frontier.Len() == 0 {
 			return cursor{}, false
 		}
-		cur = prob.frontier.pop()
+		cur = heap.Pop(&prob.frontier).(cursor)
 		prob.step++
 	}
 }
@@ -384,6 +385,19 @@ func (q *queue) pop() cursor {
 	q.cs = q.cs[:i]
 	return cur
 }
+
+func (q *queue) Swap(i int, j int) { q.cs[i], q.cs[j] = q.cs[j], q.cs[i] }
+func (q *queue) Less(i int, j int) bool {
+	// TODO better to have a cursor.gen int field, so that we correctly
+	// de-prioritizing back-tracking (which could also be pruned of course)
+	di, dj := q.cs[i].distance(), q.cs[j].distance()
+	if di == dj {
+		return q.cs[i].id < q.cs[j].id
+	}
+	return di < dj
+}
+func (q *queue) Push(x interface{}) { q.push(x.(cursor)) }
+func (q *queue) Pop() interface{}   { return q.pop() }
 
 func (prob *ui) interact() error {
 	in, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
