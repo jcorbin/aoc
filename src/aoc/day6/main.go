@@ -61,6 +61,7 @@ func run(r io.Reader) (err error) {
 		if err := prob.populate(); err != nil {
 			return err
 		}
+		log.Printf("populated in %v steps, skipped:%v, maxFrontierLen:%v", prob.step, prob.skip, prob.maxFL)
 
 		if *dump {
 			prob.render()
@@ -143,6 +144,9 @@ type problem struct {
 
 	// processing
 	frontier []cursor
+	step     int // counts cursors popped from the frontier
+	skip     int // counts cursors skipped immediately after pop
+	maxFL    int // max frontier length seen (measured after push)
 }
 
 type ui struct {
@@ -279,6 +283,9 @@ func (prob *problem) expand() bool {
 			prob.pointID[next.i] = next.id
 			prob.pointDist[next.i] = next.distance()
 			prob.frontier = append(prob.frontier, next)
+			if prob.maxFL < len(prob.frontier) {
+				prob.maxFL = len(prob.frontier)
+			}
 		}
 	}
 	return true
@@ -292,6 +299,7 @@ func (prob *problem) pop() (cur cursor, _ bool) {
 			if prob.valid(cur) {
 				return cur, true
 			}
+			prob.skip++
 		}
 		i := len(prob.frontier) - 1
 		if i < 0 {
@@ -299,6 +307,7 @@ func (prob *problem) pop() (cur cursor, _ bool) {
 		}
 		cur = prob.frontier[i]
 		prob.frontier = prob.frontier[:i]
+		prob.step++
 	}
 }
 
