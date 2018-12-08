@@ -283,16 +283,13 @@ func (prob *problem) expand() error {
 	if !ok {
 		return errDone
 	}
-	for _, dir := range []image.Point{
+	for _, move := range []image.Point{
 		image.Pt(1, 0),
 		image.Pt(0, 1),
 		image.Pt(0, -1),
 		image.Pt(-1, 0),
 	} {
-		var in bool
-		next := cur
-		next.pt = next.pt.Add(dir)
-		if next.i, in = prob.Index(next.pt); in {
+		if next, ok := prob.advance(cur, move); ok {
 			priorID := prob.pointID[next.i]
 			priorDist := prob.pointDist[next.i]
 			dist := next.distance()
@@ -353,6 +350,15 @@ func (prob *problem) pop() (cur cursor, _ bool) {
 // it returns false, then the cursor is pruned (skipped by pop).
 func (prob *problem) valid(cur cursor) bool {
 	return cur.id == prob.pointID[cur.i]
+}
+
+// advance returns a copy of the given cursor moved in the given direction, and
+// a boolean indicating whether that move was valid (true), or should instead
+// be skipped (false).
+func (prob *problem) advance(cur cursor, move image.Point) (_ cursor, ok bool) {
+	cur.pt = cur.pt.Add(move)
+	cur.i, ok = prob.Index(cur.pt)
+	return cur, ok
 }
 
 func (prob *ui) interact() error {
