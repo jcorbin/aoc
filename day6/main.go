@@ -289,42 +289,12 @@ func (prob *problem) expand() error {
 		image.Pt(0, -1),
 		image.Pt(-1, 0),
 	} {
-		if next, ok := prob.advance(cur, move); ok {
-			priorID := prob.pointID[next.i]
-			priorDist := prob.pointDist[next.i]
-			dist := next.distance()
-
-			if priorID > 0 {
-
-				// break loop
-				if priorID == next.id {
-					continue
-				}
-
-				// beaten by prior
-				if dist > priorDist {
-					continue
-				}
-
-				// nobody wins ties
-				if dist == priorDist {
-					prob.pointID[next.i] = -1
-					continue
-				}
-
-			} else if priorID < 0 {
-				// prior tie still stands
-				if dist >= priorDist {
-					continue
-				}
-			}
-
+		if next, ok := prob.advance(cur, move); ok && prob.better(next) {
 			prob.pointID[next.i] = next.id
-			prob.pointDist[next.i] = dist
+			prob.pointDist[next.i] = next.distance()
 			prob.frontier = append(prob.frontier, next)
 		}
 	}
-
 	return nil
 }
 
@@ -350,6 +320,35 @@ func (prob *problem) pop() (cur cursor, _ bool) {
 // it returns false, then the cursor is pruned (skipped by pop).
 func (prob *problem) valid(cur cursor) bool {
 	return cur.id == prob.pointID[cur.i]
+}
+
+// better returns true only if the given cursor's id and distance are better
+// than those already store at it's index.
+func (prob *problem) better(cur cursor) bool {
+	priorID := prob.pointID[cur.i]
+	priorDist := prob.pointDist[cur.i]
+	dist := cur.distance()
+	if priorID > 0 {
+		// break loop
+		if priorID == cur.id {
+			return false
+		}
+		// beaten by prior
+		if dist > priorDist {
+			return false
+		}
+		// nobody wins ties
+		if dist == priorDist {
+			prob.pointID[cur.i] = -1
+			return false
+		}
+	} else if priorID < 0 {
+		// prior tie still stands
+		if dist >= priorDist {
+			return false
+		}
+	}
+	return true
 }
 
 // advance returns a copy of the given cursor moved in the given direction, and
