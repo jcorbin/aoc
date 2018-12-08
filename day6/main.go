@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	"unicode"
@@ -147,6 +149,7 @@ type ui struct {
 	timer     *time.Timer
 	expanding bool
 	interval  time.Duration
+	logBuf    bytes.Buffer
 
 	names  []rune
 	colors []ansi.SGRColor
@@ -389,6 +392,12 @@ func (prob *ui) Run(term *anansi.Term) error {
 	return err
 }
 
+func (prob *ui) expand() error {
+	err := prob.problem.expand()
+	log.Printf("step:%v, skipped:%v, maxFrontierLen:%v", prob.step, prob.skip, prob.maxFL)
+	return err
+}
+
 func (prob *ui) Update(term *anansi.Term) (redraw bool, _ error) {
 	select {
 	// user input
@@ -454,13 +463,63 @@ func (prob *ui) Update(term *anansi.Term) (redraw bool, _ error) {
 	return true, nil
 }
 
-func (prob *ui) WriteTo(w io.Writer) (n int64, err error) {
+func (prob *ui) WriteTo(w io.Writer) (int64, error) {
 	prob.render()
-	return writeGrid(w, prob.g)
+	logBytes := prob.logBuf.Bytes()
+	li := bytes.IndexByte(logBytes, '\n')
+
+	var buf anansi.Buffer
+
+	writeLogLine := func() {
+		if len(logBytes) == 0 {
+			return
+		}
+		buf.WriteString(" ")
+		if li < 0 {
+			buf.Write(logBytes)
+			logBytes = nil
+			return
+		}
+		buf.Write(logBytes[:li])
+
+		logBytes = logBytes[li+1:]
+		li = bytes.IndexByte(logBytes, '\n')
+	}
+
+	buf.WriteString(strings.Repeat("-", prob.g.Rect.Dx()))
+	writeLogLine()
+	buf.WriteString("\r\n")
+
+	var cur anansi.CursorState
+	cur.Point = ansi.Pt(1, 1)
+	for y := prob.g.Rect.Min.Y; y < prob.g.Rect.Max.Y; y++ {
+		cur = writeGridRow(&buf, cur, prob.g, y)
+		writeLogLine()
+		buf.WriteString("\r\n")
+		cur.X = 1
+		cur.Y++
+	}
+	_, _ = buf.WriteTo(w)
+
+	for len(logBytes) > 0 {
+		buf.WriteString(strings.Repeat(" ", prob.g.Rect.Dx()))
+		writeLogLine()
+		buf.WriteString("\r\n")
+	}
+
+	n, err := buf.WriteTo(w)
+	if err != nil {
+		return n, err
+	}
+	prob.logBuf.Reset()
+	return n, nil
 }
 
 func (prob *ui) init() {
 	prob.problem.init()
+
+	log.SetOutput(&prob.logBuf)
+	log.SetFlags(0 /* log.Ltime | log.Lmicroseconds */)
 
 	// assignNames
 	prob.names = make([]rune, len(prob.points)+1)
