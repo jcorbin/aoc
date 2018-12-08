@@ -136,7 +136,7 @@ type problem struct {
 	pointDist []int
 
 	// processing
-	frontier []cursor
+	frontier queue
 	step     int // counts cursors popped from the frontier
 	skip     int // counts cursors skipped immediately after pop
 	maxFL    int // max frontier length seen (measured after push)
@@ -230,12 +230,12 @@ func (prob *problem) init() {
 	prob.pointID = make([]int, sz.X*sz.Y)
 	prob.pointDist = make([]int, sz.X*sz.Y)
 
-	prob.frontier = prob.frontier[:0]
+	prob.frontier.Clear()
 	prob.placePoints()
 }
 
 func (prob *problem) populate() (err error) {
-	for len(prob.frontier) > 0 && err == nil {
+	for prob.frontier.Len() > 0 && err == nil {
 		err = prob.expand()
 	}
 	if err == errDone {
@@ -280,7 +280,7 @@ func (prob *problem) placePoints() {
 		j, _ := prob.Index(pt)
 		prob.pointID[j] = id
 		prob.pointDist[j] = 0
-		prob.frontier = append(prob.frontier, cursor{pt, pt, j, id})
+		prob.frontier.push(cursor{pt, pt, j, id})
 	}
 }
 
@@ -299,9 +299,9 @@ func (prob *problem) expand() error {
 		if next, ok := prob.advance(cur, move); ok && prob.better(next) {
 			prob.pointID[next.i] = next.id
 			prob.pointDist[next.i] = next.distance()
-			prob.frontier = append(prob.frontier, next)
-			if prob.maxFL < len(prob.frontier) {
-				prob.maxFL = len(prob.frontier)
+			prob.frontier.push(next)
+			if n := prob.frontier.Len(); prob.maxFL < n {
+				prob.maxFL = n
 			}
 		}
 	}
@@ -318,12 +318,10 @@ func (prob *problem) pop() (cur cursor, _ bool) {
 			}
 			prob.skip++
 		}
-		i := len(prob.frontier) - 1
-		if i < 0 {
+		if prob.frontier.Len() == 0 {
 			return cursor{}, false
 		}
-		cur = prob.frontier[i]
-		prob.frontier = prob.frontier[:i]
+		cur = prob.frontier.pop()
 		prob.step++
 	}
 }
@@ -370,6 +368,21 @@ func (prob *problem) advance(cur cursor, move image.Point) (_ cursor, ok bool) {
 	cur.pt = cur.pt.Add(move)
 	cur.i, ok = prob.Index(cur.pt)
 	return cur, ok
+}
+
+type queue struct {
+	cs []cursor
+}
+
+func (q *queue) Clear()   { q.cs = q.cs[:0] }
+func (q *queue) Len() int { return len(q.cs) }
+
+func (q *queue) push(cur cursor) { q.cs = append(q.cs, cur) }
+func (q *queue) pop() cursor {
+	i := len(q.cs) - 1
+	cur := q.cs[i]
+	q.cs = q.cs[:i]
+	return cur
 }
 
 func (prob *ui) interact() error {
