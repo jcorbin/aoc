@@ -73,9 +73,7 @@ func run(r io.Reader) error {
 		return fmt.Errorf("failed to build tree: %v", err)
 	}
 
-	// log.Printf("ns: %v", bld.ns)
-	// log.Printf("tree: %v", tree)
-
+	// part 1
 	total := 0
 	q := []node{tree}
 	for len(q) > 0 {
@@ -88,12 +86,32 @@ func run(r io.Reader) error {
 	}
 	log.Printf("total metadata: %v", total)
 
+	// part 2
+	log.Printf("value of root: %v", tree.value())
+
 	return nil
 }
 
 type node struct {
 	children []node
 	metadata []int
+}
+
+func (n node) value() (v int) {
+	// TODO a memo table / cache would be neat...
+	if len(n.children) == 0 {
+		for _, mv := range n.metadata {
+			v += mv
+		}
+	} else {
+		for _, cn := range n.metadata {
+			ci := cn - 1
+			if ci >= 0 && ci < len(n.children) {
+				v += n.children[ci].value()
+			}
+		}
+	}
+	return v
 }
 
 func readNums(r io.Reader) (ns []int, _ error) {
