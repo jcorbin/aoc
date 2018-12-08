@@ -279,18 +279,10 @@ func (prob *problem) placePoints() {
 
 // expand the next cursor popped from the frontier in each cardinal direction.
 func (prob *problem) expand() error {
-	if len(prob.frontier) == 0 {
+	cur, ok := prob.pop()
+	if !ok {
 		return errDone
 	}
-	cur := prob.pop()
-	// skip already processed cursors
-	for prob.pointID[cur.i] != cur.id {
-		if len(prob.frontier) == 0 {
-			return errDone
-		}
-		cur = prob.pop()
-	}
-
 	for _, dir := range []image.Point{
 		image.Pt(1, 0),
 		image.Pt(0, 1),
@@ -339,10 +331,22 @@ func (prob *problem) expand() error {
 	return nil
 }
 
-func (prob *problem) pop() cursor {
-	cur := prob.frontier[len(prob.frontier)-1]
-	prob.frontier = prob.frontier[:len(prob.frontier)-1]
-	return cur
+// pop returns the next, still valid, cursor from the frontier and true if one
+// exists, the zero cursor and false otherwise.
+func (prob *problem) pop() (cur cursor, _ bool) {
+	for {
+		if cur.id != 0 {
+			if cur.id == prob.pointID[cur.i] {
+				return cur, true
+			}
+		}
+		i := len(prob.frontier) - 1
+		if i < 0 {
+			return cursor{}, false
+		}
+		cur = prob.frontier[i]
+		prob.frontier = prob.frontier[:i]
+	}
 }
 
 func (prob *ui) interact() error {
