@@ -67,8 +67,64 @@ func Test_problem_solve(t *testing.T) {
 		}
 		buf.WriteRune(r)
 	}
-	assert.Equal(t, tc.gridLines, strings.Split(buf.String(), "\n"))
+	if gridLines := strings.Split(buf.String(), "\n"); !assert.Equal(t, tc.gridLines, gridLines) {
+		var aw, bw int
+		var buf bytes.Buffer
+		for i := 0; i < len(gridLines) && i < len(tc.gridLines); i++ {
+			var a, b string
+			if i < len(gridLines) {
+				a = gridLines[i]
+			}
+			if i < len(tc.gridLines) {
+				b = tc.gridLines[i]
+			}
+			if aw < len(a) {
+				aw = len(a)
+			}
+			if bw < len(b) {
+				bw = len(b)
+			}
+			if a == "" {
+				a = strings.Repeat(" ", aw)
+			}
+
+			buf.Reset()
+			writeStringDiff(&buf, a, b)
+
+			t.Logf("%s", buf.Bytes())
+		}
+		t.Logf("Got%s | Expected", strings.Repeat(" ", aw-3))
+	}
 	assert.Equal(t, tc.counts, prob.countArea())
+}
+
+func writeStringDiff(buf *bytes.Buffer, a, b string) {
+	writeStringDiffPart(buf, a, b)
+	if a != b {
+		buf.WriteString(" \x1b[0;1;31m!\x1b[0m ")
+	} else {
+		buf.WriteString(" \x1b[0;1;32m=\x1b[0m ")
+	}
+	writeStringDiffPart(buf, b, a)
+}
+
+func writeStringDiffPart(buf *bytes.Buffer, a, b string) {
+	eq := true
+	for i := 0; i < len(a); i++ {
+		if a[i] == b[i] {
+			if !eq {
+				_, _ = buf.WriteString("\x1b[0m")
+				eq = true
+			}
+		} else if eq {
+			_, _ = buf.WriteString("\x1b[0;31m")
+			eq = false
+		}
+		_ = buf.WriteByte(a[i])
+	}
+	if !eq {
+		buf.WriteString("\x1b[0m")
+	}
 }
 
 func Benchmark_problem_populate(b *testing.B) {
