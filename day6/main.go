@@ -25,27 +25,27 @@ var (
 	region      = flag.Int("r", 0, "region threshold to sum (part 2)")
 )
 
+var errDone = errors.New("done")
+
 func main() {
 	flag.Parse()
 	anansi.MustRun(run(os.Stdin))
 }
 
-func run(r io.Reader) error {
-	points, err := readPoints(r)
+func run(r io.Reader) (err error) {
+	var prob ui
+
+	prob.points, err = readPoints(r)
 	if err != nil {
 		return err
 	}
 
-	var prob ui
+	prob.init()
 
+	// interactive stepping of the search expansion
 	if *interactive {
-		prob.points = points
-		prob.init()
 		return prob.interact()
 	}
-
-	prob.points = points
-	prob.init()
 
 	// part 1
 	if *region == 0 {
@@ -277,14 +277,7 @@ func (prob *problem) placePoints() {
 	}
 }
 
-func (prob *problem) pop() cursor {
-	cur := prob.frontier[len(prob.frontier)-1]
-	prob.frontier = prob.frontier[:len(prob.frontier)-1]
-	return cur
-}
-
-var errDone = errors.New("done")
-
+// expand the next cursor popped from the frontier in each cardinal direction.
 func (prob *problem) expand() error {
 	if len(prob.frontier) == 0 {
 		return errDone
@@ -292,16 +285,12 @@ func (prob *problem) expand() error {
 	cur := prob.pop()
 	// skip already processed cursors
 	for prob.pointID[cur.i] != cur.id {
-		// log.Printf("skip %v", cur)
 		if len(prob.frontier) == 0 {
 			return errDone
 		}
 		cur = prob.pop()
 	}
-	// log.Printf("#%v expanding %v priorID:%v priorDist:%v",
-	// 	len(prob.frontier), cur, prob.pointID[cur.i], prob.pointDist[cur.i])
 
-	// expand in cardinal directions
 	for _, dir := range []image.Point{
 		image.Pt(1, 0),
 		image.Pt(0, 1),
@@ -330,7 +319,6 @@ func (prob *problem) expand() error {
 
 				// nobody wins ties
 				if dist == priorDist {
-					// log.Printf("%v tied with #%v(%v)", next, priorID, priorDist)
 					prob.pointID[next.i] = -1
 					continue
 				}
@@ -342,13 +330,6 @@ func (prob *problem) expand() error {
 				}
 			}
 
-			// log.Printf(
-			// 	"@%v replace #%v(%v) with #%v(%v)",
-			// 	next.pt,
-			// 	priorID, priorDist,
-			// 	next.id, dist,
-			// )
-
 			prob.pointID[next.i] = next.id
 			prob.pointDist[next.i] = dist
 			prob.frontier = append(prob.frontier, next)
@@ -356,6 +337,12 @@ func (prob *problem) expand() error {
 	}
 
 	return nil
+}
+
+func (prob *problem) pop() cursor {
+	cur := prob.frontier[len(prob.frontier)-1]
+	prob.frontier = prob.frontier[:len(prob.frontier)-1]
+	return cur
 }
 
 func (prob *ui) interact() error {
