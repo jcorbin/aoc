@@ -336,7 +336,7 @@ func (prob *problem) expand() error {
 func (prob *problem) pop() (cur cursor, _ bool) {
 	for {
 		if cur.id != 0 {
-			if cur.id == prob.pointID[cur.i] {
+			if prob.valid(cur) {
 				return cur, true
 			}
 		}
@@ -347,6 +347,12 @@ func (prob *problem) pop() (cur cursor, _ bool) {
 		cur = prob.frontier[i]
 		prob.frontier = prob.frontier[:i]
 	}
+}
+
+// valid returns true only if the given cursor should be further explored; if
+// it returns false, then the cursor is pruned (skipped by pop).
+func (prob *problem) valid(cur cursor) bool {
+	return cur.id == prob.pointID[cur.i]
 }
 
 func (prob *ui) interact() error {
