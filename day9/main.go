@@ -34,6 +34,51 @@ type el struct {
 	v    int
 }
 
+func newEl(v int, p, n *el) *el {
+	e := &el{v: v}
+	if n == nil {
+		e.n = e
+	} else {
+		e.n = n
+	}
+	if p == nil {
+		e.p = e
+	} else {
+		e.p = p
+	}
+	return e
+}
+
+func (e *el) prev() *el { return e.p }
+func (e *el) next() *el { return e.n }
+
+func (e *el) prevN(n int) *el {
+	for i := 0; i < n; i++ {
+		e = e.p
+	}
+	return e
+}
+func (e *el) nextN(n int) *el {
+	for i := 0; i < n; i++ {
+		e = e.n
+	}
+	return e
+}
+
+func (e *el) unlink() *el {
+	e.p.n, e.n.p = e.n, e.p
+	r := e.n
+	e.p, e.n = nil, nil
+	return r
+}
+
+func (e *el) append(v int) *el {
+	r := newEl(v, e, e.n)
+	e.n.p = r
+	e.n = r
+	return r
+}
+
 type game struct {
 	playeri int
 	scores  []int // for each player
@@ -44,11 +89,8 @@ type game struct {
 
 func (g *game) init(n, m int) {
 	g.scores = make([]int, n)
-	e := &el{v: 0}
-	g.marbles = e
+	g.marbles = newEl(0, nil, nil)
 	g.curm = g.marbles
-	e.n = e
-	e.p = e
 }
 
 func (g *game) run(nPlayers, lastMarble int) {
@@ -74,26 +116,17 @@ func (g *game) highestScore() (besti, best int) {
 }
 
 func (g *game) place(v int) {
-	if v%23 == 0 {
-		for i := 0; i < 7; i++ {
-			g.curm = g.curm.p
-		}
-		e := g.curm
+	switch {
+	case v%23 == 0:
+		e := g.curm.prevN(7)
 		t := e.v
-		e.p.n, e.n.p = e.n, e.p
-		g.curm = e.n
+		g.curm = e.unlink()
 		if g.marbles == e {
 			g.marbles = g.curm
 		}
 		g.scores[g.playeri] += v + t
-	} else {
-		g.curm = g.curm.n
-		e := &el{v: v}
-		e.p = g.curm
-		e.n = g.curm.n
-		g.curm.n.p = e
-		g.curm.n = e
-		g.curm = e
+	default:
+		g.curm = g.curm.next().append(v)
 	}
 	g.playeri = (g.playeri + 1) % len(g.scores)
 }
