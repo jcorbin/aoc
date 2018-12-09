@@ -50,6 +50,8 @@ func Benchmark_game_run(b *testing.B) {
 		{100, 12800},
 		{100, 25600},
 		{100, 51200},
+		{430, 71588},
+		{430, 7158800},
 	} {
 		b.Run(fmt.Sprintf("n:%v m:%v", bc.nPlayers, bc.lastMarble), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
