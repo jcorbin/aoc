@@ -34,17 +34,22 @@ type el struct {
 	v    int
 }
 
-func newEl(v int, p, n *el) *el {
-	e := &el{v: v}
-	if n == nil {
-		e.n = e
-	} else {
-		e.n = n
+var slab []el
+
+const slabSize = 8192
+
+func newEl(v int, p, n *el) (e *el) {
+	if len(slab) == cap(slab) {
+		slab = make([]el, 0, slabSize)
 	}
+	i := len(slab)
+	slab = append(slab, el{p, n, v})
+	e = &slab[i]
 	if p == nil {
 		e.p = e
-	} else {
-		e.p = p
+	}
+	if n == nil {
+		e.n = e
 	}
 	return e
 }
