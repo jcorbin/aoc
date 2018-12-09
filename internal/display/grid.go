@@ -1,4 +1,4 @@
-package main
+package display
 
 import (
 	"io"
@@ -6,8 +6,11 @@ import (
 	"github.com/jcorbin/anansi"
 )
 
+// WriteGrid just writes the grid's contents to the given io.Writer,
+// no cursor positioning or screen clearing is done.
+//
 // TODO haul this back to anansi
-func writeGrid(w io.Writer, g anansi.Grid) (int64, error) {
+func WriteGrid(w io.Writer, g anansi.Grid) (int64, error) {
 	const border = false
 
 	var buf anansi.Buffer

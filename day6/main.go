@@ -17,6 +17,7 @@ import (
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/aoc/internal/display"
 	"github.com/jcorbin/aoc/internal/geom"
 )
 
@@ -56,7 +57,7 @@ func run(r io.Reader) (err error) {
 
 		if *dump {
 			prob.render()
-			if _, err := writeGrid(os.Stdout, prob.g); err != nil {
+			if _, err := display.WriteGrid(os.Stdout, prob.g); err != nil {
 				return err
 			}
 		}
@@ -113,7 +114,7 @@ func run(r io.Reader) (err error) {
 
 	if *dump {
 		prob.render()
-		if _, err := writeGrid(os.Stdout, prob.g); err != nil {
+		if _, err := display.WriteGrid(os.Stdout, prob.g); err != nil {
 			return err
 		}
 	}
@@ -448,7 +449,7 @@ func (prob *ui) Update(term *anansi.Term) (redraw bool, _ error) {
 
 func (prob *ui) WriteTo(w io.Writer) (n int64, err error) {
 	prob.render()
-	return writeGrid(w, prob.g)
+	return display.WriteGrid(w, prob.g)
 }
 
 func (prob *ui) init() {
