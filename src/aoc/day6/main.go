@@ -292,7 +292,9 @@ func (prob *problem) expand() bool {
 		image.Pt(0, -1),
 		image.Pt(-1, 0),
 	} {
-		if next, ok := prob.advance(cur, move); ok && prob.better(next) {
+		if next, ok := prob.advance(cur, move); !ok {
+			log.Printf("invalid move: %v", next)
+		} else if prob.better(next) {
 			prob.pointID[next.i] = next.id
 			prob.pointDist[next.i] = next.distance()
 			heap.Push(&prob.frontier, next)
@@ -337,23 +339,28 @@ func (prob *problem) better(cur cursor) bool {
 	if priorID > 0 {
 		// break loop
 		if priorID == cur.id {
+			log.Printf("break loop: %v", cur)
 			return false
 		}
 		// beaten by prior
 		if dist > priorDist {
+			log.Printf("beaten: %v", cur)
 			return false
 		}
 		// nobody wins ties
 		if dist == priorDist {
 			prob.pointID[cur.i] = -1
+			log.Printf("tied: %v", cur)
 			return false
 		}
 	} else if priorID < 0 {
 		// prior tie still stands
 		if dist >= priorDist {
+			log.Printf("beaten tie: %v", cur)
 			return false
 		}
 	}
+	log.Printf("better: %v", cur)
 	return true
 }
 
