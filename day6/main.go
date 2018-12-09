@@ -17,6 +17,7 @@ import (
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/aoc/internal/geom"
 )
 
 var (
@@ -127,7 +128,7 @@ type problem struct {
 	points []image.Point
 
 	// world state
-	RCore
+	geom.RCore
 	interiors []int
 	pointID   []int
 	pointDist []int
