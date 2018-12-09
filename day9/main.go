@@ -22,32 +22,10 @@ func main() {
 }
 
 func run(in, out *os.File) error {
-	// part 1
 	var g game
-	g.init(*nPlayers, *mValue+1)
-	if *verbose {
-		log.Printf("%v", g)
-	}
-	for v := 1; v < *mValue+1; v++ {
-		g.place(v)
-		if *verbose {
-			log.Printf("v:%v %v", v, g)
-		}
-	}
-
-	// i = (i + 2) % n
-
-	var besti, best int
-	for i, score := range g.scores {
-		if score > best {
-			besti, best = i, score
-		}
-	}
+	g.run(*nPlayers, *mValue)
+	besti, best := g.highestScore()
 	log.Printf("best was %v by player %v", best, besti+1)
-
-	// part 2
-	// TODO
-
 	return nil
 }
 
@@ -62,6 +40,28 @@ type game struct {
 func (g *game) init(n, m int) {
 	g.scores = make([]int, n)
 	g.marbles = make([]int, 1, m)
+}
+
+func (g *game) run(nPlayers, lastMarble int) {
+	g.init(nPlayers, lastMarble+1)
+	if *verbose {
+		log.Printf("%v", g)
+	}
+	for v := 1; v < lastMarble+1; v++ {
+		g.place(v)
+		if *verbose {
+			log.Printf("v:%v %v", v, g)
+		}
+	}
+}
+
+func (g *game) highestScore() (besti, best int) {
+	for i, score := range g.scores {
+		if score > best {
+			besti, best = i, score
+		}
+	}
+	return besti, best
 }
 
 func (g *game) place(v int) {
