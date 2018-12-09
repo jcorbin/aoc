@@ -28,3 +28,34 @@ func Test_game_run(t *testing.T) {
 		})
 	}
 }
+
+func Benchmark_game_run(b *testing.B) {
+	for _, bc := range []struct {
+		nPlayers   int
+		lastMarble int
+	}{
+		{9, 25},
+		{10, 1618},
+		{13, 7999},
+		{17, 1104},
+		{21, 6111},
+		{30, 5807},
+		{100, 100},
+		{100, 200},
+		{100, 400},
+		{100, 800},
+		{100, 1600},
+		{100, 3200},
+		{100, 6400},
+		{100, 12800},
+		{100, 25600},
+		{100, 51200},
+	} {
+		b.Run(fmt.Sprintf("n:%v m:%v", bc.nPlayers, bc.lastMarble), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				var g game
+				g.run(bc.nPlayers, bc.lastMarble)
+			}
+		})
+	}
+}
