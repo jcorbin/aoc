@@ -30,6 +30,8 @@ var (
 	region      = flag.Int("r", 0, "region threshold to sum (part 2)")
 )
 
+var id2name func(id int) string
+
 func main() {
 	flag.Parse()
 	anansi.MustRun(run(os.Stdin))
@@ -51,6 +53,7 @@ func run(r io.Reader) (err error) {
 	}
 
 	prob.init()
+	id2name = prob.id2name
 
 	// interactive stepping of the search expansion
 	if *interactive {
@@ -169,10 +172,19 @@ type cursor struct {
 }
 
 func (cur cursor) String() string {
+	if id2name == nil {
+		return fmt.Sprintf(
+			"#%v @%v from %v i:%v",
+			cur.id,
+			cur.pt, cur.origin,
+			cur.i,
+		)
+	}
 	return fmt.Sprintf(
-		"@%v from %v i:%v id:%v",
+		"%s @%v from %v i:%v",
+		id2name(cur.id),
 		cur.pt, cur.origin,
-		cur.i, cur.id,
+		cur.i,
 	)
 }
 
@@ -433,6 +445,13 @@ func (prob *ui) init() {
 		prob.names[id] = rune(glyphs[i%len(glyphs)])
 		prob.colors[id] = n2color(colorOff, i/len(glyphs))
 	}
+}
+
+func (prob *ui) id2name(id int) string {
+	if id >= 0 && id < len(prob.names) {
+		return string(prob.names[id])
+	}
+	return fmt.Sprintf("#%d", id)
 }
 
 func (prob *ui) render() {
