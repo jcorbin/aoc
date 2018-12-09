@@ -78,3 +78,10 @@ Here are a few more examples:
     *`54718`*
 -   `30` players; last marble is worth `5807` points: high score is
     *`37305`*
+
+## Part Two
+
+Amused by the speed of your answer, the Elves are curious:
+
+*What would the new winning Elf\'s score be if the number of the last marble
+were 100 times larger?*
