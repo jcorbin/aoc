@@ -44,35 +44,20 @@ func (sp space) bounds() (r image.Rectangle) {
 			r.Max.Y = p.Y
 		}
 	}
+	r.Max.X++
+	r.Max.Y++
 	return r
 }
 
-func (sp space) render() anansi.Grid {
-	var g anansi.Grid
-
+func (sp space) render(g anansi.Grid) anansi.Grid {
 	bnd := sp.bounds()
-	sz := bnd.Size().Add(image.Pt(1, 1))
-	g.Rect.Min = ansi.Pt(1, 1)
-	g.Rect.Max = g.Rect.Min.Add(sz)
-	g.Stride = sz.X
-	g.Attr = make([]ansi.SGRAttr, sz.X*sz.Y)
-	g.Rune = make([]rune, sz.X*sz.Y)
-
-	// g.Resize(bnd.Size()) XXX
-
-	// XXX memset
-	// for i := range g.Rune {
-	// 	g.Rune[i] = '.'
-	// 	g.Attr[i] = 0
-	// }
-
+	g.Resize(bnd.Size())
 	for _, p := range sp.p {
-		p = p.Sub(bnd.Min)
-		if i, ok := g.CellOffset(ansi.PtFromImage(p)); ok {
+		gp := ansi.PtFromImage(p.Sub(bnd.Min))
+		if i, ok := g.CellOffset(gp); ok {
 			g.Rune[i] = '#'
 		}
 	}
-
 	return g
 }
 
@@ -118,7 +103,9 @@ func run(in, out *os.File) error {
 
 	fmt.Fprintf(out, "--- t:%v %v\r\n", sp.t, sp.bounds().Size())
 
-	g := sp.render()
+	var g anansi.Grid
+
+	g = sp.render(g)
 	var buf bytes.Buffer
 	for pt := g.Rect.Min; pt.Y < g.Rect.Max.Y; pt.Y++ {
 		buf.Reset()
