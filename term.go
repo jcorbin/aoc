@@ -170,6 +170,27 @@ func (term *Term) Loop(client TermLoopClient) (err error) {
 	return err
 }
 
+func (term *Term) RunLoop(client TermLoopClient) (err error) {
+	return term.RunWithFunc(func(term *Term) error {
+		return term.Loop(client)
+	})
+}
+
+type loopClientFuncs struct {
+	u func(term *Term) (redraw bool, _ error)
+	w func(w io.Writer) (n int64, err error)
+}
+
+func LoopClientFuncs(
+	u func(term *Term) (redraw bool, _ error),
+	w func(w io.Writer) (n int64, err error),
+) TermLoopClient {
+	return loopClientFuncs{u, w}
+}
+
+func (lcf loopClientFuncs) Update(term *Term) (redraw bool, _ error) { return lcf.u(term) }
+func (lcf loopClientFuncs) WriteTo(w io.Writer) (n int64, err error) { return lcf.w(w) }
+
 // ExitError may be implemented by an error to customize the exit code under
 // MustRun.
 type ExitError interface {
