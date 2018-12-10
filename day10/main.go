@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"flag"
 	"fmt"
 	"image"
@@ -13,7 +12,6 @@ import (
 	"strconv"
 
 	"github.com/jcorbin/anansi"
-	"github.com/jcorbin/anansi/ansi"
 )
 
 func main() {
@@ -49,16 +47,18 @@ func (sp space) bounds() (r image.Rectangle) {
 	return r
 }
 
-func (sp space) render(g anansi.Grid) anansi.Grid {
+func (sp space) render() anansi.Bitmap {
+	var bi anansi.Bitmap
 	bnd := sp.bounds()
-	g.Resize(bnd.Size())
+
+	size := bnd.Size()
+	bi.Bit = make([]bool, size.X*size.Y)
+	bi.Rect.Max = size
+	bi.Stride = size.X
 	for _, p := range sp.p {
-		gp := ansi.PtFromImage(p.Sub(bnd.Min))
-		if i, ok := g.CellOffset(gp); ok {
-			g.Rune[i] = '#'
-		}
+		bi.Set(p.Sub(bnd.Min), true)
 	}
-	return g
+	return bi
 }
 
 func (sp *space) update() {
@@ -102,26 +102,10 @@ func run(in, out *os.File) error {
 	sp.rewind()
 
 	fmt.Fprintf(out, "--- t:%v %v\r\n", sp.t, sp.bounds().Size())
+	fmt.Fprintf(out, "\r\n")
 
-	var g anansi.Grid
-
-	g = sp.render(g)
-	var buf bytes.Buffer
-	for pt := g.Rect.Min; pt.Y < g.Rect.Max.Y; pt.Y++ {
-		buf.Reset()
-		for pt.X = g.Rect.Min.X; pt.X < g.Rect.Max.X; pt.X++ {
-			i, _ := g.CellOffset(pt)
-			r := g.Rune[i]
-			if r == 0 {
-				r = ' '
-			}
-			buf.WriteRune(r)
-		}
-		buf.WriteString("\r\n")
-		if _, err := buf.WriteTo(out); err != nil {
-			return err
-		}
-	}
+	bi := sp.render()
+	anansi.WriteBitmap(out, &bi)
 
 	return nil
 }
