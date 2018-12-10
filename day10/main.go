@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -10,8 +11,11 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"syscall"
+	"time"
 
 	"github.com/jcorbin/anansi"
+	"github.com/jcorbin/anansi/ansi"
 )
 
 func main() {
@@ -83,6 +87,102 @@ func run(in, out *os.File) error {
 
 	log.Printf("read: %v", len(sp.p))
 
+	if !anansi.IsTerminal(out) {
+		return solve(sp, out)
+	}
+
+	if !anansi.IsTerminal(in) {
+		f, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
+		if err != nil {
+			return err
+		}
+		in = f
+		defer in.Close()
+	}
+
+	var haveInput anansi.InputSignal
+	haveInput.Send("initial render")
+	term := anansi.NewTerm(in, out,
+		&haveInput,
+	)
+	term.SetRaw(true)
+	term.SetEcho(false)
+	term.AddMode(ansi.ModeAlternateScreen)
+
+	seeking := false
+	var size image.Point
+	term.Set = ansi.ED.With(2).AppendTo(term.Set)
+	term.Set = ansi.CUP.AppendTo(term.Set)
+
+	return term.RunLoop(anansi.LoopClientFuncs(
+		func(term *anansi.Term) (redraw bool, _ error) {
+			var to <-chan time.Time
+			if seeking {
+				to = time.After(time.Millisecond)
+			}
+			select {
+
+			case <-to:
+				sp.update()
+				if newSize := sp.bounds().Size(); newSize.X*newSize.Y > size.X*size.Y {
+					seeking = false
+				}
+				return true, nil
+
+			case <-haveInput.C:
+				if _, err := term.ReadAny(); err != nil {
+					return false, err
+				}
+				for e, _, ok := term.Decode(); ok; e, _, ok = term.Decode() {
+					switch e {
+					// Ctrl-C to quit
+					case 0x03:
+						return false, errors.New("goodbye")
+					// arrow keys to advance/rewind
+					case ansi.CUU:
+						sp.rewind()
+						redraw = true
+					case ansi.CUD:
+						sp.update()
+						redraw = true
+					}
+				}
+				return redraw, nil
+
+			}
+		},
+
+		func(w io.Writer) (n int64, err error) {
+			termSize, err := term.Size()
+			if err != nil {
+				return 0, err
+			}
+
+			size = sp.bounds().Size()
+			m, err := fmt.Fprintf(w, "--- t:%v %v\r\n", sp.t, size)
+			n += int64(m)
+			if err != nil {
+				return n, err
+			}
+
+			if seeking = size.X/2 > termSize.X || size.Y/4 > termSize.Y; seeking {
+				return n, nil
+			}
+
+			bi := sp.render()
+			m, err = anansi.WriteBitmap(w, &bi)
+			n += int64(m)
+			if err != nil {
+				return n, err
+			}
+			m, err = fmt.Fprintf(w, "\r\n")
+			n += int64(m)
+			return n, err
+		},
+	))
+}
+
+func solve(sp space, out *os.File) error {
 	lastn := 0
 	for {
 		sz := sp.bounds().Size()
@@ -99,14 +199,17 @@ func run(in, out *os.File) error {
 		// log.Printf("tick %v n:%v dn:%v", sp.t, n, dn)
 	}
 
-	sp.rewind()
+	for i := 0; i < 5; i++ {
+		sp.rewind()
+	}
 
-	fmt.Fprintf(out, "--- t:%v %v\r\n", sp.t, sp.bounds().Size())
-	fmt.Fprintf(out, "\r\n")
-
-	bi := sp.render()
-	anansi.WriteBitmap(out, &bi)
-
+	for i := 0; i < 10; i++ {
+		fmt.Fprintf(out, "--- t:%v %v\r\n", sp.t, sp.bounds().Size())
+		bi := sp.render()
+		anansi.WriteBitmap(out, &bi)
+		fmt.Fprintf(out, "\r\n")
+		sp.update()
+	}
 	return nil
 }
 
