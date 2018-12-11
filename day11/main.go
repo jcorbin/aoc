@@ -45,53 +45,65 @@ func powerLevel(pt image.Point, serial int) int {
 	return lvl
 }
 
-type fuelGrid struct {
-	geom.RCore
-	d []int
+type solver interface {
+	solve(size int) (loc image.Point, level int)
 }
 
+func fuelGridSolver(serial int, bounds image.Rectangle) solver {
+	return buildFuelGrid(serial, bounds)
+}
+
+var factory = fuelGridSolver
+
 func run(in, out *os.File) error {
-	serial := *serialFlag
-
-	// build power grid
-	var fg fuelGrid
-	fg.Min = image.Pt(1, 1)
-	fg.Max = image.Pt(301, 301)
-	fg.Stride = 300
-	fg.Origin = fg.Min
-	fg.d = make([]int, fg.Dx()*fg.Dy())
-	for pt := fg.Min; pt.Y < fg.Max.Y; pt.Y++ {
-		for pt.X = fg.Min.X; pt.X < fg.Max.X; pt.X++ {
-			i, _ := fg.Index(pt)
-			fg.d[i] = powerLevel(pt, serial)
-		}
-	}
-
-	sq := 3
+	bounds := image.Rect(1, 1, 301, 301)
+	solver := factory(*serialFlag, bounds)
 
 	// part 1
-	cfg := accumulate(fg, sq)
-	best, level := maxCell(cfg)
-	best = best.Add(image.Pt(1-sq, 1-sq)) // FIXME due to stencil structure
+	best, level := solver.solve(3)
 	log.Printf("found %v @%v sz:3", level, best)
 
 	// part 2
 	var bestSize int
 	best, level = image.ZP, 0
-	for sq := fg.Min.X; sq < fg.Max.X; sq++ {
-		cfg := accumulate(fg, sq)
-		subBest, subLevel := maxCell(cfg)
-		subBest = subBest.Add(image.Pt(1-sq, 1-sq)) // FIXME due to stencil structure
-		log.Printf("sq:%v subBest:%v subLevel:%v", sq, subBest, subLevel)
+	for size := bounds.Min.X; size < bounds.Max.X; size++ {
+		subBest, subLevel := solver.solve(size)
+		log.Printf("size:%v subBest:%v subLevel:%v", size, subBest, subLevel)
 		if level < subLevel {
 			best, level = subBest, subLevel
-			bestSize = sq
+			bestSize = size
 			log.Printf("have best:%v level:%v size:%v", best, level, bestSize)
 		}
 	}
 	log.Printf("found %v @%v sz:%v", level, best, bestSize)
 
 	return nil
+}
+
+type fuelGrid struct {
+	geom.RCore
+	d []int
+}
+
+func buildFuelGrid(serial int, bounds image.Rectangle) (fg fuelGrid) {
+	fg.Rectangle = bounds
+	fg.Stride = fg.Dx()
+	fg.Origin = fg.Min
+	fg.d = make([]int, fg.Stride*fg.Dy())
+	for pt := fg.Min; pt.Y < fg.Max.Y; pt.Y++ {
+		for pt.X = fg.Min.X; pt.X < fg.Max.X; pt.X++ {
+			i, _ := fg.Index(pt)
+			fg.d[i] = powerLevel(pt, serial)
+		}
+	}
+	return fg
+}
+
+func (fg fuelGrid) solve(size int) (loc image.Point, level int) {
+	cfg := accumulate(fg, size)
+	loc, level = maxCell(cfg)
+	loc = loc.Add(image.Pt(1-size, 1-size)) // FIXME due to stencil structure
+	return loc, level
 }
 
 func maxCell(fg fuelGrid) (best image.Point, level int) {
