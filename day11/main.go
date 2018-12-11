@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	serialFlag = flag.Int("serial", 0, "serial sumber")
+	verbose = flag.Bool("v", false, "enable verbose output")
+	serial  = flag.Int("serial", 0, "serial sumber")
 )
 
 func main() {
@@ -65,7 +66,7 @@ var factory = partialSumSolver
 
 func run(in, out *os.File) error {
 	bounds := image.Rect(1, 1, 301, 301)
-	solver := factory(*serialFlag, bounds)
+	solver := factory(*serial, bounds)
 
 	// part 1
 	best, level := solver.solve(3)
@@ -76,11 +77,15 @@ func run(in, out *os.File) error {
 	best, level = image.ZP, 0
 	for size := bounds.Min.X; size < bounds.Max.X; size++ {
 		subBest, subLevel := solver.solve(size)
-		log.Printf("size:%v subBest:%v subLevel:%v", size, subBest, subLevel)
+		if *verbose {
+			log.Printf("size:%v subBest:%v subLevel:%v", size, subBest, subLevel)
+		}
 		if level < subLevel {
 			best, level = subBest, subLevel
 			bestSize = size
-			log.Printf("have best:%v level:%v size:%v", best, level, bestSize)
+			if *verbose {
+				log.Printf("have best:%v level:%v size:%v", best, level, bestSize)
+			}
 		}
 	}
 	log.Printf("found %v @%v sz:%v", level, best, bestSize)
