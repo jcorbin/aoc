@@ -100,49 +100,19 @@ func buildFuelGrid(serial int, bounds image.Rectangle) (fg fuelGrid) {
 }
 
 func (fg fuelGrid) solve(size int) (loc image.Point, level int) {
-	cfg := accumulate(fg, size)
-	loc, level = maxCell(cfg)
-	loc = loc.Add(image.Pt(1-size, 1-size)) // FIXME due to stencil structure
-	return loc, level
-}
-
-func maxCell(fg fuelGrid) (best image.Point, level int) {
-	for pt := fg.Min; pt.Y < fg.Max.Y-2; pt.Y++ {
-		for pt.X = fg.Min.X; pt.X < fg.Max.X-2; pt.X++ {
-			i, _ := fg.Index(pt)
-			if v := fg.d[i]; level < v {
-				best, level = pt, v
-			}
-		}
-	}
-	return best, level
-}
-
-func accumulate(fg fuelGrid, sq int) fuelGrid {
-	// spread stencil
-	stencil := make([]image.Point, 0, sq*sq)
-	for i := 0; i < sq; i++ {
-		for j := 0; j < sq; j++ {
-			stencil = append(stencil, image.Pt(i, j))
-		}
-	}
-
-	var cfg fuelGrid
-	cfg.Stride = fg.Stride
-	cfg.Rectangle = fg.Rectangle
-	cfg.Stride = 300
-	cfg.Origin = fg.Min
-	cfg.d = make([]int, cfg.Dx()*cfg.Dy())
-	for pt := fg.Min; pt.Y < fg.Max.Y; pt.Y++ {
-		for pt.X = fg.Min.X; pt.X < fg.Max.X; pt.X++ {
-			i, _ := fg.Index(pt)
-			v := fg.d[i]
-			for _, dpt := range stencil {
-				if j, ok := cfg.Index(pt.Add(dpt)); ok {
-					cfg.d[j] += v
+	for pt := fg.Min; pt.Y < fg.Max.Y-size; pt.Y++ {
+		for pt.X = fg.Min.X; pt.X < fg.Max.X-size; pt.X++ {
+			total := 0
+			for dy := 0; dy < size; dy++ {
+				for dx := 0; dx < size; dx++ {
+					i, _ := fg.Index(pt.Add(image.Pt(dx, dy)))
+					total += fg.d[i]
 				}
 			}
+			if level < total {
+				loc, level = pt, total
+			}
 		}
 	}
-	return cfg
+	return loc, level
 }
