@@ -168,10 +168,10 @@ func (ps partialSums) accumulate() {
 	for pt := ps.Min; pt.Y < ps.Max.Y; pt.Y++ {
 		for pt.X = ps.Min.X; pt.X < ps.Max.X; pt.X++ {
 			i, _ := ps.Index(pt)
-			s := ps.d[i]
-			s += ps.sum(pt.Add(image.Pt(0, -1)))
-			s += ps.sum(pt.Add(image.Pt(-1, 0)))
-			s -= ps.sum(pt.Add(image.Pt(-1, -1)))
+			s := ps.d[i]                          // = cell value
+			s += ps.sum(pt.Add(image.Pt(0, -1)))  // + up cum-cell value
+			s += ps.sum(pt.Add(image.Pt(-1, 0)))  // + left cum-cell value
+			s -= ps.sum(pt.Add(image.Pt(-1, -1))) // - up,left cum-cell value
 			ps.s[i] = s
 		}
 	}
@@ -187,10 +187,21 @@ func (ps partialSums) sum(pt image.Point) int {
 func (ps partialSums) solve(size int) (loc image.Point, level int) {
 	for pt := ps.Min; pt.Y < ps.Max.Y-size; pt.Y++ {
 		for pt.X = ps.Min.X; pt.X < ps.Max.X-size; pt.X++ {
-			total := ps.sum(pt.Add(image.Pt(size, size))) // lower-right
-			total -= ps.sum(pt.Add(image.Pt(size, 0)))    // upper-right
-			total -= ps.sum(pt.Add(image.Pt(0, size)))    // lower-left
-			total += ps.sum(pt)                           // upper-left
+			/*  |  |
+			 * A| B|
+			 *--+--+
+			 *  |  |
+			 * C| D|
+			 *--+--+
+			 */
+			total := ps.sum(pt.Add(image.Pt(size, size))) // = lower-right (A + B + C + D)
+			total -= ps.sum(pt.Add(image.Pt(size, 0)))    // - upper-right (A + B)
+			total -= ps.sum(pt.Add(image.Pt(0, size)))    // - lower-left  (A + C)
+			total += ps.sum(pt)                           // + upper-left  (A)
+			// = (A + B + C + D) - (A + B) - (A + C) + A
+			// = A + B + C + D - A - B - A - C + A
+			// = A - A + B - B + C - C + D + A - A
+			// = D
 			if level < total {
 				loc, level = pt.Add(image.Pt(1, 1)), total
 			}
