@@ -31,6 +31,7 @@ var testSolutions = []struct {
 }{
 	{"fuelGrid", fuelGridSolver},
 	{"spec", specSolver},
+	{"partialSum", partialSumSolver},
 }
 
 func Test_solvers(t *testing.T) {

@@ -57,7 +57,11 @@ func specSolver(serial int, bounds image.Rectangle) solver {
 	return spec{serial, bounds}
 }
 
-var factory = specSolver
+func partialSumSolver(serial int, bounds image.Rectangle) solver {
+	return buildPartialSums(serial, bounds)
+}
+
+var factory = partialSumSolver
 
 func run(in, out *os.File) error {
 	bounds := image.Rect(1, 1, 301, 301)
@@ -137,6 +141,53 @@ func (sp spec) solve(size int) (loc image.Point, level int) {
 			}
 			if level < total {
 				loc, level = pt, total
+			}
+		}
+	}
+	return loc, level
+}
+
+type partialSums struct {
+	fuelGrid
+	s []int
+}
+
+func buildPartialSums(serial int, bounds image.Rectangle) (ps partialSums) {
+	ps.fuelGrid = buildFuelGrid(serial, bounds)
+	ps.s = make([]int, len(ps.d))
+	ps.accumulate()
+	return ps
+}
+
+func (ps partialSums) accumulate() {
+	for pt := ps.Min; pt.Y < ps.Max.Y; pt.Y++ {
+		for pt.X = ps.Min.X; pt.X < ps.Max.X; pt.X++ {
+			i, _ := ps.Index(pt)
+			s := ps.d[i]
+			s += ps.sum(pt.Add(image.Pt(0, -1)))
+			s += ps.sum(pt.Add(image.Pt(-1, 0)))
+			s -= ps.sum(pt.Add(image.Pt(-1, -1)))
+			ps.s[i] = s
+		}
+	}
+}
+
+func (ps partialSums) sum(pt image.Point) int {
+	if i, ok := ps.Index(pt); ok {
+		return ps.s[i]
+	}
+	return 0
+}
+
+func (ps partialSums) solve(size int) (loc image.Point, level int) {
+	for pt := ps.Min; pt.Y < ps.Max.Y-size; pt.Y++ {
+		for pt.X = ps.Min.X; pt.X < ps.Max.X-size; pt.X++ {
+			total := ps.sum(pt.Add(image.Pt(size, size))) // lower-right
+			total -= ps.sum(pt.Add(image.Pt(size, 0)))    // upper-right
+			total -= ps.sum(pt.Add(image.Pt(0, size)))    // lower-left
+			total += ps.sum(pt)                           // upper-left
+			if level < total {
+				loc, level = pt.Add(image.Pt(1, 1)), total
 			}
 		}
 	}
