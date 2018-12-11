@@ -31,6 +31,7 @@ func Test_solvers(t *testing.T) {
 		factory func(serial int, bounds image.Rectangle) solver
 	}{
 		{"fuelGrid", fuelGridSolver},
+		{"spec", specSolver},
 	}
 
 	type result struct {

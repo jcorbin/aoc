@@ -53,7 +53,11 @@ func fuelGridSolver(serial int, bounds image.Rectangle) solver {
 	return buildFuelGrid(serial, bounds)
 }
 
-var factory = fuelGridSolver
+func specSolver(serial int, bounds image.Rectangle) solver {
+	return spec{serial, bounds}
+}
+
+var factory = specSolver
 
 func run(in, out *os.File) error {
 	bounds := image.Rect(1, 1, 301, 301)
@@ -107,6 +111,28 @@ func (fg fuelGrid) solve(size int) (loc image.Point, level int) {
 				for dx := 0; dx < size; dx++ {
 					i, _ := fg.Index(pt.Add(image.Pt(dx, dy)))
 					total += fg.d[i]
+				}
+			}
+			if level < total {
+				loc, level = pt, total
+			}
+		}
+	}
+	return loc, level
+}
+
+type spec struct {
+	serial int
+	image.Rectangle
+}
+
+func (sp spec) solve(size int) (loc image.Point, level int) {
+	for pt := sp.Min; pt.Y < sp.Max.Y-size; pt.Y++ {
+		for pt.X = sp.Min.X; pt.X < sp.Max.X-size; pt.X++ {
+			total := 0
+			for dy := 0; dy < size; dy++ {
+				for dx := 0; dx < size; dx++ {
+					total += powerLevel(pt.Add(image.Pt(dx, dy)), sp.serial)
 				}
 			}
 			if level < total {
