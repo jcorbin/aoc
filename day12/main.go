@@ -88,7 +88,6 @@ func run(in, out *os.File) error {
 	}
 
 	var buf bytes.Buffer
-
 	for i := spc.min; i < spc.max; i++ {
 		if i != 0 && i%10 == 0 {
 			buf.WriteByte('0' + byte(i/10%10))
@@ -108,7 +107,17 @@ func run(in, out *os.File) error {
 	}
 	buf.WriteByte('\n')
 	buf.WriteTo(os.Stdout)
+	spc.writePotBytes(&buf)
+	buf.WriteByte('\n')
+	buf.WriteTo(os.Stdout)
 
+	log.Printf("min:%v max:%v", spc.min, spc.max)
+	log.Printf("total: %v", spc.sumPots())
+
+	return nil
+}
+
+func (spc *space) writePotBytes(buf *bytes.Buffer) {
 	for i := spc.min; i < spc.max; i++ {
 		if spc.pots[i] {
 			buf.WriteByte('#')
@@ -116,20 +125,15 @@ func run(in, out *os.File) error {
 			buf.WriteByte('.')
 		}
 	}
-	buf.WriteByte('\n')
-	buf.WriteTo(os.Stdout)
+}
 
-	log.Printf("min:%v max:%v", spc.min, spc.max)
-	n := 0
+func (spc *space) sumPots() (n int) {
 	for i := spc.min; i < spc.max; i++ {
 		if spc.pots[i] {
 			n += i
 		}
 	}
-
-	log.Printf("total: %v", n)
-
-	return nil
+	return n
 }
 
 func (spc *space) tick() {
