@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"image"
 	"io"
 	"os"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 var (
 	numGenerations = flag.Int("n", 20, "number of generations to run")
+	bitmap         = flag.Bool("b", false, "output a compact bitmap")
 )
 
 func main() {
@@ -177,6 +179,24 @@ func (sim *sim) dumpTraceTo(w io.Writer) error {
 	return nil
 }
 
+func (sim *sim) makeBitmap() (bi anansi.Bitmap) {
+	bi.Rect.Max.Y = sim.tick
+	bi.Rect.Max.X = sim.max - sim.min
+	bi.Stride = bi.Rect.Max.X
+	bi.Bit = make([]bool, bi.Stride*bi.Rect.Dy())
+	byteOff := 0
+	for i, n := range sim.byteLens {
+		byteEnd := byteOff + n
+		off := sim.mins[i] - sim.min
+		line := sim.traceBuf.Bytes()[byteOff:byteEnd]
+		for x, c := range line {
+			bi.Set(image.Pt(off+x, i), c == '#')
+		}
+		byteOff = byteEnd
+	}
+	return bi
+}
+
 func run(in, out *os.File) error {
 	spc, err := read(in)
 	if err != nil {
@@ -188,6 +208,13 @@ func run(in, out *os.File) error {
 	for sim.tick < *numGenerations {
 		sim.step()
 	}
+
+	if *bitmap {
+		bi := sim.makeBitmap()
+		_, err = anansi.WriteBitmap(os.Stdout, &bi)
+		return err
+	}
+
 	return sim.dumpTraceTo(os.Stdout)
 }
 
