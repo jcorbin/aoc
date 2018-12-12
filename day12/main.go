@@ -80,59 +80,48 @@ func parseRuleParts(s string) (l2, l1, c, r1, r2 bool) {
 	return l2, l1, c, r1, r2
 }
 
-func run(in, out *os.File) error {
-	spc, err := read(in)
-	if err != nil {
-		return err
+type sim struct {
+	spc  space
+	tick int
+
+	min, max int
+
+	traceBuf   bytes.Buffer
+	mins, maxs []int
+	total      []int
+	byteLens   []int
+}
+
+func (sim *sim) step() {
+	sim.spc.tick()
+	sim.tick++
+	sim.snapshot()
+}
+
+func (sim *sim) snapshot() {
+	min, max := sim.spc.min(), sim.spc.max()
+	if sim.min > min {
+		sim.min = min
 	}
-
-	type bound struct{ min, max int }
-	var potBuf bytes.Buffer
-	var tick int
-	var bounds []bound
-	var totals []int
-	var byteLens []int
-
-	snapshot := func() {
-		min, max := spc.min(), spc.max()
-		bounds = append(bounds, bound{min, max})
-		totals = append(totals, spc.sumPots())
-		l0 := potBuf.Len()
-		spc.writePotBytes(&potBuf)
-		l1 := potBuf.Len()
-		byteLens = append(byteLens, l1-l0)
+	if sim.max < max {
+		sim.max = max
 	}
+	sim.mins = append(sim.mins, min)
+	sim.maxs = append(sim.maxs, max)
+	sim.total = append(sim.total, sim.spc.sumPots())
+	l0 := sim.traceBuf.Len()
+	sim.spc.writePotBytes(&sim.traceBuf)
+	l1 := sim.traceBuf.Len()
+	sim.byteLens = append(sim.byteLens, l1-l0)
+}
 
-	step := func() {
-		spc.tick()
-		tick++
-		snapshot()
-	}
-
-	// run sim
-	snapshot()
-	for tick < *numGenerations {
-		step()
-	}
-
-	// render
-
+func (sim *sim) dumpTraceTo(w io.Writer) error {
 	var buf bytes.Buffer
 
-	bnd := bounds[0]
-	for _, b := range bounds {
-		if bnd.min > b.min {
-			bnd.min = b.min
-		}
-		if bnd.max < b.max {
-			bnd.max = b.max
-		}
-	}
-
 	// compute T and Σ padding
-	iw := tens(len(byteLens) - 1)
+	iw := tens(len(sim.byteLens) - 1)
 	tw := 0
-	for _, t := range totals {
+	for _, t := range sim.total {
 		if n := tens(t); tw < n {
 			tw = n
 		}
@@ -140,7 +129,7 @@ func run(in, out *os.File) error {
 
 	// header 1
 	fmt.Fprintf(&buf, "% *s % *s", iw, "", tw, "")
-	for i := bnd.min; i < bnd.max; i++ {
+	for i := sim.min; i < sim.max; i++ {
 		if i != 0 && i%10 == 0 {
 			buf.WriteByte('0' + byte(i/10%10))
 		} else if i < 0 && i%10 == 9 {
@@ -153,7 +142,7 @@ func run(in, out *os.File) error {
 
 	// header 2
 	fmt.Fprintf(&buf, "% *s % *s", iw, "T", tw, "Σ")
-	for i := bnd.min; i < bnd.max; i++ {
+	for i := sim.min; i < sim.max; i++ {
 		if i%10 == 0 {
 			buf.WriteByte('0')
 		} else {
@@ -161,27 +150,45 @@ func run(in, out *os.File) error {
 		}
 	}
 	buf.WriteByte('\n')
-	buf.WriteTo(os.Stdout)
+	if _, err := buf.WriteTo(w); err != nil {
+		return err
+	}
 
 	// padded rows
 	byteOff := 0
-	for i, n := range byteLens {
-		b := bounds[i]
+	for i, n := range sim.byteLens {
+		min, max := sim.mins[i], sim.maxs[i]
 		byteEnd := byteOff + n
-		fmt.Fprintf(&buf, "% *d % *d ", iw, i, tw, totals[i])
-		for i := bnd.min; i < b.min; i++ {
+		fmt.Fprintf(&buf, "% *d % *d ", iw, i, tw, sim.total[i])
+		for i := sim.min; i < min; i++ {
 			buf.WriteByte('.')
 		}
-		buf.Write(potBuf.Bytes()[byteOff:byteEnd])
-		for i := b.max; i < bnd.max; i++ {
+		buf.Write(sim.traceBuf.Bytes()[byteOff:byteEnd])
+		for i := max; i < sim.max; i++ {
 			buf.WriteByte('.')
 		}
 		buf.WriteByte('\n')
-		buf.WriteTo(os.Stdout)
 		byteOff = byteEnd
+		if _, err := buf.WriteTo(w); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func run(in, out *os.File) error {
+	spc, err := read(in)
+	if err != nil {
+		return err
+	}
+
+	sim := sim{spc: spc}
+	sim.snapshot()
+	for sim.tick < *numGenerations {
+		sim.step()
+	}
+	return sim.dumpTraceTo(os.Stdout)
 }
 
 func (spc *space) min() int {
