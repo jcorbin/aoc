@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -86,37 +86,100 @@ func run(in, out *os.File) error {
 		return err
 	}
 
-	for i := 0; i < *numGenerations; i++ {
-		spc.tick()
+	type bound struct{ min, max int }
+	var potBuf bytes.Buffer
+	var tick int
+	var bounds []bound
+	var totals []int
+	var byteLens []int
+
+	snapshot := func() {
+		min, max := spc.min(), spc.max()
+		bounds = append(bounds, bound{min, max})
+		totals = append(totals, spc.sumPots())
+		l0 := potBuf.Len()
+		spc.writePotBytes(&potBuf)
+		l1 := potBuf.Len()
+		byteLens = append(byteLens, l1-l0)
 	}
+
+	step := func() {
+		spc.tick()
+		tick++
+		snapshot()
+	}
+
+	// run sim
+	snapshot()
+	for tick < *numGenerations {
+		step()
+	}
+
+	// render
 
 	var buf bytes.Buffer
 
-	// for i := spc.min; i < spc.max; i++ {
-	// 	if i != 0 && i%10 == 0 {
-	// 		buf.WriteByte('0' + byte(i/10%10))
-	// 	} else if i < 0 && i%10 == 9 {
-	// 		buf.WriteByte('-')
-	// 	} else {
-	// 		buf.WriteByte(' ')
-	// 	}
-	// }
-	// buf.WriteByte('\n')
-	// for i := spc.min; i < spc.max; i++ {
-	// 	if i%10 == 0 {
-	// 		buf.WriteByte('0')
-	// 	} else {
-	// 		buf.WriteByte(' ')
-	// 	}
-	// }
-	// buf.WriteByte('\n')
-	// buf.WriteTo(os.Stdout)
+	bnd := bounds[0]
+	for _, b := range bounds {
+		if bnd.min > b.min {
+			bnd.min = b.min
+		}
+		if bnd.max < b.max {
+			bnd.max = b.max
+		}
+	}
 
-	spc.writePotBytes(&buf)
+	// compute T and Σ padding
+	iw := tens(len(byteLens) - 1)
+	tw := 0
+	for _, t := range totals {
+		if n := tens(t); tw < n {
+			tw = n
+		}
+	}
+
+	// header 1
+	fmt.Fprintf(&buf, "% *s % *s", iw, "", tw, "")
+	for i := bnd.min; i < bnd.max; i++ {
+		if i != 0 && i%10 == 0 {
+			buf.WriteByte('0' + byte(i/10%10))
+		} else if i < 0 && i%10 == 9 {
+			buf.WriteByte('-')
+		} else {
+			buf.WriteByte(' ')
+		}
+	}
+	buf.WriteByte('\n')
+
+	// header 2
+	fmt.Fprintf(&buf, "% *s % *s", iw, "T", tw, "Σ")
+	for i := bnd.min; i < bnd.max; i++ {
+		if i%10 == 0 {
+			buf.WriteByte('0')
+		} else {
+			buf.WriteByte(' ')
+		}
+	}
 	buf.WriteByte('\n')
 	buf.WriteTo(os.Stdout)
 
-	log.Printf("total: %v", spc.sumPots())
+	// padded rows
+	byteOff := 0
+	for i, n := range byteLens {
+		b := bounds[i]
+		byteEnd := byteOff + n
+		fmt.Fprintf(&buf, "% *d % *d ", iw, i, tw, totals[i])
+		for i := bnd.min; i < b.min; i++ {
+			buf.WriteByte('.')
+		}
+		buf.Write(potBuf.Bytes()[byteOff:byteEnd])
+		for i := b.max; i < bnd.max; i++ {
+			buf.WriteByte('.')
+		}
+		buf.WriteByte('\n')
+		buf.WriteTo(os.Stdout)
+		byteOff = byteEnd
+	}
 
 	return nil
 }
@@ -280,4 +343,12 @@ func read(r io.Reader) (spc space, _ error) {
 		}
 	}
 	return spc, sc.Err()
+}
+
+func tens(n int) (m int) {
+	for n > 0 {
+		m++
+		n /= 10
+	}
+	return m + 1
 }
