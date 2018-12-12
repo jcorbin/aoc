@@ -13,6 +13,10 @@ import (
 	"github.com/jcorbin/anansi"
 )
 
+var (
+	numGenerations = flag.Int("n", 20, "number of generations to run")
+)
+
 func main() {
 	flag.Parse()
 	anansi.MustRun(run(os.Stdin, os.Stdout))
@@ -79,16 +83,29 @@ func run(in, out *os.File) error {
 	}
 
 	// part 1
-	for i := 0; i < 20; i++ {
+	for i := 0; i < *numGenerations; i++ {
 		spc.tick()
 	}
 
 	var buf bytes.Buffer
 
-	for i := spc.min; i < 0; i++ {
-		buf.WriteByte(' ')
+	for i := spc.min; i < spc.max; i++ {
+		if i != 0 && i%10 == 0 {
+			buf.WriteByte('0' + byte(i/10%10))
+		} else if i < 0 && i%10 == 9 {
+			buf.WriteByte('-')
+		} else {
+			buf.WriteByte(' ')
+		}
 	}
-	buf.WriteByte('0')
+	buf.WriteByte('\n')
+	for i := spc.min; i < spc.max; i++ {
+		if i%10 == 0 {
+			buf.WriteByte('0')
+		} else {
+			buf.WriteByte(' ')
+		}
+	}
 	buf.WriteByte('\n')
 	buf.WriteTo(os.Stdout)
 
@@ -111,9 +128,6 @@ func run(in, out *os.File) error {
 	}
 
 	log.Printf("total: %v", n)
-
-	// part 2
-	// TODO
 
 	return nil
 }

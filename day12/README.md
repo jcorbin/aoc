@@ -1,4 +1,46 @@
 https://adventofcode.com/2018/day/12
+<div>
+
+[Advent of Code](/) {#advent-of-code .title-global}
+===================
+
+-   [\[About\]](/2018/about)
+-   [\[Events\]](/2018/events)
+-   [\[Shop\]](https://teespring.com/adventofcode)
+-   [\[Settings\]](/2018/settings)
+-   [\[Log Out\]](/2018/auth/logout)
+
+::: {.user}
+jcorbin [23\*]{.star-count}
+:::
+
+</div>
+
+<div>
+
+      [/\^]{.title-event-wrap}[2018](/2018)[\$/]{.title-event-wrap} {#section .title-event}
+===================================================================
+
+-   [\[Calendar\]](/2018)
+-   [\[AoC++\]](/2018/support)
+-   [\[Sponsors\]](/2018/sponsors)
+-   [\[Leaderboard\]](/2018/leaderboard)
+-   [\[Stats\]](/2018/stats)
+
+</div>
+
+::: {#sidebar}
+::: {#sponsor}
+::: {.quiet}
+Our [sponsors](/2018/sponsors) help make Advent of Code possible:
+:::
+
+::: {.sponsor}
+[Formlabs](https://formlabs.com/jobs/) - 3D printing with lasers.
+Software, hardware, and more. Pew pew!
+:::
+:::
+:::
 
 ::: {role="main"}
 \-\-- Day 12: Subterranean Sustainability \-\--
@@ -113,12 +155,27 @@ after the 20th generation produces `325`.
 *After `20` generations, what is the sum of the numbers of all pots
 which contain a plant?*
 
-To begin, [get your puzzle input](12/input).
+Your puzzle answer was `2049`.
+
+The first half of this puzzle is complete! It provides one gold star: \*
+
+\-\-- Part Two \-\-- {#part2}
+--------------------
+
+You realize that 20 generations aren\'t enough. After all, these plants
+will need to last another 1500 years to even reach your timeline, not to
+mention your future.
+
+*After fifty billion (`50000000000`) generations, what is the sum of the
+numbers of all pots which contain a plant?*
+
+Although it hasn\'t changed, you can still [get your puzzle
+input](12/input).
 
 Answer:
 
 You can also [\[Share[on
-[Twitter](https://twitter.com/intent/tweet?text=%22Subterranean+Sustainability%22+%2D+Day+12+%2D+Advent+of+Code+2018&url=https%3A%2F%2Fadventofcode%2Ecom%2F2018%2Fday%2F12&related=ericwastl&hashtags=AdventOfCode)
-[Reddit](http://www.reddit.com/submit?url=https%3A%2F%2Fadventofcode%2Ecom%2F2018%2Fday%2F12&title=%22Subterranean+Sustainability%22+%2D+Day+12+%2D+Advent+of+Code+2018)]{.share-content}\]]{.share}
+[Twitter](https://twitter.com/intent/tweet?text=I%27ve+completed+Part+One+of+%22Subterranean+Sustainability%22+%2D+Day+12+%2D+Advent+of+Code+2018&url=https%3A%2F%2Fadventofcode%2Ecom%2F2018%2Fday%2F12&related=ericwastl&hashtags=AdventOfCode)
+[Reddit](http://www.reddit.com/submit?url=https%3A%2F%2Fadventofcode%2Ecom%2F2018%2Fday%2F12&title=I%27ve+completed+Part+One+of+%22Subterranean+Sustainability%22+%2D+Day+12+%2D+Advent+of+Code+2018)]{.share-content}\]]{.share}
 this puzzle.
 :::
