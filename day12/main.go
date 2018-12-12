@@ -33,12 +33,14 @@ type space struct {
 type ruleKey uint8
 
 const (
-	ruleL2 ruleKey = 1 << iota
-	ruleL1
-	ruleC
+	ruleR2 ruleKey = 1 << iota
 	ruleR1
-	ruleR2
+	ruleC
+	ruleL1
+	ruleL2
 )
+
+const ruleMask = ruleR2 | ruleR1 | ruleC | ruleL1 | ruleL2
 
 func rule(l2, l1, c, r1, r2 bool) (r ruleKey) {
 	if l2 {
@@ -182,19 +184,22 @@ func (spc *space) sumPots() (n int) {
 	return n
 }
 
+func (rk ruleKey) lshift(bit ruleKey) ruleKey {
+	rk = (rk<<1)&ruleMask | bit
+	return rk
+}
+
 func (spc *space) tick() {
 	var nl, nr uint64
-	var vs [5]bool
+	var rk ruleKey
 	out := -2
 	i := 0
 	for ; i < len(spc.chunks); i++ {
 		c := spc.chunks[i]
 		nc := uint64(0)
-		m := uint64(1)
 		for j := 0; j < chunkSize; j++ {
-			vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], c&m != 0
-			rv := spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])]
-			if rv {
+			rk = rk.lshift(ruleKey(c & 1))
+			if spc.rules[rk] {
 				if out >= 0 {
 					nc |= 1 << uint64(out)
 				} else if i == 0 {
@@ -203,32 +208,32 @@ func (spc *space) tick() {
 					spc.chunks[i-1] |= 1 << uint64(chunkSize+out)
 				}
 			}
-			m <<= 1
+			c >>= 1
 			out++
 		}
 		spc.chunks[i] = nc
 		out = -2
 	}
 
-	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
-	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+	rk = rk.lshift(0)
+	if spc.rules[rk] {
 		spc.chunks[i-1] |= 1 << uint64(chunkSize+out)
 	}
 	out++
 
-	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
-	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+	rk = rk.lshift(0)
+	if spc.rules[rk] {
 		spc.chunks[i-1] |= 1 << uint64(chunkSize+out)
 	}
 	out++
 
-	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
-	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+	rk = rk.lshift(0)
+	if spc.rules[rk] {
 		nr |= 1
 	}
 
-	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
-	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+	rk = rk.lshift(0)
+	if spc.rules[rk] {
 		nr |= 2
 	}
 
