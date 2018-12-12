@@ -22,10 +22,12 @@ func main() {
 	anansi.MustRun(run(os.Stdin, os.Stdout))
 }
 
+const chunkSize = 64
+
 type space struct {
-	min, max int
-	pots     map[int]bool // TODO is a bitvector worth it?
-	rules    map[ruleKey]bool
+	rules  [256]bool
+	offset int
+	chunks []uint64
 }
 
 type ruleKey uint8
@@ -82,79 +84,160 @@ func run(in, out *os.File) error {
 		return err
 	}
 
-	// part 1
 	for i := 0; i < *numGenerations; i++ {
 		spc.tick()
 	}
 
 	var buf bytes.Buffer
-	for i := spc.min; i < spc.max; i++ {
-		if i != 0 && i%10 == 0 {
-			buf.WriteByte('0' + byte(i/10%10))
-		} else if i < 0 && i%10 == 9 {
-			buf.WriteByte('-')
-		} else {
-			buf.WriteByte(' ')
-		}
-	}
-	buf.WriteByte('\n')
-	for i := spc.min; i < spc.max; i++ {
-		if i%10 == 0 {
-			buf.WriteByte('0')
-		} else {
-			buf.WriteByte(' ')
-		}
-	}
-	buf.WriteByte('\n')
-	buf.WriteTo(os.Stdout)
+
+	// for i := spc.min; i < spc.max; i++ {
+	// 	if i != 0 && i%10 == 0 {
+	// 		buf.WriteByte('0' + byte(i/10%10))
+	// 	} else if i < 0 && i%10 == 9 {
+	// 		buf.WriteByte('-')
+	// 	} else {
+	// 		buf.WriteByte(' ')
+	// 	}
+	// }
+	// buf.WriteByte('\n')
+	// for i := spc.min; i < spc.max; i++ {
+	// 	if i%10 == 0 {
+	// 		buf.WriteByte('0')
+	// 	} else {
+	// 		buf.WriteByte(' ')
+	// 	}
+	// }
+	// buf.WriteByte('\n')
+	// buf.WriteTo(os.Stdout)
+
 	spc.writePotBytes(&buf)
 	buf.WriteByte('\n')
 	buf.WriteTo(os.Stdout)
 
-	log.Printf("min:%v max:%v", spc.min, spc.max)
 	log.Printf("total: %v", spc.sumPots())
 
 	return nil
 }
 
+func (spc *space) min() int {
+	for i, c := range spc.chunks {
+		m := uint64(1)
+		for j := 0; j < chunkSize; j++ {
+			if c&m != 0 {
+				return spc.offset + i*chunkSize + j
+			}
+			m <<= 1
+		}
+	}
+	return 0
+}
+
+func (spc *space) max() int {
+	var max int
+	for i, c := range spc.chunks {
+		m := uint64(1)
+		for j := 0; j < chunkSize; j++ {
+			if c&m != 0 {
+				max = spc.offset + i*chunkSize + j + 1
+			}
+			m <<= 1
+		}
+	}
+	return max
+}
+
 func (spc *space) writePotBytes(buf *bytes.Buffer) {
-	for i := spc.min; i < spc.max; i++ {
-		if spc.pots[i] {
-			buf.WriteByte('#')
-		} else {
-			buf.WriteByte('.')
+	started := false
+	skip := 0
+	for _, c := range spc.chunks {
+		m := uint64(1)
+		for j := 0; j < chunkSize; j++ {
+			if c&m != 0 {
+				if started {
+					for k := 0; k < skip; k++ {
+						buf.WriteByte('.')
+					}
+				}
+				skip = 0
+				buf.WriteByte('#')
+				started = true
+			} else {
+				skip++
+			}
+			m <<= 1
 		}
 	}
 }
 
 func (spc *space) sumPots() (n int) {
-	for i := spc.min; i < spc.max; i++ {
-		if spc.pots[i] {
-			n += i
+	for i, c := range spc.chunks {
+		m := uint64(1)
+		for j := 0; j < chunkSize; j++ {
+			if c&m != 0 {
+				n += spc.offset + i*chunkSize + j
+			}
+			m <<= 1
 		}
 	}
 	return n
 }
 
 func (spc *space) tick() {
+	var nl, nr uint64
 	var vs [5]bool
-	load := spc.min
-	stor := spc.min - 2
-	max := spc.max + 5
-	for stor < max {
-		vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], spc.pots[load]
-		v := spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])]
-		if in := spc.min <= stor && stor < spc.max; v || in {
-			spc.pots[stor] = v
-			if spc.min > stor {
-				spc.min = stor
+	out := -2
+	i := 0
+	for ; i < len(spc.chunks); i++ {
+		c := spc.chunks[i]
+		nc := uint64(0)
+		m := uint64(1)
+		for j := 0; j < chunkSize; j++ {
+			vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], c&m != 0
+			rv := spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])]
+			if rv {
+				if out >= 0 {
+					nc |= 1 << uint64(out)
+				} else if i == 0 {
+					nl |= 1 << uint64(chunkSize+out)
+				} else {
+					spc.chunks[i-1] |= 1 << uint64(chunkSize+out)
+				}
 			}
-			if spc.max <= stor {
-				spc.max = stor + 1
-			}
+			m <<= 1
+			out++
 		}
-		load++
-		stor++
+		spc.chunks[i] = nc
+		out = -2
+	}
+
+	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
+	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+		spc.chunks[i-1] |= 1 << uint64(chunkSize+out)
+	}
+	out++
+
+	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
+	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+		spc.chunks[i-1] |= 1 << uint64(chunkSize+out)
+	}
+	out++
+
+	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
+	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+		nr |= 1
+	}
+
+	vs[0], vs[1], vs[2], vs[3], vs[4] = vs[1], vs[2], vs[3], vs[4], false
+	if spc.rules[rule(vs[0], vs[1], vs[2], vs[3], vs[4])] {
+		nr |= 2
+	}
+
+	if nl != 0 {
+		spc.chunks = append([]uint64{nl}, spc.chunks...)
+		spc.offset -= chunkSize
+	}
+	if nr != 0 {
+		spc.chunks = append(spc.chunks, nr)
 	}
 }
 
@@ -166,17 +249,24 @@ func read(r io.Reader) (spc space, _ error) {
 			return spc, errors.New("no initial sate line")
 		}
 		init := strings.TrimPrefix(line, "initial state: ")
-		spc.pots = make(map[int]bool, 2*len(init))
-		spc.min = 0
-		spc.max = len(init)
-		for i := 0; i < len(init); i++ {
+
+		c := uint64(0)
+		i := 0
+		for ; i < len(init); i++ {
+			if i > 0 && i%chunkSize == 0 {
+				spc.chunks = append(spc.chunks, c)
+				c = 0
+			}
 			if init[i] == '#' {
-				spc.pots[i] = true
+				c |= 1 << uint64(i%64)
 			}
 		}
+		if i > 0 && i%chunkSize != 0 {
+			spc.chunks = append(spc.chunks, c)
+		}
+
 	}
 	sc.Scan()
-	spc.rules = make(map[ruleKey]bool, 64)
 	for sc.Scan() {
 		line := sc.Text()
 		if parts := strings.SplitN(line, " => ", 2); len(parts) == 2 {
