@@ -8,7 +8,9 @@ import (
 	"image"
 	"io"
 	"log"
+	"math"
 	"os"
+	"sort"
 	"syscall"
 	"time"
 
@@ -21,34 +23,6 @@ func main() {
 	flag.Parse()
 	anansi.MustRun(run(os.Stdin, os.Stdout))
 }
-
-type cartType uint8
-
-const (
-	cart cartType = 1 << iota
-	cartCrash
-	cartTrack
-)
-
-type cartDirection uint8
-
-const (
-	cartDirUp    cartDirection = 0x00
-	cartDirRight cartDirection = 0x01
-	cartDirDown  cartDirection = 0x02
-	cartDirLeft  cartDirection = 0x03
-
-	cartTrackV cartDirection = 0x04
-	cartTrackH cartDirection = 0x08
-	cartTrackX cartDirection = 0x08 | 0x04
-	cartTrackB cartDirection = 0x08 | 0x10
-	cartTrackF cartDirection = 0x08 | 0x20
-)
-
-const (
-	cartDirMask      cartDirection = 0x01 | 0x02
-	cartTrackDirMask cartDirection = 0x04 | 0x08 | 0x10 | 0x20
-)
 
 var (
 	// We need to handle these signals so that we restore terminal state
@@ -107,15 +81,53 @@ func overlayLogs() {
 	}
 }
 
+type cartType uint8
+
+const (
+	cart cartType = 1 << iota
+	cartCrash
+	cartTrack
+)
+
+type cartDirection uint8
+
+const (
+	cartDirUp    cartDirection = 0x00
+	cartDirRight cartDirection = 0x01
+	cartDirDown  cartDirection = 0x02
+	cartDirLeft  cartDirection = 0x03
+
+	cartTrackV cartDirection = 0x04
+	cartTrackH cartDirection = 0x08
+	cartTrackX cartDirection = 0x08 | 0x04
+	cartTrackB cartDirection = 0x08 | 0x10
+	cartTrackF cartDirection = 0x08 | 0x20
+)
+
+var (
+	cartBTurns = [4]cartDirection{cartDirLeft, cartDirDown, cartDirRight, cartDirUp}
+	cartFTurns = [4]cartDirection{cartDirRight, cartDirUp, cartDirLeft, cartDirDown}
+)
+
+const (
+	cartDirMask      cartDirection = 0x01 | 0x02
+	cartTrackDirMask cartDirection = 0x04 | 0x08 | 0x10 | 0x20
+)
+
 type cartWorld struct {
 	quadindex.Index
-	b image.Rectangle
-	p []image.Point
+	b image.Rectangle // world bounds
+	p []image.Point   // location
 	t []cartType      // is cart? has track?
 	d []cartDirection // direction of cart and/or track here
 	s []int           // cart state
 
-	carts []int
+	carts   []int
+	crashed bool
+
+	last     time.Time
+	playing  bool
+	playRate int // tick-per-second
 
 	timer *time.Timer
 }
@@ -139,15 +151,37 @@ func run(in, out *os.File) error {
 		&screen,
 	)
 	term.SetRaw(true)
-	term.AddMode(ansi.ModeAlternateScreen)
+	term.AddMode(
+		ansi.ModeAlternateScreen,
+
+		ansi.ModeMouseSgrExt,
+		ansi.ModeMouseBtnEvent,
+		// ansi.ModeMouseAnyEvent,
+	)
 	resize.Send("initialize screen size")
 	return term.RunWith(&world)
 }
 
 func (world *cartWorld) Run(term *anansi.Term) error {
 	world.timer = time.NewTimer(100 * time.Second)
-	world.timer.Stop()
+	world.stopTimer()
 	return term.Loop(world)
+}
+
+func (world *cartWorld) setTimer(d time.Duration) {
+	if world.timer == nil {
+		world.timer = time.NewTimer(d)
+	} else {
+		world.timer.Reset(d)
+	}
+}
+
+func (world *cartWorld) stopTimer() {
+	world.timer.Stop()
+	select {
+	case <-world.timer.C:
+	default:
+	}
 }
 
 func (world *cartWorld) Update(term *anansi.Term) (redraw bool, _ error) {
@@ -171,29 +205,164 @@ func (world *cartWorld) Update(term *anansi.Term) (redraw bool, _ error) {
 			return false, err
 		}
 		if update {
-			world.tick()
+			world.update(time.Now())
 		}
 		redraw = true
 
-	case <-world.timer.C:
-		world.tick()
+	case now := <-world.timer.C:
+		world.update(now)
 		redraw = true
 	}
 	return redraw, nil
 }
 
+func (world *cartWorld) update(now time.Time) {
+	// single-step
+	if !world.playing {
+		world.tick()
+		world.last = now
+		return
+	}
+
+	const maxTicks = 100000
+	elapsed := now.Sub(world.last)
+	ticks := int(math.Round(float64(elapsed) / float64(time.Second) * float64(world.playRate)))
+	if ticks > maxTicks {
+		ticks = maxTicks
+	}
+
+	for i := 0; i < ticks; i++ {
+		world.tick()
+		if len(world.carts) == 0 || world.crashed {
+			world.playing = false
+			break
+		}
+	}
+
+	if world.playing {
+		world.setTimer(10 * time.Millisecond)
+	}
+
+}
+
 func (world *cartWorld) tick() {
-	log.Printf("TODO tick")
-	// for _, id := range world.carts {
-	// 	TODO
-	// }
-	// Index.Update(i, p)
-	// Index.Delete(i, p)
-	// Index.At(p)
+	world.pruneCarts()
+
+	for carti, id := range world.carts {
+		p := world.p[id]
+		d := world.d[id] & cartDirMask
+
+		var dest image.Point
+		switch d {
+		case cartDirUp:
+			dest = p.Add(image.Pt(0, -1))
+		case cartDirRight:
+			dest = p.Add(image.Pt(1, 0))
+		case cartDirDown:
+			dest = p.Add(image.Pt(0, 1))
+		case cartDirLeft:
+			dest = p.Add(image.Pt(-1, 0))
+		default:
+			log.Printf("BOGUS DIR: id:%v d:%v", id, d)
+			continue
+		}
+
+		cur := world.Index.At(dest)
+		cur.Next()
+		tid := cur.I()
+		if tid < 0 {
+			log.Printf("NOWHERE id:%v@%v to:%v", id, p, dest)
+			continue
+		}
+
+		destT := world.t[tid]
+
+		if destT&cart != 0 {
+			world.removeCart(id)
+			world.removeCart(tid)
+			world.t[tid] |= cartCrash
+			log.Printf("CRASH @%v", dest)
+			world.crashed = true
+			continue
+		}
+
+		if destT&cartTrack == 0 {
+			world.removeCart(id)
+			log.Printf("LIMBO @%v", dest)
+			continue
+		}
+
+		s := world.s[id]
+		world.removeCart(id)
+
+		td := world.d[tid] & cartTrackDirMask
+		switch td {
+
+		case cartTrackX: // intersections
+			switch s % 3 {
+			case 0: // left
+				d = (d - 1 + 4) % 4
+			case 1: // straight
+			case 2: // right
+				d = (d + 1) % 4
+			}
+			s++
+
+		case cartTrackB: // `\` corner
+			d = cartBTurns[d]
+
+		case cartTrackF: // `/` corner
+			d = cartFTurns[d]
+
+		}
+
+		world.t[tid] |= cart
+		world.d[tid] |= d
+		world.s[tid] = s
+		world.carts[carti] = tid
+	}
+
+	world.pruneCarts()
+}
+
+func (world *cartWorld) pruneCarts() {
+	i := 0
+	for j := 0; j < len(world.carts); j++ {
+		id := world.carts[j]
+		if id == 0 {
+			continue
+		}
+		t := world.t[id]
+		if t&cart == 0 {
+			world.carts[j] = 0
+			continue
+		}
+		world.carts[i] = world.carts[j]
+		i++
+	}
+	world.carts = world.carts[:i]
+
+	sort.Slice(world.carts, func(i, j int) bool {
+		pi := world.p[world.carts[i]]
+		pj := world.p[world.carts[j]]
+		if pi.Y < pj.Y {
+			return true
+		}
+		if pi.Y > pj.Y {
+			return false
+		}
+		return pi.X < pj.X
+	})
+}
+
+func (world *cartWorld) removeCart(id int) {
+	world.t[id] &= ^cart
+	world.d[id] &= ^cartDirMask
+	world.s[id] = 0
 }
 
 func (world *cartWorld) handleInput(term *anansi.Term) (update bool, _ error) {
-	for e, _, ok := term.Decode(); ok; e, _, ok = term.Decode() {
+	for e, a, ok := term.Decode(); ok; e, a, ok = term.Decode() {
 		switch e {
 
 		case 0x03: // stop on Ctrl-C
@@ -204,15 +373,52 @@ func (world *cartWorld) handleInput(term *anansi.Term) (update bool, _ error) {
 			screen.To(ansi.Pt(1, 1)) // cursor back to top
 			screen.Invalidate()      // force full redraw
 
+		// mouse inspection
+		case ansi.CSI('m'), ansi.CSI('M'):
+			if m, sp, err := ansi.DecodeXtermExtendedMouse(e, a); err == nil {
+				if m.ButtonID() == 1 && m.IsRelease() {
+					p := sp.ToImage()
+					cur := world.Index.At(p)
+					n := 0
+					for i := 0; cur.Next(); i++ {
+						id := cur.I()
+						log.Printf("q@%v[%v]: id:%v p:%v t:%v d:%v s:%v", p, i,
+							id,
+							world.p[id],
+							world.t[id],
+							world.d[id],
+							world.s[id],
+						)
+						n++
+					}
+					if n == 0 {
+						log.Printf("q@%v: nothing", p)
+					}
+				}
+			}
+
 		// step
 		case ansi.Escape('.'):
 			update = true
 
-			// TODO play/pause
-			// case ansi.Escape(' '):
-			// world.playing = true
+		// play/pause
+		case ansi.Escape(' '):
+			world.playing = !world.playing
+			if !world.playing {
+				world.stopTimer()
+			} else {
+				world.last = time.Now()
+				if world.playRate == 0 {
+					world.playRate = 1
+				}
+				world.setTimer(10 * time.Millisecond)
+			}
 
-			// TODO speed control
+		// speed control
+		case ansi.Escape('+'):
+			world.playRate *= 2
+		case ansi.Escape('-'):
+			world.playRate /= 2
 
 		}
 	}
