@@ -133,6 +133,8 @@ type cartWorld struct {
 	playRate int // tick-per-second
 
 	timer *time.Timer
+
+	viewOffset image.Point
 }
 
 var lastModeFlag = flag.Bool("last", false, "last cart standing mode")
@@ -421,7 +423,7 @@ func (world *cartWorld) handleInput(term *anansi.Term) (update bool, _ error) {
 		case ansi.CSI('m'), ansi.CSI('M'):
 			if m, sp, err := ansi.DecodeXtermExtendedMouse(e, a); err == nil {
 				if m.ButtonID() == 1 && m.IsRelease() {
-					p := sp.ToImage()
+					p := sp.ToImage().Sub(world.viewOffset)
 					cur := world.Index.At(p)
 					n := 0
 					for i := 0; cur.Next(); i++ {
@@ -472,19 +474,24 @@ func (world *cartWorld) handleInput(term *anansi.Term) (update bool, _ error) {
 
 func (world *cartWorld) WriteTo(w io.Writer) (n int64, err error) {
 	screen.Clear()
-	world.render(screen.Grid, image.ZP)
+	world.render(screen.Grid)
 	overlayLogs()
 	return screen.WriteTo(w)
 }
 
-func (world *cartWorld) render(g anansi.Grid, offset image.Point) {
+func (world *cartWorld) render(g anansi.Grid) {
 	for id, t := range world.t {
 		if id == 0 {
 			continue
 		}
 
-		p := world.p[id].Add(offset)
-		gi, ok := g.CellOffset(ansi.PtFromImage(p))
+		p := world.p[id]
+		sp := p.Add(world.viewOffset)
+		if sp.X < 1 || sp.Y < 1 {
+			continue
+		}
+
+		gi, ok := g.CellOffset(ansi.PtFromImage(sp))
 		if !ok {
 			continue
 		}
