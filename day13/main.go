@@ -135,9 +135,15 @@ type cartWorld struct {
 	timer *time.Timer
 
 	viewOffset image.Point
+
+	debug  bool
+	debugP image.Point
 }
 
-var lastModeFlag = flag.Bool("last", false, "last cart standing mode")
+var (
+	lastModeFlag = flag.Bool("last", false, "last cart standing mode")
+	traceFlag    = flag.Bool("trace", false, "log trace events")
+)
 
 func run(in, out *os.File) error {
 	var world cartWorld
@@ -254,6 +260,9 @@ func (world *cartWorld) update(now time.Time) {
 }
 
 func (world *cartWorld) done() bool {
+	if world.debug {
+		return true
+	}
 	if world.lastStanding {
 		switch len(world.carts) {
 		case 0:
@@ -286,6 +295,7 @@ func (world *cartWorld) tick() bool {
 
 		p := world.p[id]
 		d := world.d[id] & cartDirMask
+		// log.Printf("consider id:%v@%v d:%v", id, p, d)
 
 		var dest image.Point
 		switch d {
@@ -299,7 +309,8 @@ func (world *cartWorld) tick() bool {
 			dest = p.Add(image.Pt(-1, 0))
 		default:
 			log.Printf("BOGUS DIR: id:%v d:%v", id, d)
-			continue
+			world.setDebug(p)
+			return false
 		}
 
 		cur := world.Index.At(dest)
@@ -307,7 +318,8 @@ func (world *cartWorld) tick() bool {
 		tid := cur.I()
 		if tid < 0 {
 			log.Printf("NOWHERE id:%v@%v to:%v", id, p, dest)
-			continue
+			world.setDebug(p)
+			return false
 		}
 
 		destT := world.t[tid]
@@ -329,10 +341,27 @@ func (world *cartWorld) tick() bool {
 		if destT&cartTrack == 0 {
 			world.removeCart(id)
 			log.Printf("LIMBO @%v", dest)
-			continue
+			world.setDebug(dest)
+			return false
 		}
 
 		s := world.s[id]
+
+		var trec struct {
+			id, tid int
+			op, np  image.Point
+			od, nd  cartDirection
+			os, ns  int
+		}
+		if *traceFlag {
+			trec.id = id
+			trec.tid = tid
+			trec.op = p
+			trec.np = dest
+			trec.od = d
+			trec.os = s
+		}
+
 		world.removeCart(id)
 
 		td := world.d[tid] & cartTrackDirMask
@@ -356,6 +385,11 @@ func (world *cartWorld) tick() bool {
 
 		}
 
+		if *traceFlag {
+			trec.nd, trec.ns = d, s
+			log.Printf("+ %v", trec)
+		}
+
 		world.t[tid] |= cart
 		world.d[tid] |= d
 		world.s[tid] = s
@@ -369,6 +403,14 @@ func (world *cartWorld) tick() bool {
 	}
 
 	return true
+}
+
+func (world *cartWorld) setDebug(p image.Point) {
+	world.debug = true
+	world.debugP = p
+	if world.playing {
+		world.playing = false
+	}
 }
 
 func (world *cartWorld) pruneCarts() {
@@ -480,6 +522,12 @@ func (world *cartWorld) WriteTo(w io.Writer) (n int64, err error) {
 }
 
 func (world *cartWorld) render(g anansi.Grid) {
+	if world.debug {
+		bnd := g.Bounds()
+		m := bnd.Size().Div(2)
+		world.viewOffset = m.Sub(world.debugP)
+	}
+
 	for id, t := range world.t {
 		if id == 0 {
 			continue
@@ -498,6 +546,11 @@ func (world *cartWorld) render(g anansi.Grid) {
 
 		var r rune
 		var a ansi.SGRAttr
+
+		if world.debug && p == world.debugP {
+			a |= ansi.RGB(96, 32, 16).BG()
+		}
+
 		switch {
 
 		case t&cartCrash != 0:
