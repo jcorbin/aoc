@@ -1,78 +1,28 @@
-https://adventofcode.com/2018/day/12
-<div>
+# [Day 12: Subterranean Sustainability](https://adventofcode.com/2018/day/12)
 
-[Advent of Code](/) {#advent-of-code .title-global}
-===================
+The year 518 is significantly more underground than your history books implied.
+Either that, or you\'ve arrived in a [vast cavern network]{title="It's probably
+this one. Can never be too sure, though."} under the North Pole.
 
--   [\[About\]](/2018/about)
--   [\[Events\]](/2018/events)
--   [\[Shop\]](https://teespring.com/adventofcode)
--   [\[Settings\]](/2018/settings)
--   [\[Log Out\]](/2018/auth/logout)
+After exploring a little, you discover a long tunnel that contains a row of
+small pots as far as you can see to your left and right. A few of them contain
+plants - someone is trying to grow things in these geothermally-heated caves.
 
-::: {.user}
-jcorbin [23\*]{.star-count}
-:::
+The pots are numbered, with `0` in front of you. To the left, the pots are
+numbered `-1`, `-2`, `-3`, and so on; to the right, `1`, `2`, `3`\.... Your
+puzzle input contains a list of pots from `0` to the right and whether they do
+(`#`) or do not (`.`) currently contain a plant, the *initial state*. (No other
+pots currently contain plants.) For example, an initial state of `#..##....`
+indicates that pots `0`, `3`, and `4` currently contain plants.
 
-</div>
-
-<div>
-
-      [/\^]{.title-event-wrap}[2018](/2018)[\$/]{.title-event-wrap} {#section .title-event}
-===================================================================
-
--   [\[Calendar\]](/2018)
--   [\[AoC++\]](/2018/support)
--   [\[Sponsors\]](/2018/sponsors)
--   [\[Leaderboard\]](/2018/leaderboard)
--   [\[Stats\]](/2018/stats)
-
-</div>
-
-::: {#sidebar}
-::: {#sponsor}
-::: {.quiet}
-Our [sponsors](/2018/sponsors) help make Advent of Code possible:
-:::
-
-::: {.sponsor}
-[Formlabs](https://formlabs.com/jobs/) - 3D printing with lasers.
-Software, hardware, and more. Pew pew!
-:::
-:::
-:::
-
-::: {role="main"}
-\-\-- Day 12: Subterranean Sustainability \-\--
------------------------------------------------
-
-The year 518 is significantly more underground than your history books
-implied. Either that, or you\'ve arrived in a [vast cavern
-network]{title="It's probably this one. Can never be too sure, though."}
-under the North Pole.
-
-After exploring a little, you discover a long tunnel that contains a row
-of small pots as far as you can see to your left and right. A few of
-them contain plants - someone is trying to grow things in these
-geothermally-heated caves.
-
-The pots are numbered, with `0` in front of you. To the left, the pots
-are numbered `-1`, `-2`, `-3`, and so on; to the right, `1`, `2`,
-`3`\.... Your puzzle input contains a list of pots from `0` to the right
-and whether they do (`#`) or do not (`.`) currently contain a plant, the
-*initial state*. (No other pots currently contain plants.) For example,
-an initial state of `#..##....` indicates that pots `0`, `3`, and `4`
-currently contain plants.
-
-Your puzzle input also contains some notes you find on a nearby table:
-someone has been trying to figure out how these plants *spread* to
-nearby pots. Based on the notes, for each generation of plants, a given
-pot has or does not have a plant based on whether that pot (and the two
-pots on either side of it) had a plant in the last generation. These are
-written as `LLCRR => N`, where `L` are pots to the left, `C` is the
-current pot being considered, `R` are the pots to the right, and `N` is
-whether the current pot will have a plant in the next generation. For
-example:
+Your puzzle input also contains some notes you find on a nearby table: someone
+has been trying to figure out how these plants *spread* to nearby pots. Based
+on the notes, for each generation of plants, a given pot has or does not have a
+plant based on whether that pot (and the two pots on either side of it) had a
+plant in the last generation. These are written as `LLCRR => N`, where `L` are
+pots to the left, `C` is the current pot being considered, `R` are the pots to
+the right, and `N` is whether the current pot will have a plant in the next
+generation. For example:
 
 -   A note like `..#.. => .` means that a pot that contains a plant but
     with no plants within two pots of it will not have a plant in it
@@ -85,10 +35,9 @@ example:
     right, but not in the ones immediately to the right and two to the
     left.
 
-It\'s not clear what these plants are for, but you\'re sure it\'s
-important, so you\'d like to make sure the current configuration of
-plants is sustainable by determining what will happen after *`20`
-generations*.
+It\'s not clear what these plants are for, but you\'re sure it\'s important, so
+you\'d like to make sure the current configuration of plants is sustainable by
+determining what will happen after *`20` generations*.
 
 For example, given the following input:
 
@@ -109,9 +58,9 @@ For example, given the following input:
     ###.# => #
     ####. => #
 
-For brevity, in this example, only the combinations which do produce a
-plant are listed. (Your input includes all possible combinations.) Then,
-the next 20 generations will look like this:
+For brevity, in this example, only the combinations which do produce a plant
+are listed. (Your input includes all possible combinations.) Then, the next 20
+generations will look like this:
 
                      1         2         3     
            0         0         0         0     
@@ -137,45 +86,29 @@ the next 20 generations will look like this:
     19: .#..###.#..#.#.#######.#.#.#..#.#...#..
     20: .#....##....#####...#######....#.#..##.
 
-The generation is shown along the left, where `0` is the initial state.
-The pot numbers are shown along the top, where `0` labels the center
-pot, negative-numbered pots extend to the left, and positive pots extend
-toward the right. Remember, the initial state begins at pot `0`, which
-is not the leftmost pot used in this example.
+The generation is shown along the left, where `0` is the initial state.  The
+pot numbers are shown along the top, where `0` labels the center pot,
+negative-numbered pots extend to the left, and positive pots extend toward the
+right. Remember, the initial state begins at pot `0`, which is not the leftmost
+pot used in this example.
 
-After one generation, only seven plants remain. The one in pot `0`
-matched the rule looking for `..#..`, the one in pot `4` matched the
-rule looking for `.#.#.`, pot `9` matched `.##..`, and so on.
+After one generation, only seven plants remain. The one in pot `0` matched the
+rule looking for `..#..`, the one in pot `4` matched the rule looking for
+`.#.#.`, pot `9` matched `.##..`, and so on.
 
-In this example, after 20 generations, the pots shown as `#` contain
-plants, the furthest left of which is pot `-2`, and the furthest right
-of which is pot `34`. Adding up all the numbers of plant-containing pots
-after the 20th generation produces `325`.
+In this example, after 20 generations, the pots shown as `#` contain plants,
+the furthest left of which is pot `-2`, and the furthest right of which is pot
+`34`. Adding up all the numbers of plant-containing pots after the 20th
+generation produces `325`.
 
-*After `20` generations, what is the sum of the numbers of all pots
-which contain a plant?*
+*After `20` generations, what is the sum of the numbers of all pots which
+contain a plant?*
 
-Your puzzle answer was `2049`.
+## Part Two
 
-The first half of this puzzle is complete! It provides one gold star: \*
-
-\-\-- Part Two \-\-- {#part2}
---------------------
-
-You realize that 20 generations aren\'t enough. After all, these plants
-will need to last another 1500 years to even reach your timeline, not to
-mention your future.
+You realize that 20 generations aren\'t enough. After all, these plants will
+need to last another 1500 years to even reach your timeline, not to mention
+your future.
 
 *After fifty billion (`50000000000`) generations, what is the sum of the
 numbers of all pots which contain a plant?*
-
-Although it hasn\'t changed, you can still [get your puzzle
-input](12/input).
-
-Answer:
-
-You can also [\[Share[on
-[Twitter](https://twitter.com/intent/tweet?text=I%27ve+completed+Part+One+of+%22Subterranean+Sustainability%22+%2D+Day+12+%2D+Advent+of+Code+2018&url=https%3A%2F%2Fadventofcode%2Ecom%2F2018%2Fday%2F12&related=ericwastl&hashtags=AdventOfCode)
-[Reddit](http://www.reddit.com/submit?url=https%3A%2F%2Fadventofcode%2Ecom%2F2018%2Fday%2F12&title=I%27ve+completed+Part+One+of+%22Subterranean+Sustainability%22+%2D+Day+12+%2D+Advent+of+Code+2018)]{.share-content}\]]{.share}
-this puzzle.
-:::
