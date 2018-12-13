@@ -122,6 +122,9 @@ type cartWorld struct {
 	d []cartDirection // direction of cart and/or track here
 	s []int           // cart state
 
+	// mode for part 2
+	lastStanding bool
+
 	carts   []int
 	crashed bool
 
@@ -132,8 +135,12 @@ type cartWorld struct {
 	timer *time.Timer
 }
 
+var lastModeFlag = flag.Bool("last", false, "last cart standing mode")
+
 func run(in, out *os.File) error {
 	var world cartWorld
+	world.lastStanding = *lastModeFlag
+
 	if err := world.load(in); err != nil {
 		return err
 	}
@@ -232,8 +239,7 @@ func (world *cartWorld) update(now time.Time) {
 	}
 
 	for i := 0; i < ticks; i++ {
-		world.tick()
-		if len(world.carts) == 0 || world.crashed {
+		if !world.tick() {
 			world.playing = false
 			break
 		}
@@ -245,10 +251,37 @@ func (world *cartWorld) update(now time.Time) {
 
 }
 
-func (world *cartWorld) tick() {
+func (world *cartWorld) done() bool {
+	if world.lastStanding {
+		switch len(world.carts) {
+		case 0:
+			log.Printf("NOTHING LEFT?!?")
+			return true
+		case 1:
+			id := world.carts[0]
+			log.Printf("last @%v", world.p[id])
+			return true
+
+		default:
+			return false
+		}
+	}
+	return world.crashed || len(world.carts) == 0
+}
+
+func (world *cartWorld) tick() bool {
+	if world.done() {
+		return false
+	}
 	world.pruneCarts()
 
+	anyRemoved := false
 	for carti, id := range world.carts {
+		t := world.t[id]
+		if t&cart == 0 {
+			continue
+		}
+
 		p := world.p[id]
 		d := world.d[id] & cartDirMask
 
@@ -280,9 +313,14 @@ func (world *cartWorld) tick() {
 		if destT&cart != 0 {
 			world.removeCart(id)
 			world.removeCart(tid)
-			world.t[tid] |= cartCrash
-			log.Printf("CRASH @%v", dest)
-			world.crashed = true
+			if world.lastStanding {
+				log.Printf("removed @%v", dest)
+				anyRemoved = true
+			} else {
+				world.t[tid] |= cartCrash
+				log.Printf("CRASH @%v", dest)
+				world.crashed = true
+			}
 			continue
 		}
 
@@ -323,6 +361,12 @@ func (world *cartWorld) tick() {
 	}
 
 	world.pruneCarts()
+
+	if anyRemoved {
+		log.Printf("remaining: %v", len(world.carts))
+	}
+
+	return true
 }
 
 func (world *cartWorld) pruneCarts() {
