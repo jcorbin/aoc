@@ -142,8 +142,7 @@ type cartWorld struct {
 	// mode for part 2
 	lastStanding bool
 
-	carts   []int
-	crashed bool
+	carts []int
 
 	last     time.Time
 	ticking  bool
@@ -154,8 +153,11 @@ type cartWorld struct {
 
 	viewOffset image.Point
 
-	debug  bool
-	debugP image.Point
+	banner []byte
+
+	hi     bool
+	hiStop bool
+	hiAt   image.Point
 
 	mess     []byte
 	messSize image.Point
@@ -352,7 +354,7 @@ func (world *cartWorld) update(now time.Time) {
 }
 
 func (world *cartWorld) done() bool {
-	if world.debug {
+	if world.hiStop {
 		return true
 	}
 	if world.lastStanding {
@@ -369,7 +371,7 @@ func (world *cartWorld) done() bool {
 			return false
 		}
 	}
-	return world.crashed || len(world.carts) == 0
+	return len(world.carts) == 0
 }
 
 func (world *cartWorld) tick() bool {
@@ -400,8 +402,7 @@ func (world *cartWorld) tick() bool {
 		case cartDirLeft:
 			dest = p.Add(image.Pt(-1, 0))
 		default:
-			log.Printf("BOGUS DIR: id:%v d:%v", id, d)
-			world.setDebug(p)
+			world.setHighlight(true, p, "INVALID direction: id:%v d:%v", id, d)
 			return false
 		}
 
@@ -409,8 +410,7 @@ func (world *cartWorld) tick() bool {
 		cur.Next()
 		tid := cur.I()
 		if tid < 0 {
-			log.Printf("NOWHERE id:%v@%v to:%v", id, p, dest)
-			world.setDebug(p)
+			world.setHighlight(true, p, "INVALID move id:%v@%v to:%v", id, p, dest)
 			return false
 		}
 
@@ -424,16 +424,14 @@ func (world *cartWorld) tick() bool {
 				anyRemoved = true
 			} else {
 				world.t[tid] |= cartCrash
-				log.Printf("CRASH @%v", dest)
-				world.crashed = true
+				world.setHighlight(true, dest, "CRASH @%v", dest)
 			}
 			continue
 		}
 
 		if destT&cartTrack == 0 {
 			world.removeCart(id)
-			log.Printf("LIMBO @%v", dest)
-			world.setDebug(dest)
+			world.setHighlight(true, p, "LIMBO cart @%v", dest)
 			return false
 		}
 
@@ -497,12 +495,27 @@ func (world *cartWorld) tick() bool {
 	return true
 }
 
-func (world *cartWorld) setDebug(p image.Point) {
-	world.debug = true
-	world.debugP = p
-	if world.playing {
-		world.playing = false
+func (world *cartWorld) setBanner(mess string, args ...interface{}) {
+	if len(args) > 0 {
+		mess = fmt.Sprintf(mess, args...)
 	}
+	world.banner = []byte(mess)
+}
+
+func (world *cartWorld) setHighlight(stop bool, at image.Point, mess string, args ...interface{}) {
+	world.setBanner(mess, args...)
+	world.hi = true
+	world.hiStop = stop
+	world.hiAt = at
+	world.ticking = false
+	world.playing = false
+}
+
+func (world *cartWorld) clearHighlight() {
+	world.banner = nil
+	world.hi = false
+	world.hiStop = false
+	world.hiAt = image.ZP
 }
 
 func (world *cartWorld) pruneCarts() {
@@ -684,6 +697,7 @@ func (world *cartWorld) WriteTo(w io.Writer) (n int64, err error) {
 	screen.Clear()
 	world.render(screen.Grid)
 	overlayLogs()
+	world.overlayBanner()
 	world.overlayMess()
 	return screen.WriteTo(w)
 }
@@ -696,6 +710,14 @@ func (world *cartWorld) setMess(mess []byte) {
 		world.messSize = measureTextBox(mess).Size()
 	}
 	world.setTimer(5 * time.Millisecond)
+}
+
+func (world *cartWorld) overlayBanner() {
+	at := screen.Grid.Rect.Min
+	bannerWidth := measureTextBox(world.banner).Dx()
+	screenWidth := screen.Bounds().Dx()
+	at.X += screenWidth/2 - bannerWidth/2
+	writeIntoGrid(screen.Grid.SubAt(at), world.banner)
 }
 
 func (world *cartWorld) overlayMess() {
@@ -748,7 +770,7 @@ func writeIntoGrid(g anansi.Grid, b []byte) {
 
 func (world *cartWorld) render(g anansi.Grid) {
 	var (
-		debugColor  = ansi.RGB(96, 32, 16)
+		hiColor     = ansi.RGB(96, 32, 16)
 		crashColor  = ansi.RGB(192, 64, 64)
 		cartColor   = ansi.RGB(64, 192, 64)
 		trackColor  = ansi.RGB(64, 64, 64)
@@ -756,10 +778,10 @@ func (world *cartWorld) render(g anansi.Grid) {
 		unkColor    = ansi.RGB(192, 192, 64)
 	)
 
-	if world.debug {
+	if world.hi {
 		bnd := g.Bounds()
 		m := bnd.Size().Div(2)
-		world.viewOffset = m.Sub(world.debugP)
+		world.viewOffset = m.Sub(world.hiAt)
 	}
 
 	for id, t := range world.t {
@@ -780,10 +802,6 @@ func (world *cartWorld) render(g anansi.Grid) {
 
 		var r rune
 		var a ansi.SGRAttr
-
-		if world.debug && p == world.debugP {
-			a |= debugColor.BG()
-		}
 
 		switch {
 
@@ -831,6 +849,15 @@ func (world *cartWorld) render(g anansi.Grid) {
 
 		g.Rune[gi] = r
 		g.Attr[gi] = a
+	}
+
+	if world.hi {
+		sp := world.hiAt.Add(world.viewOffset).Add(image.Pt(1, 1))
+		if sp.X >= 1 && sp.Y >= 1 {
+			if gi, ok := g.CellOffset(ansi.PtFromImage(sp)); ok {
+				g.Attr[gi] = hiColor.BG()
+			}
+		}
 	}
 }
 
