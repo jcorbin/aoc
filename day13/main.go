@@ -812,7 +812,7 @@ func (world *cartWorld) render(g anansi.Grid) {
 
 		p := world.p[id]
 		sp := p.Add(world.viewOffset).Add(image.Pt(1, 1))
-		if sp.X < 1 || sp.Y < 1 {
+		if sp.X < 0 || sp.Y < 0 {
 			continue
 		}
 
@@ -874,7 +874,7 @@ func (world *cartWorld) render(g anansi.Grid) {
 
 	if world.hi {
 		sp := world.hiAt.Add(world.viewOffset).Add(image.Pt(1, 1))
-		if sp.X >= 1 && sp.Y >= 1 {
+		if sp.X >= 0 && sp.Y >= 0 {
 			if gi, ok := g.CellOffset(ansi.PtFromImage(sp)); ok {
 				g.Attr[gi] = hiColor.BG()
 			}
