@@ -332,18 +332,19 @@ func (world *cartWorld) update(now time.Time) {
 		return
 	}
 
-	const maxTicks = 100000
-	elapsed := now.Sub(world.last)
-	ticks := int(math.Round(float64(elapsed) / float64(time.Second) * float64(world.playRate)))
-	if ticks > maxTicks {
-		ticks = maxTicks
-	}
-
-	for i := 0; i < ticks; i++ {
-		if !world.tick() {
-			world.playing = false
-			break
+	// advance playback
+	if ticks := int(math.Round(float64(now.Sub(world.last)) / float64(time.Second) * float64(world.playRate))); ticks > 0 {
+		const maxTicks = 100000
+		if ticks > maxTicks {
+			ticks = maxTicks
 		}
+		for i := 0; i < ticks; i++ {
+			if !world.tick() {
+				world.playing = false
+				break
+			}
+		}
+		world.last = now
 	}
 
 	world.ticking = true
@@ -649,10 +650,10 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 			if world.playRate == 0 {
 				world.playRate = 1
 			}
-			world.setTimer(10 * time.Millisecond)
 			world.ticking = true
 			log.Printf("play at %v ticks/s", world.playRate)
 		}
+		world.setTimer(5 * time.Millisecond)
 		return true, nil
 
 	// speed control
