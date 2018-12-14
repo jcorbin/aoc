@@ -124,22 +124,18 @@ func (brd *board) tick() {
 }
 
 func (brd *board) search(pattern []uint8) int {
-	sc := make([]uint8, len(pattern))
-	ii := 0
-	for i := 0; ; i++ {
+	for i := 0; ; {
 		brd.tick()
-		for ; ii < len(brd.scores)-len(sc); ii++ {
-			copy(sc, brd.scores[i:])
-			ok := true
-			for j, v := range pattern {
-				if sc[j] != v {
-					ok = false
-					break
+	off:
+		for h := len(brd.scores) - len(pattern) - 1; i < h; i++ {
+			for ii, j := i, 0; j < len(pattern); {
+				if brd.scores[ii] != pattern[j] {
+					continue off
 				}
+				ii++
+				j++
 			}
-			if ok {
-				return i
-			}
+			return i
 		}
 	}
 }
