@@ -23,7 +23,6 @@ import (
 )
 
 func main() {
-
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		for _, s := range []string{
@@ -38,7 +37,6 @@ func main() {
 		fmt.Fprintf(out, "\n\nUsage %s [options] [<inputFile>]\n", path.Base(os.Args[0]))
 		flag.PrintDefaults()
 	}
-
 	flag.Parse()
 	anansi.MustRun(run(os.Stdin, os.Stdout))
 }
@@ -169,7 +167,7 @@ func run(in, out *os.File) error {
 	var world cartWorld
 	world.lastStanding = true // TODO improve this ux
 
-	helpMess += welcomeMess
+	helpMess += welcomeMess + keysMess
 
 	if err := func() error {
 		if !anansi.IsTerminal(in) {
@@ -196,11 +194,14 @@ func run(in, out *os.File) error {
 
 	helpMess += helpMessFooter
 
-	in, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
-	if err != nil {
-		return err
+	if !anansi.IsTerminal(in) {
+		f, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		in = f
 	}
-	defer in.Close()
 
 	term := anansi.NewTerm(in, out,
 		&halt,
@@ -227,7 +228,9 @@ var welcomeMess = "" +
 	`+----------------------------------------+` + "\n" +
 	`| A simulation done for AoC 2018 Day 13  |` + "\n" +
 	`|  https://adventofcode.com/2018/day/13  |` + "\n" +
-	`|  https://github.com/jcorbin/aoc        |` + "\n" +
+	`|  https://github.com/jcorbin/aoc        |` + "\n"
+
+var keysMess = "" +
 	`+----------------------------------------+` + "\n" +
 	`| Keys:                                  |` + "\n" +
 	`|   <Esc>   to dismiss this help message |` + "\n" +
@@ -343,12 +346,8 @@ func (world *cartWorld) update(now time.Time) {
 		}
 	}
 
-	if world.playing {
-		world.setTimer(10 * time.Millisecond)
-		world.ticking = true
-	} else {
-		world.ticking = true
-	}
+	world.ticking = true
+	world.setTimer(10 * time.Millisecond) // TODO compute next time when ticks > 0; avoid spurious wakeup
 }
 
 func (world *cartWorld) done() bool {
