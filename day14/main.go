@@ -115,10 +115,10 @@ func (brd *board) tick() {
 }
 
 func (brd *board) search(pattern []uint8) int {
+	sc := make([]uint8, len(pattern))
 	ii := 0
 	for i := 0; ; i++ {
 		brd.tick()
-		sc := make([]uint8, len(pattern))
 		for ; ii < len(brd.scores)-len(sc); ii++ {
 			copy(sc, brd.scores[i:])
 			ok := true
