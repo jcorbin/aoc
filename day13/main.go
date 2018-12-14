@@ -146,6 +146,7 @@ type cartWorld struct {
 	playing  bool
 	playRate int // tick-per-second
 
+	crash      int
 	autoRemove bool
 
 	timer *time.Timer
@@ -241,6 +242,7 @@ var keysMess = "" +
 	`| Keys:                                  |` + "\n" +
 	`|   <Esc>   to dismiss this help message |` + "\n" +
 	`|   ?       to display it again          |` + "\n" +
+	`|   X       to clear a crash             |` + "\n" +
 	`|   .       to single step the world     |` + "\n" +
 	`|   <Space> to play/pause the simulation |` + "\n" +
 	`|   +/-     to control play speed        |` + "\n" +
@@ -419,11 +421,12 @@ func (world *cartWorld) tick() bool {
 			world.removeCart(id)
 			world.removeCart(tid)
 			if world.autoRemove {
-				log.Printf("removed @%v", dest)
+				log.Printf("removed (auto) @%v", dest)
 				anyRemoved = true
 			} else {
 				world.t[tid] |= cartCrash
-				world.setHighlight(true, dest, "CRASH @%v", dest)
+				world.crash = tid
+				world.setHighlight(true, dest, "CRASH @%v ( press X to clear )", dest)
 			}
 			continue
 		}
@@ -666,6 +669,19 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 
 				world.setMess(buf.Bytes())
 			}
+		}
+		return true, nil
+
+	// clear crash
+	case ansi.Escape('X'):
+		if world.crash != 0 {
+			world.t[world.crash] &= ^cartCrash
+			log.Printf("removed @%v", world.p[world.crash])
+			world.crash = 0
+			world.ticking = false
+			world.playing = false
+			world.clearHighlight()
+			world.setTimer(5 * time.Millisecond)
 		}
 		return true, nil
 
