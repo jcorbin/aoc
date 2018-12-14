@@ -705,11 +705,13 @@ func (world *cartWorld) overlayMess() {
 	screenSize := screen.Bounds().Size()
 	screenMid := screenSize.Div(2)
 	messMid := world.messSize.Div(2)
-
 	offset := screenMid.Sub(messMid)
-	b := world.mess
+	writeIntoGrid(screen.Grid.SubAt(screen.Grid.Rect.Min.Add(offset)), world.mess)
+}
+
+func writeIntoGrid(g anansi.Grid, b []byte) {
 	var cur anansi.CursorState
-	cur.Point = ansi.Pt(1, 1).Add(offset)
+	cur.Point = g.Rect.Min
 	for len(b) > 0 {
 		e, a, n := ansi.DecodeEscape(b)
 		b = b[n:]
@@ -721,7 +723,7 @@ func (world *cartWorld) overlayMess() {
 		switch e {
 		case ansi.Escape('\n'):
 			cur.Y++
-			cur.X = 1 + offset.X
+			cur.X = g.Rect.Min.X
 
 		case ansi.CSI('m'):
 			if attr, _, err := ansi.DecodeSGR(a); err == nil {
@@ -729,13 +731,13 @@ func (world *cartWorld) overlayMess() {
 			}
 
 		default:
-			// write runes into screen grid, with cursor style, ignoring any
-			// other escapes; treating `_` as transparent
+			// write runes into grid, with cursor style, ignoring any other
+			// escapes; treating `_` as transparent
 			if !e.IsEscape() {
-				if i, ok := screen.Grid.CellOffset(cur.Point); ok {
+				if i, ok := g.CellOffset(cur.Point); ok {
 					if e != ansi.Escape('_') {
-						screen.Grid.Rune[i] = rune(e)
-						screen.Grid.Attr[i] = cur.Attr
+						g.Rune[i] = rune(e)
+						g.Attr[i] = cur.Attr
 					}
 				}
 				cur.X++
