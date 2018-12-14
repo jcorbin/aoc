@@ -694,22 +694,20 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 
 	// speed control
 	case ansi.Escape('+'):
-		if world.playing {
-			world.playRate *= 2
-			log.Printf("speed up to %v ticks/s", world.playRate)
-		}
+		world.playRate *= 2
+		log.Printf("speed up to %v ticks/s", world.playRate)
+		world.setTimer(5 * time.Millisecond)
 		return true, nil
 	case ansi.Escape('-'):
-		if world.playing {
-			rate := world.playRate / 2
-			if rate <= 0 {
-				rate = 1
-			}
-			if world.playRate != rate {
-				world.playRate = rate
-				log.Printf("slow down to %v ticks/s", world.playRate)
-			}
+		rate := world.playRate / 2
+		if rate <= 0 {
+			rate = 1
 		}
+		if world.playRate != rate {
+			world.playRate = rate
+			log.Printf("slow down to %v ticks/s", world.playRate)
+		}
+		world.setTimer(5 * time.Millisecond)
 		return true, nil
 
 	}
