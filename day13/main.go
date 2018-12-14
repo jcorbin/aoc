@@ -584,6 +584,7 @@ func (world *cartWorld) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 		screen.Clear()           // clear virtual contents
 		screen.To(ansi.Pt(1, 1)) // cursor back to top
 		screen.Invalidate()      // force full redraw
+		world.setTimer(5 * time.Millisecond)
 		return true, nil
 
 	}
