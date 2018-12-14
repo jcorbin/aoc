@@ -243,6 +243,7 @@ var keysMess = "" +
 	`|   <Esc>   to dismiss this help message |` + "\n" +
 	`|   ?       to display it again          |` + "\n" +
 	`|   X       to clear a crash             |` + "\n" +
+	`|   *       toggle auto remove           |` + "\n" +
 	`|   .       to single step the world     |` + "\n" +
 	`|   <Space> to play/pause the simulation |` + "\n" +
 	`|   +/-     to control play speed        |` + "\n" +
@@ -682,6 +683,17 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 			world.clearHighlight()
 			world.setTimer(5 * time.Millisecond)
 		}
+		return true, nil
+
+	// toggle auto remove
+	case ansi.Escape('*'):
+		world.autoRemove = !world.autoRemove
+		if world.autoRemove {
+			log.Printf("auto remove on")
+		} else {
+			log.Printf("auto remove on")
+		}
+		world.setTimer(5 * time.Millisecond)
 		return true, nil
 
 	// step
