@@ -139,15 +139,14 @@ type cartWorld struct {
 	d []cartDirection // direction of cart and/or track here
 	s []int           // cart state
 
-	// mode for part 2
-	lastStanding bool
-
 	carts []int
 
 	last     time.Time
 	ticking  bool
 	playing  bool
 	playRate int // tick-per-second
+
+	autoRemove bool
 
 	timer *time.Timer
 
@@ -167,7 +166,6 @@ var traceFlag = flag.Bool("trace", false, "log trace events")
 
 func run(in, out *os.File) error {
 	var world cartWorld
-	world.lastStanding = true // TODO improve this ux
 
 	helpMess += welcomeMess + keysMess
 
@@ -357,21 +355,16 @@ func (world *cartWorld) done() bool {
 	if world.hiStop {
 		return true
 	}
-	if world.lastStanding {
-		switch len(world.carts) {
-		case 0:
-			log.Printf("NOTHING LEFT?!?")
-			return true
-		case 1:
-			id := world.carts[0]
-			log.Printf("last @%v", world.p[id])
-			return true
-
-		default:
-			return false
-		}
+	switch len(world.carts) {
+	case 0:
+		world.setBanner("No Carts Left")
+		return true
+	case 1:
+		p := world.p[world.carts[0]]
+		world.setHighlight(true, p, "last @%v", p)
+		return true
 	}
-	return len(world.carts) == 0
+	return false
 }
 
 func (world *cartWorld) tick() bool {
@@ -419,7 +412,7 @@ func (world *cartWorld) tick() bool {
 		if destT&cart != 0 {
 			world.removeCart(id)
 			world.removeCart(tid)
-			if world.lastStanding {
+			if world.autoRemove {
 				log.Printf("removed @%v", dest)
 				anyRemoved = true
 			} else {
