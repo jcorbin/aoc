@@ -158,6 +158,8 @@ type cartWorld struct {
 	hiStop bool
 	hiAt   image.Point
 
+	focus image.Point
+
 	mess     []byte
 	messSize image.Point
 }
@@ -193,6 +195,10 @@ func run(in, out *os.File) error {
 	}
 
 	helpMess += helpMessFooter
+
+	worldMid := world.b.Size().Div(2)
+	screenMid := screen.Bounds().Size().Div(2)
+	world.focus = worldMid.Sub(screenMid)
 
 	if !anansi.IsTerminal(in) {
 		f, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
@@ -502,6 +508,7 @@ func (world *cartWorld) setHighlight(stop bool, at image.Point, mess string, arg
 	world.hiAt = at
 	world.ticking = false
 	world.playing = false
+	world.focus = world.hiAt
 }
 
 func (world *cartWorld) clearHighlight() {
@@ -604,6 +611,29 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 	// display help
 	case ansi.Escape('?'):
 		world.setMess([]byte(helpMess))
+		return true, nil
+
+	// arrow keys to move view
+	case ansi.CUB, ansi.CUF, ansi.CUU, ansi.CUD:
+		if d, ok := ansi.DecodeCursorCardinal(e, a); ok {
+			p := world.focus.Add(d)
+			if p.X < world.b.Min.X {
+				p.X = world.b.Min.X
+			}
+			if p.Y < world.b.Min.Y {
+				p.Y = world.b.Min.Y
+			}
+			if p.X >= world.b.Max.X {
+				p.X = world.b.Max.X - 1
+			}
+			if p.Y >= world.b.Max.Y {
+				p.Y = world.b.Max.Y - 1
+			}
+			if world.focus != p {
+				world.focus = p
+				world.setTimer(5 * time.Millisecond)
+			}
+		}
 		return true, nil
 
 	// mouse inspection
@@ -771,11 +801,9 @@ func (world *cartWorld) render(g anansi.Grid) {
 		unkColor    = ansi.RGB(192, 192, 64)
 	)
 
-	if world.hi {
-		bnd := g.Bounds()
-		m := bnd.Size().Div(2)
-		world.viewOffset = m.Sub(world.hiAt)
-	}
+	bnd := g.Bounds()
+	m := bnd.Size().Div(2)
+	world.viewOffset = m.Sub(world.focus)
 
 	for id, t := range world.t {
 		if id == 0 {
