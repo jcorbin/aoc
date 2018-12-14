@@ -381,7 +381,7 @@ func (world *cartWorld) tick() bool {
 	}
 	world.pruneCarts()
 
-	anyRemoved := false
+	var removed []image.Point
 	for carti, id := range world.carts {
 		t := world.t[id]
 		if t&cart == 0 {
@@ -421,8 +421,7 @@ func (world *cartWorld) tick() bool {
 			world.removeCart(id)
 			world.removeCart(tid)
 			if world.autoRemove {
-				log.Printf("removed (auto) @%v", dest)
-				anyRemoved = true
+				removed = append(removed, dest)
 			} else {
 				world.t[tid] |= cartCrash
 				world.crash = tid
@@ -490,8 +489,8 @@ func (world *cartWorld) tick() bool {
 
 	world.pruneCarts()
 
-	if anyRemoved {
-		log.Printf("remaining: %v", len(world.carts))
+	if len(removed) > 0 {
+		log.Printf("removed (auto) @%v, remaining: %v", removed, len(world.carts))
 	}
 
 	return true
@@ -676,7 +675,7 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 	case ansi.Escape('X'):
 		if world.crash != 0 {
 			world.t[world.crash] &= ^cartCrash
-			log.Printf("removed @%v", world.p[world.crash])
+			log.Printf("removed @%v, remaining: %v", world.p[world.crash], len(world.carts))
 			world.crash = 0
 			world.ticking = false
 			world.playing = false
