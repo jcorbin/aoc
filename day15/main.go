@@ -124,6 +124,8 @@ type gameWorld struct {
 	bounds image.Rectangle
 	quadindex.Index
 
+	round int
+
 	t  []gameType
 	p  []image.Point
 	z  []int
@@ -391,6 +393,31 @@ func (world *gameWorld) done() bool {
 	return false
 }
 
+func (world *gameWorld) winningTeam() string {
+	if len(world.goblins) == 0 {
+		return "elves"
+	}
+	if len(world.elves) == 0 {
+		return "goblins"
+	}
+	return "none"
+}
+
+func (world *gameWorld) remainingHP() (hp int) {
+	for _, actorID := range world.actors {
+		hp += world.hp[actorID]
+	}
+	return hp
+}
+
+func (world *gameWorld) finish() {
+	log.Printf("finished after round %v: %s won with %v remaining hp",
+		world.round,
+		world.winningTeam(),
+		world.remainingHP(),
+	)
+}
+
 func (world *gameWorld) tick() bool {
 	if world.done() {
 		return false
@@ -399,9 +426,13 @@ func (world *gameWorld) tick() bool {
 	world.sortIDs(world.actors)
 	for _, id := range world.actors {
 		if !world.act(id) {
-			return false
+			if world.done() {
+				world.finish()
+				return false
+			}
 		}
 	}
+	world.round++
 
 	return true
 }
