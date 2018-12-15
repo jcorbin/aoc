@@ -18,6 +18,7 @@ import (
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/aoc/internal/geom"
 	"github.com/jcorbin/aoc/internal/quadindex"
 )
 
@@ -208,6 +209,7 @@ func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
 			if t&gameHP != 0 {
 				fmt.Fprintf(&buf, "(%d)", world.hp[id])
 			}
+			fmt.Fprintf(&buf, "#%d", id)
 			gp = writeIntoGrid(g.SubAt(gp), buf.Bytes())
 			offs[gp.Y-1] = gp.X + 1
 		}
@@ -404,20 +406,20 @@ func (world *gameWorld) tick() bool {
 	return true
 }
 
-func (world *gameWorld) act(id int) bool {
-	enemyIDs := world.collectEnemies(id)
+func (world *gameWorld) act(actorID int) bool {
+	enemyIDs := world.collectEnemies(actorID)
 	if len(enemyIDs) == 0 {
 		world.noTarget = true
 		return false
 	}
 
 	// can hit?
-	p := world.p[id]
+	actorP := world.p[actorID]
 	for _, enemyID := range enemyIDs {
-		if manhattanDistance(p, world.p[enemyID]) == 1 {
+		if ep := world.p[enemyID]; manhattanDistance(actorP, ep) == 1 {
 			// attack
-			log.Printf("attack #%v => #%v", id, enemyID)
-			hp := world.hp[enemyID] - world.ap[id]
+			log.Printf("attack #%v@%v => #%v@%v", actorID, actorP, enemyID, ep)
+			hp := world.hp[enemyID] - world.ap[actorID]
 			if hp < 0 {
 				world.destroyEntity(enemyID)
 			} else {
@@ -427,35 +429,49 @@ func (world *gameWorld) act(id int) bool {
 		}
 	}
 
-	// expand to adjacent empty cells...
-	inRangeIDs := world.collectTargetCells(enemyIDs)
-	// ...pruned for reachability
-	reachableIDs := world.filterReachable(p, inRangeIDs)
+	// TODO re-use
+	var reach reachabilityScore
+	reach.Init(world)
+
+	// find nearest empty cells adjacent to enemies
+	reach.Update(world, actorP)
+	reachableIDs := make([]int, 0, len(enemyIDs))
+	reachableD := 0
+	for _, enemyID := range enemyIDs {
+		ep := world.p[enemyID]
+		reachableIDs, reachableD = world.updateAdjacentReach(reach, ep, reachableIDs, reachableD)
+	}
 	if len(reachableIDs) == 0 {
-		log.Printf("nothing reachable for #%v", id)
+		log.Printf("nothing reachable for #%v", actorID)
+		return true
+	}
+	// log.Printf("reachable cells: %v d:%v", reachableIDs, reachableD)
+
+	// choose the first, in reading order, most reachable enemy
+	world.sortIDs(reachableIDs)
+	targetID := reachableIDs[0]
+	targetP := world.p[targetID]
+	// log.Printf("chosen target #%v@%v => #%v@%v", actorID, actorP, targetID, targetP)
+
+	// move to the first, in reading order, nearest adjacent cell
+	reach.Update(world, targetP)
+	reachableIDs, reachableD = world.updateAdjacentReach(reach, actorP, reachableIDs[:0], 0)
+	if len(reachableIDs) == 0 {
+		log.Printf("no nearest reachable!") // XXX inconceivable
+		return true
+	}
+	world.sortIDs(reachableIDs)
+
+	cellID := reachableIDs[0]
+	if cellID == 0 {
+		log.Printf("zero cell id! in %v", reachableIDs) // XXX inconceivable
 		return true
 	}
 
-	// ...pruned to nearest
-	// TODO should this just be the move path finding search? reachable had nearness above...
-	reachableIDs = world.pruneToNearest(p, reachableIDs)
-
-	// move towards the the first (nearest reachable) in reading order
-	world.sortIDs(reachableIDs)
-	targetID := reachableIDs[0]
-	log.Printf("move target #%v => #%v", id, targetID)
-
-	// TODO redundant search with filterReachable above?
-	mid := world.moveTowards(world.p[id], world.p[targetID])
-	log.Printf("move #%v@%v => #%v@%v",
-		id, world.p[id],
-		targetID, world.p[targetID],
-	)
-	if mid != 0 {
-		p := world.p[mid]
-		world.p[id] = p
-		world.Index.Update(id, p)
-	}
+	cellP := world.p[cellID]
+	log.Printf("move #%v@%v => #%v@%v", actorID, world.p[actorID], cellID, cellP)
+	world.p[actorID] = cellP
+	world.Index.Update(actorID, cellP)
 	return true
 }
 
@@ -479,43 +495,6 @@ func (world *gameWorld) collectEnemies(id int) []int {
 	return enemyIDs
 }
 
-func (world *gameWorld) collectTargetCells(ids []int) []int {
-	inRangeIDs := make([]int, 0, 4*len(ids))
-	uniq := make(map[int]struct{}, cap(inRangeIDs))
-	for _, id := range ids {
-		tp := world.p[id]
-		for _, dp := range []image.Point{
-			image.Pt(0, -1),
-			image.Pt(-1, 0),
-			image.Pt(1, 0),
-			image.Pt(0, 1),
-		} {
-			if cellID := world.empty(tp.Add(dp)); cellID != 0 {
-				if _, seen := uniq[cellID]; !seen {
-					uniq[cellID] = struct{}{}
-					inRangeIDs = append(inRangeIDs, cellID)
-				}
-			}
-		}
-	}
-	return inRangeIDs
-}
-
-func (world *gameWorld) pruneToNearest(p image.Point, ids []int) []int {
-	distance := make([]int, len(ids))
-	for i, reachableID := range ids {
-		distance[i] = manhattanDistance(p, world.p[reachableID])
-	}
-	sort.Sort(sortBy{ids, distance})
-	d := distance[0]
-	for i := 1; i < len(distance); i++ {
-		if distance[i] != d {
-			return ids[:i]
-		}
-	}
-	return ids
-}
-
 func (world *gameWorld) empty(p image.Point) (id int) {
 	cur := world.Index.At(p)
 	for cur.Next() {
@@ -527,123 +506,137 @@ func (world *gameWorld) empty(p image.Point) (id int) {
 	return id
 }
 
-func (world *gameWorld) filterReachable(p image.Point, ids []int) []int {
-	reachableIDs := make([]int, 0, len(ids))
-	for _, id := range ids {
-		if world.reachable(p, world.p[id]) {
-			reachableIDs = append(reachableIDs, id)
-		}
-	}
-	return reachableIDs
+type reachabilityScore struct {
+	geom.RCore
+	sc []int
 }
 
-func (world *gameWorld) reachable(src, dest image.Point) bool {
-	srch := make([]image.Point, 0, len(world.p)) // frontier pos
-	dist := make([]int, cap(srch))               // frontier distance
-	uniq := make(map[int]struct{}, cap(srch))    // frontier pruning
+func (r reachabilityScore) Get(p image.Point) int {
+	if i, ok := r.Index(p); ok {
+		return r.sc[i]
+	}
+	return -1
+}
 
-	for len(srch) > 0 {
-		// sort by distance, so we expand (a) farthest point first
-		sort.Sort(sortPointBy{srch, dist})
+type searchCore struct {
+	p []image.Point // frontier pos
+	d []int         // frontier distance
+	// u map[int]struct{} // frontier pruning
 
-		// pop
-		i := len(srch) - 1
-		pos, d := srch[i], dist[i]
-		srch, dist = srch[:i], dist[:i]
+	sort sort.Interface
+}
 
-		// expand
-		for _, dp := range []image.Point{
-			image.Pt(0, -1),
-			image.Pt(-1, 0),
-			image.Pt(1, 0),
-			image.Pt(0, 1),
-		} {
-			qp := pos.Add(dp)
-			if qp == dest {
-				return true
-			}
-			if cellID := world.empty(qp); cellID != 0 {
-				if _, seen := uniq[cellID]; !seen {
-					uniq[cellID] = struct{}{}
-					srch = append(srch, qp)
-					dist = append(dist, d+1)
+func (srch *searchCore) init(n int) {
+	if cap(srch.p) < n {
+		srch.p = make([]image.Point, 0, n)
+	}
+	if cap(srch.d) < n {
+		srch.d = make([]int, 0, n)
+	}
+	// if len(srch.u) == 0 {
+	// 	srch.u = make(map[int]struct{}, n)
+	// } else {
+	// 	for id := range srch.u {
+	// 		delete(srch.u, id)
+	// 	}
+	// }
+}
+
+func (srch *searchCore) Len() int { return len(srch.p) }
+
+func (srch *searchCore) push(p image.Point, d, id int) {
+	srch.p = append(srch.p, p)
+	srch.d = append(srch.d, d)
+	// if id != 0 {
+	// 	srch.u[id] = struct{}{}
+	// }
+	if srch.sort != nil && len(srch.p) > 1 {
+		sort.Sort(srch.sort)
+	}
+}
+
+func (srch *searchCore) pop() (image.Point, int) {
+	i := len(srch.p) - 1
+	pos, d := srch.p[i], srch.d[i]
+	srch.p, srch.d = srch.p[:i], srch.d[:i]
+	return pos, d
+}
+
+func (r *reachabilityScore) Init(world *gameWorld) {
+	r.Rectangle = world.bounds
+	r.Origin = world.bounds.Min
+	r.Stride = world.bounds.Dx()
+	r.sc = make([]int, world.bounds.Dy()*r.Stride)
+}
+
+func (r *reachabilityScore) Update(world *gameWorld, p image.Point) {
+	for i := range r.sc {
+		r.sc[i] = -1
+	}
+
+	var srch searchCore // TODO re-use
+	srch.init(len(world.p))
+	srch.push(p, 0, world.empty(p))
+
+	// sort reverse by distance, so we expand (a) closest point first
+	srch.sort = sortPointRevBy{sortPointBy{&srch.p, &srch.d}}
+
+	for srch.Len() > 0 {
+		pos, d := srch.pop()
+
+		// skip if it's not better than a prior score
+		ri, _ := r.Index(pos)
+		if sc := r.sc[ri]; sc >= 0 && d > sc {
+			continue
+		}
+
+		// ... expand to any adjacent empty cells that are better than prior
+		pts, cellIDs := world.adjacentCells(pos)
+		for i, cellID := range cellIDs {
+			if cellID != 0 {
+				qp := pts[i]
+				ri, _ := r.Index(qp)
+				if sc := r.sc[ri]; sc < 0 || sc > d+1 {
+					srch.push(qp, d+1, cellID)
+					r.sc[ri] = d + 1
 				}
 			}
 		}
 	}
-
-	return false
 }
 
-func (world *gameWorld) moveTowards(src, dest image.Point) int {
-	srch := make([]image.Point, 0, len(world.p)) // frontier pos
-	dist := make([]int, cap(srch))               // frontier distance
-	uniq := make(map[int]struct{}, cap(srch))    // frontier pruning
-
-	// set of results tied for return (all same dist)
-	resultIDs := make([]int, 0, 4)
-	resultDist := 0
-
-	for len(srch) > 0 {
-		// sort by distance, so we expand (a) farthest point first
-		sort.Sort(sortPointBy{srch, dist})
-
-		// pop
-		i := len(srch) - 1
-		pos, d := srch[i], dist[i]
-		srch, dist = srch[:i], dist[:i]
-
-		// prune any values farther away than the result set
-		if resultDist > 0 {
-			for i > 0 && d > resultDist {
-				i--
-				pos, d = srch[i], dist[i]
-				srch, dist = srch[:i], dist[:i]
-			}
-			if d > resultDist {
-				break
-			}
-		}
-
-		// expand
-		for _, dp := range []image.Point{
-			image.Pt(0, -1),
-			image.Pt(-1, 0),
-			image.Pt(1, 0),
-			image.Pt(0, 1),
-		} {
-			qp := pos.Add(dp)
-			if qp == dest {
-				if mid := world.empty(pos); mid != 0 {
-					if resultDist > 0 {
-						if d < resultDist {
-							resultIDs = resultIDs[:0]
-						} else if d > resultDist {
-							continue
-						}
-					}
-					resultIDs = append(resultIDs, mid)
-					resultDist = d
-
-				}
+func (world *gameWorld) updateAdjacentReach(
+	reach reachabilityScore,
+	p image.Point,
+	ids []int, best int,
+) ([]int, int) {
+	pts, cellIDs := world.adjacentCells(p)
+	for i, cellID := range cellIDs {
+		if cellID != 0 {
+			d := reach.Get(pts[i])
+			if d < 0 {
 				continue
 			}
-			if cellID := world.empty(qp); cellID != 0 {
-				if _, seen := uniq[cellID]; !seen {
-					uniq[cellID] = struct{}{}
-					srch = append(srch, qp)
-					dist = append(dist, d+1)
-				}
+			if best > 0 && best > d {
+				ids = ids[:0]
 			}
+			ids = append(ids, cellID)
+			best = d
 		}
 	}
+	return ids, best
+}
 
-	// return first result in reading order
-	if len(resultIDs) == 0 {
-		return 0
-	}
-	world.sortIDs(resultIDs)
-	return resultIDs[0]
+func (world *gameWorld) adjacentCells(p image.Point) (pts [4]image.Point, cellIDs [4]int) {
+	pts[0] = p.Add(image.Pt(0, -1))
+	pts[1] = p.Add(image.Pt(-1, 0))
+	pts[2] = p.Add(image.Pt(1, 0))
+	pts[3] = p.Add(image.Pt(0, 1))
+	cellIDs[0] = world.empty(pts[0])
+	cellIDs[1] = world.empty(pts[1])
+	cellIDs[2] = world.empty(pts[2])
+	cellIDs[3] = world.empty(pts[3])
+	return pts, cellIDs
 }
 
 func manhattanDistance(a, b image.Point) int {
@@ -1105,13 +1098,17 @@ func (s sortBy) Swap(i int, j int) {
 }
 
 type sortPointBy struct {
-	a []image.Point
-	b []int
+	a *[]image.Point
+	b *[]int
 }
 
-func (s sortPointBy) Len() int               { return len(s.a) }
-func (s sortPointBy) Less(i int, j int) bool { return s.b[i] < s.b[j] }
+func (s sortPointBy) Len() int               { return len(*(s.a)) }
+func (s sortPointBy) Less(i int, j int) bool { return (*s.b)[i] < (*s.b)[j] }
 func (s sortPointBy) Swap(i int, j int) {
-	s.a[i], s.a[j] = s.a[j], s.a[i]
-	s.b[i], s.b[j] = s.b[j], s.b[i]
+	(*s.a)[i], (*s.a)[j] = (*s.a)[j], (*s.a)[i]
+	(*s.b)[i], (*s.b)[j] = (*s.b)[j], (*s.b)[i]
 }
+
+type sortPointRevBy struct{ sortPointBy }
+
+func (s sortPointRevBy) Less(i int, j int) bool { return (*s.b)[i] > (*s.b)[j] }
