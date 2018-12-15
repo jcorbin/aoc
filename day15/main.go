@@ -108,98 +108,224 @@ func run(in, out *os.File) error {
 
 var defaultWorldData = ""
 
+type gameType uint8
+
+const (
+	gameRender gameType = 1 << iota
+	gameCollide
+	gameActor
+	gameHP
+	gameAP
+)
+
 type gameWorld struct {
 	bounds image.Rectangle
 	quadindex.Index
-	// TODO world data
+
+	t  []gameType
+	p  []image.Point
+	z  []int
+	r  []byte
+	a  []ansi.SGRAttr
+	hp []int
+	ap []int
+
+	actors []int
+
+	goblins, elves map[int]struct{}
 }
 
 func (world *gameWorld) describe(id int, buf *bytes.Buffer) {
-	fmt.Fprintf(buf, "id:%v FIXME\n",
-		id,
-		// TODO world.d[id],
-	)
+	t := world.t[id]
+	fmt.Fprintf(buf, "id:%v t:%02x", id, t)
+	if t&gameRender != 0 {
+		fmt.Fprintf(buf, " p:%v z:%v r:%q a:%v", world.p[id], world.z[id], world.r[id], world.a[id])
+	}
+	if t&gameCollide != 0 {
+		buf.WriteString(" collides")
+	}
+	if t&gameHP != 0 {
+		fmt.Fprintf(buf, " hp:%v", world.hp[id])
+	}
+	if t&gameAP != 0 {
+		fmt.Fprintf(buf, " ap:%v", world.ap[id])
+	}
+	buf.WriteRune('\n')
 }
 
 func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
-	// for id, t := range world.t {
-	// 	if id == 0 { continue }
+	gz := make([]int, len(g.Rune)) // TODO re-use allocation
 
-	// 	p := world.p[id]
-	// 	sp := p.Add(viewOffset).Add(image.Pt(1, 1))
-	// 	if sp.X < 0 || sp.Y < 0 {
-	// 		continue
-	// 	}
+	for id, t := range world.t {
+		if id == 0 || t&gameRender == 0 {
+			continue
+		}
 
-	// 	gi, ok := g.CellOffset(ansi.PtFromImage(sp))
-	// 	if !ok {
-	// 		continue
-	// 	}
+		p := world.p[id]
+		sp := p.Add(viewOffset).Add(image.Pt(1, 1))
+		if sp.X < 0 || sp.Y < 0 {
+			continue
+		}
 
-	// 	var r rune
-	// 	var a ansi.SGRAttr
+		gi, ok := g.CellOffset(ansi.PtFromImage(sp))
+		if !ok {
+			continue
+		}
 
-	// 	switch {
-	// 	TODO determine from te
-	// 	}
+		if z := world.z[id]; gz[gi] < z {
+			gz[gi] = z
+			g.Rune[gi] = rune(world.r[id])
+			g.Attr[gi] = mergeBGColors(world.a[id], g.Attr[gi])
+		} else {
+			g.Attr[gi] = mergeBGColors(g.Attr[gi], world.a[id])
+		}
+	}
+}
 
-	// 	g.Rune[gi] = r
-	// 	g.Attr[gi] = a
-	// }
+func mergeBGColors(a, b ansi.SGRAttr) ansi.SGRAttr {
+	if _, hasBG := a.BG(); !hasBG {
+		if c, def := b.BG(); def {
+			a |= c.BG()
+		}
+	}
+	return a
 }
 
 func (world *gameWorld) load(r io.Reader) error {
+	if len(world.t) > 0 {
+		panic("reload of world not supported")
+	}
+	world.createEntity(0)
 
-	// TODO
-
-	// if len(world.t) > 0 {
-	// 	panic("reload of world not supported")
-	// }
-
+	// scan entities from input
 	if nom, ok := r.(interface{ Name() string }); ok {
 		log.Printf("read input from %s", nom.Name())
 	}
-
-	// scan entities from input
 	sc := bufio.NewScanner(r)
 	var p image.Point
 	for sc.Scan() {
 		line := sc.Text()
 		p.X = 0
 		for i := 0; i < len(line); i++ {
-
-			switch line[i] {
-			// TODO cell -> entities
-			}
-
+			world.loadCell(p, line[i])
 			p.X++
 		}
-
 		p.Y++
 	}
-	// compute bounds
-	world.bounds = image.ZR
-	// TODO
-	// if len(world.p) > 1 {
-	// 	world.b.Min = world.p[1]
-	// 	world.b.Max = world.p[1]
-	// 	for _, p := range world.p[1:] {
-	// 		if world.b.Min.X > p.X {
-	// 			world.b.Min.X = p.X
-	// 		}
-	// 		if world.b.Min.Y > p.Y {
-	// 			world.b.Min.Y = p.Y
-	// 		}
-	// 		if world.b.Max.X < p.X {
-	// 			world.b.Max.X = p.X
-	// 		}
-	// 		if world.b.Max.Y < p.Y {
-	// 			world.b.Max.Y = p.Y
-	// 		}
-	// 	}
-	// }
+
+	world.bounds = world.computeBounds()
+
+	world.actors = make([]int, 0, len(world.t))
+	for id, t := range world.t {
+		if t&gameActor != 0 {
+			world.actors = append(world.actors, id)
+		}
+	}
+	world.goblins = make(map[int]struct{}, len(world.actors))
+	world.elves = make(map[int]struct{}, len(world.actors))
+	for _, id := range world.actors {
+		switch world.r[id] {
+		case 'G':
+			world.goblins[id] = struct{}{}
+		case 'E':
+			world.elves[id] = struct{}{}
+		}
+	}
 
 	return sc.Err()
+}
+
+func (world *gameWorld) loadCell(p image.Point, c byte) {
+	switch c {
+	case '#':
+		world.createWall(p)
+	case '.':
+		world.createFloor(p)
+	case 'G':
+		world.createActor(p, 'G', ansi.RGB(128, 32, 16), 200, 3)
+		world.createFloor(p)
+	case 'E':
+		world.createActor(p, 'E', ansi.RGB(16, 128, 32), 200, 3)
+		world.createFloor(p)
+	}
+}
+
+func (world *gameWorld) createWall(p image.Point) int {
+	id := world.createEntity(gameRender | gameCollide)
+	world.p[id] = p
+	world.z[id] = 2
+	world.r[id] = '#'
+	world.a[id] = ansi.RGB(128, 128, 128).FG() | ansi.RGB(32, 32, 32).BG()
+	world.Index.Update(id, p)
+	return id
+}
+
+func (world *gameWorld) createFloor(p image.Point) int {
+	id := world.createEntity(gameRender)
+	world.p[id] = p
+	world.z[id] = 1
+	world.r[id] = '.'
+	world.a[id] = ansi.RGB(32, 32, 32).FG() | ansi.RGB(16, 16, 16).BG()
+	world.Index.Update(id, p)
+	return id
+}
+
+func (world *gameWorld) createActor(p image.Point, r byte, c ansi.SGRColor, hp, ap int) int {
+	id := world.createEntity(gameRender | gameCollide | gameActor | gameHP | gameAP)
+	world.p[id] = p
+	world.z[id] = 10
+	world.r[id] = r
+	world.a[id] = c.FG()
+	world.hp[id] = hp
+	world.ap[id] = ap
+	world.Index.Update(id, p)
+	return id
+}
+
+func (world *gameWorld) createEntity(t gameType) int {
+	// TODO reuse above
+	id := len(world.t)
+	world.t = append(world.t, t)
+	world.p = append(world.p, image.ZP)
+	world.z = append(world.z, 0)
+	world.r = append(world.r, 0)
+	world.a = append(world.a, 0)
+	world.hp = append(world.hp, 0)
+	world.ap = append(world.ap, 0)
+	return id
+}
+
+func (world *gameWorld) computeBounds() (bounds image.Rectangle) {
+	if len(world.t) == 0 {
+		return bounds
+	}
+	id := 1
+	for ; id < len(world.t); id++ {
+		if world.t[id]&gameRender != 0 {
+			world.bounds.Min = world.p[id]
+			world.bounds.Max = world.p[id]
+			break
+		}
+	}
+	for ; id < len(world.t); id++ {
+		if world.t[id]&gameRender == 0 {
+			continue
+		}
+		p := world.p[id]
+		if world.bounds.Min.X > p.X {
+			world.bounds.Min.X = p.X
+		}
+		if world.bounds.Min.Y > p.Y {
+			world.bounds.Min.Y = p.Y
+		}
+		if world.bounds.Max.X < p.X {
+			world.bounds.Max.X = p.X
+		}
+		if world.bounds.Max.Y < p.Y {
+			world.bounds.Max.Y = p.Y
+		}
+	}
+	return bounds
 }
 
 func (world *gameWorld) done() bool {
@@ -437,7 +563,7 @@ func (game *gameUI) handleWorldInput(e ansi.Escape, a []byte) (bool, error) {
 				}
 				fmt.Fprintf(&buf, "( <Esc> to close )")
 
-				game.setMess(buf.Bytes())
+				game.setMess(buf.Bytes()) // TODO w/ mouse handler rentrance
 			}
 		}
 		return true, nil
