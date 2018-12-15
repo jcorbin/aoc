@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"sort"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -130,9 +131,10 @@ type gameWorld struct {
 	hp []int
 	ap []int
 
-	actors []int
-
-	goblins, elves map[int]struct{}
+	noTarget bool
+	actors   []int
+	goblins  map[int]struct{}
+	elves    map[int]struct{}
 }
 
 func (world *gameWorld) describe(id int, buf *bytes.Buffer) {
@@ -154,8 +156,8 @@ func (world *gameWorld) describe(id int, buf *bytes.Buffer) {
 }
 
 func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
+	// world bounded grid
 	gz := make([]int, len(g.Rune)) // TODO re-use allocation
-
 	for id, t := range world.t {
 		if id == 0 || t&gameRender == 0 {
 			continue
@@ -178,6 +180,36 @@ func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
 			g.Attr[gi] = mergeBGColors(world.a[id], g.Attr[gi])
 		} else {
 			g.Attr[gi] = mergeBGColors(g.Attr[gi], world.a[id])
+		}
+	}
+
+	// sidebar annotations
+	offs := make([]int, g.Bounds().Dy())
+	world.sortIDs(world.actors)
+	var buf bytes.Buffer
+	for _, id := range world.actors {
+		p := world.p[id]
+		sp := p.Add(viewOffset).Add(image.Pt(1, 1))
+		if sp.X < 0 || sp.Y < 0 {
+			continue
+		}
+		gp := ansi.PtFromImage(sp)
+		if gp.In(g.Bounds()) {
+			off := offs[gp.Y-1]
+			if off == 0 {
+				off = world.bounds.Dx() + 4 // TODO why 4?
+			}
+			gp.X = off
+			t := world.t[id]
+			buf.Reset()
+			if t&gameRender != 0 {
+				fmt.Fprintf(&buf, "%s", string(world.r[id]))
+			}
+			if t&gameHP != 0 {
+				fmt.Fprintf(&buf, "(%d)", world.hp[id])
+			}
+			gp = writeIntoGrid(g.SubAt(gp), buf.Bytes())
+			offs[gp.Y-1] = gp.X + 1
 		}
 	}
 }
@@ -295,6 +327,28 @@ func (world *gameWorld) createEntity(t gameType) int {
 	return id
 }
 
+func (world *gameWorld) destroyEntity(id int) {
+	i := 0
+	for j := 0; j < len(world.actors); j++ {
+		if world.actors[j] == id {
+			continue
+		}
+		world.actors[i] = world.actors[j]
+		i++
+	}
+	world.actors = world.actors[:i]
+	delete(world.goblins, id)
+	delete(world.elves, id)
+	world.Index.Delete(id, world.p[id])
+	world.t[id] = 0
+	world.p[id] = image.ZP
+	world.z[id] = 0
+	world.r[id] = 0
+	world.a[id] = 0
+	world.hp[id] = 0
+	world.ap[id] = 0
+}
+
 func (world *gameWorld) computeBounds() (bounds image.Rectangle) {
 	if len(world.t) == 0 {
 		return bounds
@@ -302,8 +356,8 @@ func (world *gameWorld) computeBounds() (bounds image.Rectangle) {
 	id := 1
 	for ; id < len(world.t); id++ {
 		if world.t[id]&gameRender != 0 {
-			world.bounds.Min = world.p[id]
-			world.bounds.Max = world.p[id]
+			bounds.Min = world.p[id]
+			bounds.Max = world.p[id]
 			break
 		}
 	}
@@ -312,24 +366,26 @@ func (world *gameWorld) computeBounds() (bounds image.Rectangle) {
 			continue
 		}
 		p := world.p[id]
-		if world.bounds.Min.X > p.X {
-			world.bounds.Min.X = p.X
+		if bounds.Min.X > p.X {
+			bounds.Min.X = p.X
 		}
-		if world.bounds.Min.Y > p.Y {
-			world.bounds.Min.Y = p.Y
+		if bounds.Min.Y > p.Y {
+			bounds.Min.Y = p.Y
 		}
-		if world.bounds.Max.X < p.X {
-			world.bounds.Max.X = p.X
+		if bounds.Max.X < p.X {
+			bounds.Max.X = p.X
 		}
-		if world.bounds.Max.Y < p.Y {
-			world.bounds.Max.Y = p.Y
+		if bounds.Max.Y < p.Y {
+			bounds.Max.Y = p.Y
 		}
 	}
 	return bounds
 }
 
 func (world *gameWorld) done() bool {
-	// TODO when?
+	if world.noTarget {
+		return true
+	}
 	return false
 }
 
@@ -338,9 +394,279 @@ func (world *gameWorld) tick() bool {
 		return false
 	}
 
-	// TODO the thing
+	world.sortIDs(world.actors)
+	for _, id := range world.actors {
+		if !world.act(id) {
+			return false
+		}
+	}
 
 	return true
+}
+
+func (world *gameWorld) act(id int) bool {
+	enemyIDs := world.collectEnemies(id)
+	if len(enemyIDs) == 0 {
+		world.noTarget = true
+		return false
+	}
+
+	// can hit?
+	p := world.p[id]
+	for _, enemyID := range enemyIDs {
+		if manhattanDistance(p, world.p[enemyID]) == 1 {
+			// attack
+			log.Printf("attack #%v => #%v", id, enemyID)
+			hp := world.hp[enemyID] - world.ap[id]
+			if hp < 0 {
+				world.destroyEntity(enemyID)
+			} else {
+				world.hp[enemyID] = hp
+			}
+			return true
+		}
+	}
+
+	// expand to adjacent empty cells...
+	inRangeIDs := world.collectTargetCells(enemyIDs)
+	// ...pruned for reachability
+	reachableIDs := world.filterReachable(p, inRangeIDs)
+	if len(reachableIDs) == 0 {
+		log.Printf("nothing reachable for #%v", id)
+		return true
+	}
+
+	// ...pruned to nearest
+	// TODO should this just be the move path finding search? reachable had nearness above...
+	reachableIDs = world.pruneToNearest(p, reachableIDs)
+
+	// move towards the the first (nearest reachable) in reading order
+	world.sortIDs(reachableIDs)
+	targetID := reachableIDs[0]
+	log.Printf("move target #%v => #%v", id, targetID)
+
+	// TODO redundant search with filterReachable above?
+	mid := world.moveTowards(world.p[id], world.p[targetID])
+	log.Printf("move #%v@%v => #%v@%v",
+		id, world.p[id],
+		targetID, world.p[targetID],
+	)
+	if mid != 0 {
+		p := world.p[mid]
+		world.p[id] = p
+		world.Index.Update(id, p)
+	}
+	return true
+}
+
+func (world *gameWorld) collectEnemies(id int) []int {
+	var enemies map[int]struct{}
+	if _, isGoblin := world.goblins[id]; isGoblin {
+		enemies = world.elves
+	} else if _, isElf := world.elves[id]; isElf {
+		enemies = world.goblins
+	} else {
+		panic(fmt.Sprintf("neither goblin nor elf #%v", id))
+	}
+	enemyIDs := make([]int, 0, len(world.actors))
+	for _, aid := range world.actors {
+		if _, hate := enemies[aid]; !hate {
+			continue
+		}
+		enemyIDs = append(enemyIDs, aid)
+	}
+	world.sortIDs(enemyIDs)
+	return enemyIDs
+}
+
+func (world *gameWorld) collectTargetCells(ids []int) []int {
+	inRangeIDs := make([]int, 0, 4*len(ids))
+	uniq := make(map[int]struct{}, cap(inRangeIDs))
+	for _, id := range ids {
+		tp := world.p[id]
+		for _, dp := range []image.Point{
+			image.Pt(0, -1),
+			image.Pt(-1, 0),
+			image.Pt(1, 0),
+			image.Pt(0, 1),
+		} {
+			if cellID := world.empty(tp.Add(dp)); cellID != 0 {
+				if _, seen := uniq[cellID]; !seen {
+					uniq[cellID] = struct{}{}
+					inRangeIDs = append(inRangeIDs, cellID)
+				}
+			}
+		}
+	}
+	return inRangeIDs
+}
+
+func (world *gameWorld) pruneToNearest(p image.Point, ids []int) []int {
+	distance := make([]int, len(ids))
+	for i, reachableID := range ids {
+		distance[i] = manhattanDistance(p, world.p[reachableID])
+	}
+	sort.Sort(sortBy{ids, distance})
+	d := distance[0]
+	for i := 1; i < len(distance); i++ {
+		if distance[i] != d {
+			return ids[:i]
+		}
+	}
+	return ids
+}
+
+func (world *gameWorld) empty(p image.Point) (id int) {
+	cur := world.Index.At(p)
+	for cur.Next() {
+		if world.t[cur.I()]&gameCollide != 0 {
+			return 0
+		}
+		id = cur.I()
+	}
+	return id
+}
+
+func (world *gameWorld) filterReachable(p image.Point, ids []int) []int {
+	reachableIDs := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if world.reachable(p, world.p[id]) {
+			reachableIDs = append(reachableIDs, id)
+		}
+	}
+	return reachableIDs
+}
+
+func (world *gameWorld) reachable(src, dest image.Point) bool {
+	srch := make([]image.Point, 0, len(world.p)) // frontier pos
+	dist := make([]int, cap(srch))               // frontier distance
+	uniq := make(map[int]struct{}, cap(srch))    // frontier pruning
+
+	for len(srch) > 0 {
+		// sort by distance, so we expand (a) farthest point first
+		sort.Sort(sortPointBy{srch, dist})
+
+		// pop
+		i := len(srch) - 1
+		pos, d := srch[i], dist[i]
+		srch, dist = srch[:i], dist[:i]
+
+		// expand
+		for _, dp := range []image.Point{
+			image.Pt(0, -1),
+			image.Pt(-1, 0),
+			image.Pt(1, 0),
+			image.Pt(0, 1),
+		} {
+			qp := pos.Add(dp)
+			if qp == dest {
+				return true
+			}
+			if cellID := world.empty(qp); cellID != 0 {
+				if _, seen := uniq[cellID]; !seen {
+					uniq[cellID] = struct{}{}
+					srch = append(srch, qp)
+					dist = append(dist, d+1)
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func (world *gameWorld) moveTowards(src, dest image.Point) int {
+	srch := make([]image.Point, 0, len(world.p)) // frontier pos
+	dist := make([]int, cap(srch))               // frontier distance
+	uniq := make(map[int]struct{}, cap(srch))    // frontier pruning
+
+	// set of results tied for return (all same dist)
+	resultIDs := make([]int, 0, 4)
+	resultDist := 0
+
+	for len(srch) > 0 {
+		// sort by distance, so we expand (a) farthest point first
+		sort.Sort(sortPointBy{srch, dist})
+
+		// pop
+		i := len(srch) - 1
+		pos, d := srch[i], dist[i]
+		srch, dist = srch[:i], dist[:i]
+
+		// prune any values farther away than the result set
+		if resultDist > 0 {
+			for i > 0 && d > resultDist {
+				i--
+				pos, d = srch[i], dist[i]
+				srch, dist = srch[:i], dist[:i]
+			}
+			if d > resultDist {
+				break
+			}
+		}
+
+		// expand
+		for _, dp := range []image.Point{
+			image.Pt(0, -1),
+			image.Pt(-1, 0),
+			image.Pt(1, 0),
+			image.Pt(0, 1),
+		} {
+			qp := pos.Add(dp)
+			if qp == dest {
+				if mid := world.empty(pos); mid != 0 {
+					if resultDist > 0 {
+						if d < resultDist {
+							resultIDs = resultIDs[:0]
+						} else if d > resultDist {
+							continue
+						}
+					}
+					resultIDs = append(resultIDs, mid)
+					resultDist = d
+
+				}
+				continue
+			}
+			if cellID := world.empty(qp); cellID != 0 {
+				if _, seen := uniq[cellID]; !seen {
+					uniq[cellID] = struct{}{}
+					srch = append(srch, qp)
+					dist = append(dist, d+1)
+				}
+			}
+		}
+	}
+
+	// return first result in reading order
+	if len(resultIDs) == 0 {
+		return 0
+	}
+	world.sortIDs(resultIDs)
+	return resultIDs[0]
+}
+
+func manhattanDistance(a, b image.Point) int {
+	dx := a.X - b.X
+	dy := a.Y - b.Y
+	if dx < 0 {
+		dx = -dx
+	}
+	if dy < 0 {
+		dy = -dy
+	}
+	return dx + dy
+}
+
+func (world *gameWorld) sortIDs(ids []int) {
+	sort.Slice(ids, func(i, j int) bool {
+		idi, idj := ids[i], ids[j]
+		pi, pj := world.p[idi], world.p[idj]
+		if pi.Y < pj.Y {
+			return true
+		}
+		return pi.Y == pj.Y && pi.X < pj.X
+	})
 }
 
 func (world *gameWorld) handleInput(term *anansi.Term, game *gameUI) error {
@@ -652,7 +978,7 @@ func (game *gameUI) overlayMess() {
 	writeIntoGrid(screen.Grid.SubAt(screen.Grid.Rect.Min.Add(offset)), game.mess)
 }
 
-func writeIntoGrid(g anansi.Grid, b []byte) {
+func writeIntoGrid(g anansi.Grid, b []byte) ansi.Point {
 	var cur anansi.CursorState
 	cur.Point = g.Rect.Min
 	for len(b) > 0 {
@@ -687,6 +1013,7 @@ func writeIntoGrid(g anansi.Grid, b []byte) {
 			}
 		}
 	}
+	return cur.Point
 }
 
 func measureTextBox(b []byte) (box ansi.Rectangle) {
@@ -743,7 +1070,7 @@ func init() {
 func overlayLogs() {
 	n := bytes.Count(logs.Bytes(), []byte{'\n'})
 	lb := logs.Bytes()
-	for n > 5 {
+	for n > 10 {
 		off := bytes.IndexByte(lb, '\n')
 		if off < 0 {
 			break
@@ -766,4 +1093,25 @@ func overlayLogs() {
 		screen.WriteString("\r\n")
 		lb = lb[off+1:]
 	}
+}
+
+type sortBy struct{ a, b []int }
+
+func (s sortBy) Len() int               { return len(s.a) }
+func (s sortBy) Less(i int, j int) bool { return s.b[i] < s.b[j] }
+func (s sortBy) Swap(i int, j int) {
+	s.a[i], s.a[j] = s.a[j], s.a[i]
+	s.b[i], s.b[j] = s.b[j], s.b[i]
+}
+
+type sortPointBy struct {
+	a []image.Point
+	b []int
+}
+
+func (s sortPointBy) Len() int               { return len(s.a) }
+func (s sortPointBy) Less(i int, j int) bool { return s.b[i] < s.b[j] }
+func (s sortPointBy) Swap(i int, j int) {
+	s.a[i], s.a[j] = s.a[j], s.a[i]
+	s.b[i], s.b[j] = s.b[j], s.b[i]
 }
