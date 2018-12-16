@@ -3,23 +3,35 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"fmt"
+	"image"
+	"log"
 	"testing"
 
+	"github.com/jcorbin/anansi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func Test_gameWorld_outcome(t *testing.T) {
+func init() {
+	log.SetFlags(0)
+}
+
+func Test_gameWorld_combat(t *testing.T) {
 	type result struct {
 		rounds   int
 		team     string
 		remainHP int
 	}
 
+	type checkpoint struct {
+		round int
+		lines []string
+	}
+
 	type scenario struct {
 		name        string
 		initialGrid []string
-		finalGrid   []string
+		checkpoints []checkpoint
 		result
 	}
 
@@ -29,6 +41,116 @@ func Test_gameWorld_outcome(t *testing.T) {
 			name: "ex1",
 			initialGrid: []string{
 				"#######",
+				"#.G...#", // G(200)
+				"#...EG#", // E(200) G(200)
+				"#.#.#G#", // G(200)
+				"#..G#E#", // G(200) E(200)
+				"#.....#",
+				"#######",
+			},
+			checkpoints: []checkpoint{
+				{1, []string{
+					"#######",
+					"#..G..# G(200)",
+					"#...EG# E(197) G(197)",
+					"#.#G#G# G(200) G(197)",
+					"#...#E# E(197)",
+					"#.....#",
+					"#######",
+				}},
+				{2, []string{
+					"#######",
+					"#...G.# G(200)",
+					"#..GEG# G(200) E(188) G(194)",
+					"#.#.#G# G(194)",
+					"#...#E# E(194)",
+					"#.....#",
+					"#######",
+				}},
+
+				// Combat ensues; eventually, the top Elf dies:
+				{23, []string{
+					"#######",
+					"#...G.# G(200)",
+					"#..G.G# G(200) G(131)",
+					"#.#.#G# G(131)",
+					"#...#E# E(131)",
+					"#.....#",
+					"#######",
+				}},
+
+				{24, []string{
+					"#######",
+					"#..G..# G(200)",
+					"#...G.# G(131)",
+					"#.#G#G# G(200) G(128)",
+					"#...#E# E(128)",
+					"#.....#",
+					"#######",
+				}},
+
+				{25, []string{
+					"#######",
+					"#.G...# G(200)",
+					"#..G..# G(131)",
+					"#.#.#G# G(125)",
+					"#..G#E# G(200) E(125)",
+					"#.....#",
+					"#######",
+				}},
+
+				{26, []string{
+					"#######",
+					"#G....# G(200)",
+					"#.G...# G(131)",
+					"#.#.#G# G(122)",
+					"#...#E# E(122)",
+					"#..G..# G(200)",
+					"#######",
+				}},
+
+				{27, []string{
+					"#######",
+					"#G....# G(200)",
+					"#.G...# G(131)",
+					"#.#.#G# G(119)",
+					"#...#E# E(119)",
+					"#...G.# G(200)",
+					"#######",
+				}},
+
+				{28, []string{
+					"#######",
+					"#G....# G(200)",
+					"#.G...# G(131)",
+					"#.#.#G# G(116)",
+					"#...#E# E(113)",
+					"#....G# G(200)",
+					"#######",
+				}},
+
+				// More combat ensues; eventually, the bottom Elf dies:
+				{47, []string{
+					"#######",
+					"#G....# G(200)",
+					"#.G...# G(131)",
+					"#.#.#G# G(59)",
+					"#...#.#",
+					"#....G# G(200)",
+					"#######",
+				}},
+			},
+			result: result{
+				rounds:   47,
+				team:     "goblins",
+				remainHP: 590,
+			},
+		},
+
+		{
+			name: "ex2",
+			initialGrid: []string{
+				"#######",
 				"#G..#E#",
 				"#E#E.E#",
 				"#G.##.#",
@@ -36,14 +158,16 @@ func Test_gameWorld_outcome(t *testing.T) {
 				"#...E.#",
 				"#######",
 			},
-			finalGrid: []string{
-				"#######",
-				"#...#E#", // E(200)
-				"#E#...#", // E(197)
-				"#.E##.#", // E(185)
-				"#E..#E#", // E(200) E(200)
-				"#.....#",
-				"#######",
+			checkpoints: []checkpoint{
+				{47, []string{
+					"#######",
+					"#...#E# E(200)",
+					"#E#...# E(197)",
+					"#.E##.# E(185)",
+					"#E..#E# E(200) E(200)",
+					"#.....#",
+					"#######",
+				}},
 			},
 			result: result{
 				rounds:   37,
@@ -126,18 +250,57 @@ func Test_gameWorld_outcome(t *testing.T) {
 				}
 			}
 
+			var g anansi.Grid
+
+			ci := 0
 			for i := 0; i < 10*tc.rounds && world.tick(); i++ {
 				sc := bufio.NewScanner(&logs)
 				for sc.Scan() {
-					fmt.Printf("+ %s\n", sc.Bytes())
+					t.Logf("%s\n", sc.Bytes())
 				}
-				fmt.Printf("finished round %v\n", res())
-				fmt.Printf("WUT %v v %v\n", len(world.elves), len(world.goblins))
+				t.Logf("finished round %v (%v elves vs %v goblins)\n", res(), len(world.elves), len(world.goblins))
+				if ci < len(tc.checkpoints) {
+					chk := tc.checkpoints[ci]
+					require.False(t, chk.round < world.round, "missed checkpoint[%v]", chk.round)
+					if chk.round == world.round {
+						g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
+						for i := range g.Rune {
+							g.Rune[i] = 0
+							g.Attr[i] = 0
+						}
+						world.render(g, image.ZP)
+						require.Equal(t, chk.lines, gridLines(g), "expected checkpoint[%v]", chk.round)
+						t.Logf("passed checpoint[%v]", chk.round)
+						ci++
+					}
+				}
 			}
 			assert.Equal(t, tc.result, res())
-
-			// TODO finalGrid check
-
 		})
 	}
+}
+
+func gridLines(g anansi.Grid) []string {
+	var buf bytes.Buffer
+	buf.Grow(g.Stride)
+	lines := make([]string, 0, g.Rect.Dy())
+	for pt := g.Rect.Min; pt.Y < g.Rect.Max.Y; pt.Y++ {
+		buf.Reset()
+		nz := 0
+		for pt.X = g.Rect.Min.X; pt.X < g.Rect.Max.X; pt.X++ {
+			i, _ := g.CellOffset(pt)
+			r := g.Rune[i]
+			if r == 0 {
+				nz++
+			} else {
+				for i := 0; i < nz; i++ {
+					buf.WriteRune(' ')
+				}
+				nz = 0
+				buf.WriteRune(r)
+			}
+		}
+		lines = append(lines, buf.String())
+	}
+	return lines
 }

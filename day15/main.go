@@ -167,7 +167,7 @@ func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
 		}
 
 		p := world.p[id]
-		sp := p.Add(viewOffset).Add(image.Pt(1, 1))
+		sp := p.Add(viewOffset)
 		if sp.X < 0 || sp.Y < 0 {
 			continue
 		}
@@ -192,7 +192,7 @@ func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
 	var buf bytes.Buffer
 	for _, id := range world.actors {
 		p := world.p[id]
-		sp := p.Add(viewOffset).Add(image.Pt(1, 1))
+		sp := p.Add(viewOffset)
 		if sp.X < 0 || sp.Y < 0 {
 			continue
 		}
@@ -200,7 +200,7 @@ func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
 		if gp.In(g.Bounds()) {
 			off := offs[gp.Y-1]
 			if off == 0 {
-				off = world.bounds.Dx() + 4 // TODO why 4?
+				off = world.bounds.Dx() + 3 // TODO why 3?
 			}
 			gp.X = off
 			t := world.t[id]
@@ -211,7 +211,7 @@ func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
 			if t&gameHP != 0 {
 				fmt.Fprintf(&buf, "(%d)", world.hp[id])
 			}
-			fmt.Fprintf(&buf, "#%d", id)
+			// fmt.Fprintf(&buf, "#%d", id)
 			gp = writeIntoGrid(g.SubAt(gp), buf.Bytes())
 			offs[gp.Y-1] = gp.X + 1
 		}
@@ -438,43 +438,88 @@ func (world *gameWorld) tick() bool {
 }
 
 func (world *gameWorld) act(actorID int) bool {
-	enemyIDs := world.collectEnemies(actorID)
-	if len(enemyIDs) == 0 {
+	var enemySet map[int]struct{}
+	if _, isGoblin := world.goblins[actorID]; isGoblin {
+		enemySet = world.elves
+	} else if _, isElf := world.elves[actorID]; isElf {
+		enemySet = world.goblins
+	} else {
+		panic(fmt.Sprintf("neither goblin nor elf #%v", actorID))
+	}
+
+	// done if no enemies left
+	if len(enemySet) == 0 {
 		world.noTarget = true
 		return false
 	}
 
-	// can hit?
-	actorP := world.p[actorID]
-	for _, enemyID := range enemyIDs {
-		if ep := world.p[enemyID]; manhattanDistance(actorP, ep) == 1 {
-			// attack
-			log.Printf("attack #%v@%v => #%v@%v", actorID, actorP, enemyID, ep)
-			hp := world.hp[enemyID] - world.ap[actorID]
-			if hp < 0 {
-				world.destroyEntity(enemyID)
-			} else {
-				world.hp[enemyID] = hp
-			}
+	attackID := world.chooseAttack(actorID, enemySet)
+	if attackID == 0 {
+		if !world.move(actorID, enemySet) {
 			return true
 		}
+		attackID = world.chooseAttack(actorID, enemySet)
 	}
 
+	if attackID != 0 {
+		world.attack(actorID, attackID)
+	}
+
+	return true
+}
+
+func (world *gameWorld) chooseAttack(actorID int, enemySet map[int]struct{}) int {
+	// weakest adjacent enemy id
+	actorP := world.p[actorID]
+	attackID, attackHP := 0, 0
+	for _, ep := range [4]image.Point{
+		actorP.Add(image.Pt(0, -1)),
+		actorP.Add(image.Pt(-1, 0)),
+		actorP.Add(image.Pt(1, 0)),
+		actorP.Add(image.Pt(0, 1)),
+	} {
+		if enemyID := world.enemyAt(ep, enemySet); enemyID != 0 {
+			if attackID == 0 || world.hp[enemyID] < attackHP {
+				attackID = enemyID
+				attackHP = world.hp[enemyID]
+			}
+		}
+	}
+	return attackID
+}
+
+func (world *gameWorld) attack(actorID, attackID int) {
+	log.Printf(
+		"attack %s@%v#%v => %s@%v#%v",
+		string(world.r[actorID]), world.p[actorID], actorID,
+		string(world.r[attackID]), world.p[attackID], attackID,
+	)
+	hp := world.hp[attackID] - world.ap[actorID]
+	if hp < 0 {
+		world.destroyEntity(attackID)
+	} else {
+		world.hp[attackID] = hp
+	}
+}
+
+func (world *gameWorld) move(actorID int, enemySet map[int]struct{}) bool {
 	// TODO re-use
 	var reach reachabilityScore
 	reach.Init(world)
 
+	actorP := world.p[actorID]
+
 	// find nearest empty cells adjacent to enemies
 	reach.Update(world, actorP)
-	reachableIDs := make([]int, 0, len(enemyIDs))
+	reachableIDs := make([]int, 0, len(enemySet))
 	reachableD := 0
-	for _, enemyID := range enemyIDs {
+	for enemyID := range enemySet {
 		ep := world.p[enemyID]
 		reachableIDs, reachableD = world.updateAdjacentReach(reach, ep, reachableIDs, reachableD)
 	}
 	if len(reachableIDs) == 0 {
 		log.Printf("nothing reachable for #%v", actorID)
-		return true
+		return false
 	}
 	// log.Printf("reachable cells: %v d:%v", reachableIDs, reachableD)
 
@@ -489,41 +534,37 @@ func (world *gameWorld) act(actorID int) bool {
 	reachableIDs, reachableD = world.updateAdjacentReach(reach, actorP, reachableIDs[:0], 0)
 	if len(reachableIDs) == 0 {
 		log.Printf("no nearest reachable!") // XXX inconceivable
-		return true
+		return false
 	}
 	world.sortIDs(reachableIDs)
 
 	cellID := reachableIDs[0]
 	if cellID == 0 {
 		log.Printf("zero cell id! in %v", reachableIDs) // XXX inconceivable
-		return true
+		return false
 	}
 
 	cellP := world.p[cellID]
-	log.Printf("move #%v@%v => #%v@%v", actorID, world.p[actorID], cellID, cellP)
+	log.Printf(
+		"move %s@%v#%v => #%v@%v",
+		string(world.r[actorID]), world.p[actorID], actorID,
+		cellID, cellP,
+	)
 	world.p[actorID] = cellP
 	world.Index.Update(actorID, cellP)
+
 	return true
 }
 
-func (world *gameWorld) collectEnemies(id int) []int {
-	var enemies map[int]struct{}
-	if _, isGoblin := world.goblins[id]; isGoblin {
-		enemies = world.elves
-	} else if _, isElf := world.elves[id]; isElf {
-		enemies = world.goblins
-	} else {
-		panic(fmt.Sprintf("neither goblin nor elf #%v", id))
-	}
-	enemyIDs := make([]int, 0, len(world.actors))
-	for _, aid := range world.actors {
-		if _, hate := enemies[aid]; !hate {
-			continue
+func (world *gameWorld) enemyAt(p image.Point, enemySet map[int]struct{}) int {
+	cur := world.Index.At(p)
+	for cur.Next() {
+		id := cur.I()
+		if _, isEnemy := enemySet[id]; isEnemy {
+			return id
 		}
-		enemyIDs = append(enemyIDs, aid)
 	}
-	world.sortIDs(enemyIDs)
-	return enemyIDs
+	return 0
 }
 
 func (world *gameWorld) empty(p image.Point) (id int) {
