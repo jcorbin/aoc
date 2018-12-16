@@ -227,7 +227,7 @@ func (world *gameWorld) render(
 			t := world.t[id]
 			buf.Reset()
 			if t&gameRender != 0 {
-				fmt.Fprintf(&buf, "%s", string(world.r[id]))
+				fmt.Fprintf(&buf, "%s%s\x1b[0m", world.a[id].ControlString(), string(world.r[id]))
 			}
 			if t&gameHP != 0 {
 				fmt.Fprintf(&buf, "(%d)", world.hp[id])
