@@ -23,127 +23,31 @@ func main() {
 	anansi.MustRun(run(os.Stdin, os.Stdout))
 }
 
-// addr (add register) stores into register C the result of adding register A and register B.
-func addr(r regs, a, b, c int) regs {
-	r[c] = r[a] + r[b]
-	return r
-}
-
-// addi (add immediate) stores into register C the result of adding register A and value B.
-func addi(r regs, a, b, c int) regs {
-	r[c] = r[a] + b
-	return r
-}
-
-// mulr (multiply register) stores into register C the result of multiplying register A and register B.
-func mulr(r regs, a, b, c int) regs {
-	r[c] = r[a] * r[b]
-	return r
-}
-
-// muli (multiply immediate) stores into register C the result of multiplying register A and value B.
-func muli(r regs, a, b, c int) regs {
-	r[c] = r[a] * b
-	return r
-}
-
-// banr (bitwise AND register) stores into register C the result of the bitwise AND of register A and register B.
-func banr(r regs, a, b, c int) regs {
-	r[c] = r[a] & r[b]
-	return r
-}
-
-// bani (bitwise AND immediate) stores into register C the result of the bitwise AND of register A and value B.
-func bani(r regs, a, b, c int) regs {
-	r[c] = r[a] & b
-	return r
-}
-
-// borr (bitwise OR register) stores into register C the result of the bitwise OR of register A and register B.
-func borr(r regs, a, b, c int) regs {
-	r[c] = r[a] | r[b]
-	return r
-}
-
-// bori (bitwise OR immediate) stores into register C the result of the bitwise OR of register A and value B.
-func bori(r regs, a, b, c int) regs {
-	r[c] = r[a] | b
-	return r
-}
-
-// setr (set register) copies the contents of register A into register C. (Input B is ignored.)
-func setr(r regs, a, b, c int) regs {
-	r[c] = r[a]
-	return r
-}
-
-// seti (set immediate) stores value A into register C. (Input B is ignored.)
-func seti(r regs, a, b, c int) regs {
-	r[c] = a
-	return r
-}
-
-// gtir (greater-than immediate/register) sets register C to 1 if value A is greater than register B. Otherwise, register C is set to 0.
-func gtir(r regs, a, b, c int) regs {
-	if a > r[b] {
-		r[c] = 1
-	} else {
-		r[c] = 0
+func btoi(b bool) int {
+	if b {
+		return 1
 	}
-	return r
+	return 0
 }
 
-// gtri (greater-than register/immediate) sets register C to 1 if register A is greater than value B. Otherwise, register C is set to 0.
-func gtri(r regs, a, b, c int) regs {
-	if r[a] > b {
-		r[c] = 1
-	} else {
-		r[c] = 0
-	}
-	return r
-}
+func addr(r *regs, a, b, c int) { r[c] = r[a] + r[b] }
+func addi(r *regs, a, b, c int) { r[c] = r[a] + b }
+func mulr(r *regs, a, b, c int) { r[c] = r[a] * r[b] }
+func muli(r *regs, a, b, c int) { r[c] = r[a] * b }
+func banr(r *regs, a, b, c int) { r[c] = r[a] & r[b] }
+func bani(r *regs, a, b, c int) { r[c] = r[a] & b }
+func borr(r *regs, a, b, c int) { r[c] = r[a] | r[b] }
+func bori(r *regs, a, b, c int) { r[c] = r[a] | b }
+func setr(r *regs, a, b, c int) { r[c] = r[a] }
+func seti(r *regs, a, b, c int) { r[c] = a }
+func gtir(r *regs, a, b, c int) { r[c] = btoi(a > r[b]) }
+func gtri(r *regs, a, b, c int) { r[c] = btoi(r[a] > b) }
+func gtrr(r *regs, a, b, c int) { r[c] = btoi(r[a] > r[b]) }
+func eqir(r *regs, a, b, c int) { r[c] = btoi(a == r[b]) }
+func eqri(r *regs, a, b, c int) { r[c] = btoi(r[a] == b) }
+func eqrr(r *regs, a, b, c int) { r[c] = btoi(r[a] == r[b]) }
 
-// gtrr (greater-than register/register) sets register C to 1 if register A is greater than register B. Otherwise, register C is set to 0.
-func gtrr(r regs, a, b, c int) regs {
-	if r[a] > r[b] {
-		r[c] = 1
-	} else {
-		r[c] = 0
-	}
-	return r
-}
-
-// eqir (equal immediate/register) sets register C to 1 if value A is equal to register B. Otherwise, register C is set to 0.
-func eqir(r regs, a, b, c int) regs {
-	if a == r[b] {
-		r[c] = 1
-	} else {
-		r[c] = 0
-	}
-	return r
-}
-
-// eqri (equal register/immediate) sets register C to 1 if register A is equal to value B. Otherwise, register C is set to 0.
-func eqri(r regs, a, b, c int) regs {
-	if r[a] == b {
-		r[c] = 1
-	} else {
-		r[c] = 0
-	}
-	return r
-}
-
-// eqrr (equal register/register) sets register C to 1 if register A is equal to register B. Otherwise, register C is set to 0.
-func eqrr(r regs, a, b, c int) regs {
-	if r[a] == r[b] {
-		r[c] = 1
-	} else {
-		r[c] = 0
-	}
-	return r
-}
-
-type opFunc func(r regs, a, b, c int) regs
+type opFunc func(r *regs, a, b, c int)
 
 var (
 	ops = [16]opFunc{
@@ -197,12 +101,9 @@ func run(in, out *os.File) error {
 		// log.Printf("sample[%v]: %v", i, sample)
 		n := 0
 		for _, op := range ops {
-			after := op(sample.before, sample.op[1], sample.op[2], sample.op[3])
-			eq := true
-			for i, rv := range after {
-				eq = eq && rv == sample.after[i]
-			}
-			if eq {
+			rs := sample.before
+			op(&rs, sample.op[1], sample.op[2], sample.op[3])
+			if rs.eq(sample.after) {
 				// log.Printf("could've been %s", names[j])
 				n++
 			}
@@ -216,7 +117,7 @@ func run(in, out *os.File) error {
 
 	// part 2
 	var srch search
-	codes, found, err := srch.run(samples)
+	codetop, found, err := srch.run(samples)
 	if err != nil {
 		return err
 	}
@@ -225,10 +126,27 @@ func run(in, out *os.File) error {
 	}
 
 	var buf bytes.Buffer
-	for code, op := range codes {
+	for code, op := range codetop {
 		fmt.Fprintf(&buf, " %v:%v", code, names[op])
 	}
 	log.Printf("FOUND%s", buf.Bytes())
+
+	// validate on samples
+	invalid := 0
+	for i, sample := range samples {
+		rs := sample.before
+		in := sample.op
+		code, a, b, c := in[0], in[1], in[2], in[3]
+		op := codetop[code]
+		ops[op](&rs, a, b, c)
+		if !rs.eq(sample.after) {
+			log.Printf("validation failed on sample %v expected %v, got %v", i, sample, rs)
+			invalid++
+		}
+	}
+	if invalid > 0 {
+		return fmt.Errorf("invalid solution (failed on %v/%v samples)", invalid, len(samples))
+	}
 
 	// run the program
 	step := 0
@@ -237,9 +155,8 @@ func run(in, out *os.File) error {
 	for _, in := range prog {
 		step++
 		code, a, b, c := in[0], in[1], in[2], in[3]
-		op := codes[code]
-		opFunc := ops[op]
-		rs = opFunc(rs, a, b, c)
+		op := codetop[code]
+		ops[op](&rs, a, b, c)
 		log.Printf("%v: %s %v %v %v => %v", step, names[op], a, b, c, rs)
 	}
 
@@ -381,20 +298,20 @@ type searchEl struct {
 	searchState
 }
 
-func (srch *search) run(samples []sample) (codes [16]int, found bool, err error) {
+func (srch *search) run(samples []sample) (ops [16]int, found bool, err error) {
 	srch.init(1024, searchState{samples: samples})
 	for i := 0; srch.expand(func(res searchState) {
 		if found {
 			err = errors.New("non-unique result")
 		} else {
-			found, codes = true, res.codes
+			found, ops = true, res.ops
 		}
 	}); i++ {
 		if i >= 10000 {
-			return codes, found, errors.New("search limit exceeded")
+			return ops, found, errors.New("search limit exceeded")
 		}
 	}
-	return codes, found, err
+	return ops, found, err
 }
 
 func (srch *search) init(n int, st ...searchState) {
@@ -481,7 +398,9 @@ func (st *searchState) countSamples() (obs opCodeSample) {
 			a, b, c := sample.op[1], sample.op[2], sample.op[3]
 			for op, opFunc := range ops {
 				if !st.knownCode[op] {
-					if after := opFunc(sample.before, a, b, c); after.eq(sample.after) {
+					rs := sample.before
+					opFunc(&rs, a, b, c)
+					if rs.eq(sample.after) {
 						obs[op][code]++
 					}
 				}
