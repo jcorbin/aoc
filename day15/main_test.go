@@ -31,6 +31,7 @@ type testScenario struct {
 	name        string
 	initialGrid []string
 	checkpoints []testCheckpoint
+	finalGrid   []string
 	testResult
 }
 
@@ -127,6 +128,12 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 		}
 
 	}
+	if tc.finalGrid != nil {
+		clearGrid()
+		world.render(g, image.ZP, nil)
+		assert.Equal(t, tc.finalGrid, gridLines(g), "expected final grid")
+	}
+
 	if tc.testResult.rounds != 0 {
 		assert.Equal(t, tc.testResult, res())
 	}
@@ -340,16 +347,15 @@ func Test_gameWorld_combat(t *testing.T) {
 					"#.....#",
 					"#######",
 				}},
-
-				{37, []string{
-					"#######",
-					"#...#E# E(200)",
-					"#E#...# E(197)",
-					"#.E##.# E(185)",
-					"#E..#E# E(200) E(200)",
-					"#.....#",
-					"#######",
-				}},
+			},
+			finalGrid: []string{
+				"#######",
+				"#...#E# E(200)",
+				"#E#...# E(197)",
+				"#.E##.# E(185)",
+				"#E..#E# E(200) E(200)",
+				"#.....#",
+				"#######",
 			},
 			testResult: testResult{
 				rounds:   37,
