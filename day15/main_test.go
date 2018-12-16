@@ -58,6 +58,7 @@ func Test_gameWorld_combat(t *testing.T) {
 					"#.....#",
 					"#######",
 				}},
+
 				{2, []string{
 					"#######",
 					"#...G.# G(200)",
@@ -67,6 +68,24 @@ func Test_gameWorld_combat(t *testing.T) {
 					"#.....#",
 					"#######",
 				}},
+
+				{22, []string{
+					"#######",
+					"#...G.# G(200)",
+					"#..GEG# G(200) E(8) G(134)",
+					"#.#.#G# G(134)",
+					"#...#E# E(134)",
+					"#.....#",
+					"#######",
+				}},
+
+				// attack G@(4,1)#10 => E@(4,2)#20
+				// attack G@(3,2)#36 => E@(4,2)#20
+				// attack E@(4,2)#20 => G@(5,2)#22
+				// attack G@(5,2)#22 => E@(4,2)#20
+				// attack E@(5,4)#39 => G@(5,3)#30
+				// attack E@(5,4)#39 => G@(5,3)#30
+				// finished round {23 none 793} (1 elves vs 4 goblins)
 
 				// Combat ensues; eventually, the top Elf dies:
 				{23, []string{
@@ -259,21 +278,38 @@ func Test_gameWorld_combat(t *testing.T) {
 					t.Logf("%s\n", sc.Bytes())
 				}
 				t.Logf("finished round %v (%v elves vs %v goblins)\n", res(), len(world.elves), len(world.goblins))
+
+				g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
+				for i := range g.Rune {
+					g.Rune[i] = 0
+					g.Attr[i] = 0
+				}
+				world.render(g, image.ZP)
+				lines := gridLines(g)
+
+				logGrid := true
 				if ci < len(tc.checkpoints) {
 					chk := tc.checkpoints[ci]
 					require.False(t, chk.round < world.round, "missed checkpoint[%v]", chk.round)
 					if chk.round == world.round {
-						g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
-						for i := range g.Rune {
-							g.Rune[i] = 0
-							g.Attr[i] = 0
-						}
-						world.render(g, image.ZP)
-						require.Equal(t, chk.lines, gridLines(g), "expected checkpoint[%v]", chk.round)
+						require.Equal(t, chk.lines, lines, "expected checkpoint[%v]", chk.round)
 						t.Logf("passed checpoint[%v]", chk.round)
+						logGrid = false
 						ci++
 					}
 				}
+
+				if logGrid {
+					ruler := ""
+					for i, x := 0, world.bounds.Dx(); i <= x; i++ {
+						ruler += string('0' + i%10)
+					}
+					t.Logf("   %s", ruler)
+					for i, line := range lines {
+						t.Logf("%d: %s", i, line)
+					}
+				}
+
 			}
 			assert.Equal(t, tc.result, res())
 		})

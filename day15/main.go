@@ -331,16 +331,24 @@ func (world *gameWorld) createEntity(t gameType) int {
 	return id
 }
 
-func (world *gameWorld) destroyEntity(id int) {
+func (world *gameWorld) pruneActors() {
 	i := 0
 	for j := 0; j < len(world.actors); j++ {
-		if world.actors[j] == id {
-			continue
+		if world.actors[j] != 0 {
+			world.actors[i] = world.actors[j]
+			i++
 		}
-		world.actors[i] = world.actors[j]
-		i++
 	}
 	world.actors = world.actors[:i]
+}
+
+func (world *gameWorld) destroyEntity(id int) {
+	for i := 0; i < len(world.actors); i++ {
+		if world.actors[i] == id {
+			world.actors[i] = 0
+		}
+	}
+
 	delete(world.goblins, id)
 	delete(world.elves, id)
 	world.Index.Delete(id, world.p[id])
@@ -432,12 +440,18 @@ func (world *gameWorld) tick() bool {
 			}
 		}
 	}
+	world.pruneActors()
 	world.round++
 
 	return true
 }
 
 func (world *gameWorld) act(actorID int) bool {
+	// already killed by prior actor in this round
+	if actorID == 0 {
+		return true
+	}
+
 	var enemySet map[int]struct{}
 	if _, isGoblin := world.goblins[actorID]; isGoblin {
 		enemySet = world.elves
@@ -494,8 +508,7 @@ func (world *gameWorld) attack(actorID, attackID int) {
 		string(world.r[actorID]), world.p[actorID], actorID,
 		string(world.r[attackID]), world.p[attackID], attackID,
 	)
-	hp := world.hp[attackID] - world.ap[actorID]
-	if hp < 0 {
+	if hp := world.hp[attackID] - world.ap[actorID]; hp < 0 {
 		world.destroyEntity(attackID)
 	} else {
 		world.hp[attackID] = hp
