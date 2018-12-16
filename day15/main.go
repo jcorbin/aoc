@@ -22,6 +22,12 @@ import (
 	"github.com/jcorbin/aoc/internal/quadindex"
 )
 
+var (
+	verbose  = flag.Bool("v", false, "verbose logs")
+	goblinAP = flag.Int("goblin-ap", 3, "goblin attack power")
+	elfinAP  = flag.Int("elf-ap", 3, "elf attack power")
+)
+
 func main() {
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -140,6 +146,7 @@ type gameWorld struct {
 	actors   []int
 	goblins  map[int]struct{}
 	elves    map[int]struct{}
+	deaths   int
 }
 
 func (world *gameWorld) describe(id int, buf *bytes.Buffer) {
@@ -292,10 +299,10 @@ func (world *gameWorld) loadCell(p image.Point, c byte) {
 	case '.':
 		world.createFloor(p)
 	case 'G':
-		world.createActor(p, 'G', ansi.RGB(128, 32, 16), 200, 3)
+		world.createActor(p, 'G', ansi.RGB(128, 32, 16), 200, *goblinAP)
 		world.createFloor(p)
 	case 'E':
-		world.createActor(p, 'E', ansi.RGB(16, 128, 32), 200, 3)
+		world.createActor(p, 'E', ansi.RGB(16, 128, 32), 200, *elfinAP)
 		world.createFloor(p)
 	}
 }
@@ -361,12 +368,16 @@ func (world *gameWorld) pruneActors() {
 }
 
 func (world *gameWorld) destroyEntity(id int) {
+	if _, weCare := world.elves[id]; weCare {
+		// no one counts goblin deaths
+		world.deaths++
+	}
+
 	for i := 0; i < len(world.actors); i++ {
 		if world.actors[i] == id {
 			world.actors[i] = 0
 		}
 	}
-
 	delete(world.goblins, id)
 	delete(world.elves, id)
 	world.Index.Delete(id, world.p[id])
@@ -443,6 +454,12 @@ func (world *gameWorld) finish() {
 		world.winningTeam(),
 		world.remainingHP(),
 	)
+	if world.deaths > 0 {
+		log.Printf("\x1b[91mFAIL\x1b[0m there were %v elf deaths...", world.deaths)
+	} else {
+		log.Printf("\x1b[92mSUCCESS\x1b[0m no elf deaths!")
+		log.Printf("outcome is %v", world.round*world.remainingHP())
+	}
 }
 
 func (world *gameWorld) tick() bool {
@@ -522,12 +539,14 @@ func (world *gameWorld) chooseAttack(actorID int, enemySet map[int]struct{}) int
 }
 
 func (world *gameWorld) attack(actorID, attackID int) {
-	log.Printf(
-		"attack %s@%v#%v => %s@%v#%v",
-		string(world.r[actorID]), world.p[actorID], actorID,
-		string(world.r[attackID]), world.p[attackID], attackID,
-	)
-	if hp := world.hp[attackID] - world.ap[actorID]; hp < 0 {
+	if *verbose {
+		log.Printf(
+			"attack %s@%v#%v => %s@%v#%v",
+			string(world.r[actorID]), world.p[actorID], actorID,
+			string(world.r[attackID]), world.p[attackID], attackID,
+		)
+	}
+	if hp := world.hp[attackID] - world.ap[actorID]; hp <= 0 {
 		world.destroyEntity(attackID)
 	} else {
 		world.hp[attackID] = hp
@@ -550,7 +569,9 @@ func (world *gameWorld) move(actorID int, enemySet map[int]struct{}) bool {
 		reachableIDs, reachableD = world.updateAdjacentReach(reach, ep, reachableIDs, reachableD)
 	}
 	if len(reachableIDs) == 0 {
-		log.Printf("nothing reachable for %s@%v#%v", string(world.r[actorID]), world.p[actorID], actorID)
+		if *verbose {
+			log.Printf("nothing reachable for %s@%v#%v", string(world.r[actorID]), world.p[actorID], actorID)
+		}
 		return false
 	}
 
@@ -558,38 +579,45 @@ func (world *gameWorld) move(actorID int, enemySet map[int]struct{}) bool {
 	world.sortIDs(reachableIDs)
 	targetID := reachableIDs[0]
 	targetP := world.p[targetID]
-	log.Printf(
-		"target %s@%v#%v => %s@%v#%v",
-		string(world.r[actorID]), world.p[actorID], actorID,
-		string(world.r[targetID]), world.p[targetID], targetID,
-	)
+	if *verbose {
+		log.Printf(
+			"target %s@%v#%v => %s@%v#%v",
+			string(world.r[actorID]), world.p[actorID], actorID,
+			string(world.r[targetID]), world.p[targetID], targetID,
+		)
+	}
 
 	// move to the first, in reading order, nearest adjacent cell
 	reach.Update(world, targetP)
 	// world.placeReachLabels(reach, -1) XXX for debugging reachability scores
 	reachableIDs, reachableD = world.updateAdjacentReach(reach, actorP, reachableIDs[:0], -1)
 	if len(reachableIDs) == 0 {
-		// XXX inconceivable
-		log.Printf("no nearest reachable for %s@%v#%v targeting %s@%v#%v",
-			string(world.r[actorID]), actorP, actorID,
-			string(world.r[targetID]), targetP, targetID,
-		)
+		if *verbose {
+			log.Printf("no nearest reachable for %s@%v#%v targeting %s@%v#%v",
+				string(world.r[actorID]), actorP, actorID,
+				string(world.r[targetID]), targetP, targetID,
+			)
+		}
 		return false
 	}
 	world.sortIDs(reachableIDs)
 
 	cellID := reachableIDs[0]
 	if cellID == 0 {
-		log.Printf("zero cell id! in %v", reachableIDs) // XXX inconceivable
+		if *verbose {
+			log.Printf("zero cell id! in %v", reachableIDs) // XXX inconceivable
+		}
 		return false
 	}
 
 	cellP := world.p[cellID]
-	log.Printf(
-		"move %s@%v#%v => %s@%v#%v",
-		string(world.r[actorID]), world.p[actorID], actorID,
-		string(world.r[cellID]), cellP, cellID,
-	)
+	if *verbose {
+		log.Printf(
+			"move %s@%v#%v => %s@%v#%v",
+			string(world.r[actorID]), world.p[actorID], actorID,
+			string(world.r[cellID]), cellP, cellID,
+		)
+	}
 	world.p[actorID] = cellP
 	world.Index.Update(actorID, cellP)
 
