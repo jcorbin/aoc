@@ -16,26 +16,104 @@ func init() {
 	log.SetFlags(0)
 }
 
+type testResult struct {
+	rounds   int
+	team     string
+	remainHP int
+}
+
+type testCheckpoint struct {
+	round int
+	lines []string
+}
+
+type testScenario struct {
+	name        string
+	initialGrid []string
+	checkpoints []testCheckpoint
+	testResult
+}
+
+func (tc testScenario) run(t *testing.T, verbose bool) {
+	logs.Reset()
+
+	var buf bytes.Buffer
+	for _, line := range tc.initialGrid {
+		buf.WriteString(line)
+		buf.WriteByte('\n')
+	}
+
+	var world gameWorld
+	world.load(&buf)
+
+	res := func() testResult {
+		hp := world.remainingHP()
+		return testResult{
+			rounds:   world.round,
+			team:     world.winningTeam(),
+			remainHP: hp,
+		}
+	}
+
+	var g anansi.Grid
+
+	ci := 0
+	for i := 0; i < 10*tc.rounds; i++ {
+		if verbose {
+			t.Logf("start round %v", world.round+1)
+		}
+		if !world.tick() {
+			break
+		}
+		if verbose {
+			sc := bufio.NewScanner(&logs)
+			for sc.Scan() {
+				t.Logf("%s\n", sc.Bytes())
+			}
+			t.Logf("finished round %v (%v elves vs %v goblins)\n", res(), len(world.elves), len(world.goblins))
+		}
+
+		g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
+		for i := range g.Rune {
+			g.Rune[i] = 0
+			g.Attr[i] = 0
+		}
+		world.render(g, image.ZP)
+		lines := gridLines(g)
+
+		logGrid := true
+		if ci < len(tc.checkpoints) {
+			chk := tc.checkpoints[ci]
+			require.False(t, chk.round < world.round, "missed checkpoint[%v]", chk.round)
+			if chk.round == world.round {
+				require.Equal(t, chk.lines, lines, "expected checkpoint[%v]", chk.round)
+				if verbose {
+					t.Logf("passed checkpoint[%v]", chk.round)
+				}
+				logGrid = false
+				ci++
+			}
+		}
+
+		if logGrid {
+			ruler := ""
+			for i, x := 0, world.bounds.Dx(); i <= x; i++ {
+				ruler += string('0' + i%10)
+			}
+			if verbose {
+				t.Logf("   %s", ruler)
+				for i, line := range lines {
+					t.Logf("%d: %s", i, line)
+				}
+			}
+		}
+
+	}
+	assert.Equal(t, tc.testResult, res())
+}
+
 func Test_gameWorld_combat(t *testing.T) {
-	type result struct {
-		rounds   int
-		team     string
-		remainHP int
-	}
-
-	type checkpoint struct {
-		round int
-		lines []string
-	}
-
-	type scenario struct {
-		name        string
-		initialGrid []string
-		checkpoints []checkpoint
-		result
-	}
-
-	for _, tc := range []scenario{
+	for _, tc := range []testScenario{
 
 		{
 			name: "ex1",
@@ -48,7 +126,7 @@ func Test_gameWorld_combat(t *testing.T) {
 				"#.....#",
 				"#######",
 			},
-			checkpoints: []checkpoint{
+			checkpoints: []testCheckpoint{
 				{1, []string{
 					"#######",
 					"#..G..# G(200)",
@@ -78,14 +156,6 @@ func Test_gameWorld_combat(t *testing.T) {
 					"#.....#",
 					"#######",
 				}},
-
-				// attack G@(4,1)#10 => E@(4,2)#20
-				// attack G@(3,2)#36 => E@(4,2)#20
-				// attack E@(4,2)#20 => G@(5,2)#22
-				// attack G@(5,2)#22 => E@(4,2)#20
-				// attack E@(5,4)#39 => G@(5,3)#30
-				// attack E@(5,4)#39 => G@(5,3)#30
-				// finished round {23 none 793} (1 elves vs 4 goblins)
 
 				// Combat ensues; eventually, the top Elf dies:
 				{23, []string{
@@ -159,7 +229,7 @@ func Test_gameWorld_combat(t *testing.T) {
 					"#######",
 				}},
 			},
-			result: result{
+			testResult: testResult{
 				rounds:   47,
 				team:     "goblins",
 				remainHP: 590,
@@ -177,8 +247,8 @@ func Test_gameWorld_combat(t *testing.T) {
 				"#...E.#",
 				"#######",
 			},
-			checkpoints: []checkpoint{
-				{47, []string{
+			checkpoints: []testCheckpoint{
+				{37, []string{
 					"#######",
 					"#...#E# E(200)",
 					"#E#...# E(197)",
@@ -188,7 +258,7 @@ func Test_gameWorld_combat(t *testing.T) {
 					"#######",
 				}},
 			},
-			result: result{
+			testResult: testResult{
 				rounds:   37,
 				team:     "elves",
 				remainHP: 982,
@@ -251,67 +321,11 @@ func Test_gameWorld_combat(t *testing.T) {
 	} {
 
 		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			for _, line := range tc.initialGrid {
-				buf.WriteString(line)
-				buf.WriteByte('\n')
+			if !t.Run("dry", func(t *testing.T) {
+				tc.run(t, false)
+			}) {
+				tc.run(t, true)
 			}
-
-			var world gameWorld
-			world.load(&buf)
-
-			res := func() result {
-				hp := world.remainingHP()
-				return result{
-					rounds:   world.round,
-					team:     world.winningTeam(),
-					remainHP: hp,
-				}
-			}
-
-			var g anansi.Grid
-
-			ci := 0
-			for i := 0; i < 10*tc.rounds && world.tick(); i++ {
-				sc := bufio.NewScanner(&logs)
-				for sc.Scan() {
-					t.Logf("%s\n", sc.Bytes())
-				}
-				t.Logf("finished round %v (%v elves vs %v goblins)\n", res(), len(world.elves), len(world.goblins))
-
-				g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
-				for i := range g.Rune {
-					g.Rune[i] = 0
-					g.Attr[i] = 0
-				}
-				world.render(g, image.ZP)
-				lines := gridLines(g)
-
-				logGrid := true
-				if ci < len(tc.checkpoints) {
-					chk := tc.checkpoints[ci]
-					require.False(t, chk.round < world.round, "missed checkpoint[%v]", chk.round)
-					if chk.round == world.round {
-						require.Equal(t, chk.lines, lines, "expected checkpoint[%v]", chk.round)
-						t.Logf("passed checpoint[%v]", chk.round)
-						logGrid = false
-						ci++
-					}
-				}
-
-				if logGrid {
-					ruler := ""
-					for i, x := 0, world.bounds.Dx(); i <= x; i++ {
-						ruler += string('0' + i%10)
-					}
-					t.Logf("   %s", ruler)
-					for i, line := range lines {
-						t.Logf("%d: %s", i, line)
-					}
-				}
-
-			}
-			assert.Equal(t, tc.result, res())
 		})
 	}
 }

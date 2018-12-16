@@ -531,22 +531,24 @@ func (world *gameWorld) move(actorID int, enemySet map[int]struct{}) bool {
 		reachableIDs, reachableD = world.updateAdjacentReach(reach, ep, reachableIDs, reachableD)
 	}
 	if len(reachableIDs) == 0 {
-		log.Printf("nothing reachable for #%v", actorID)
+		log.Printf("nothing reachable for %s@%v#%v", string(world.r[actorID]), world.p[actorID], actorID)
 		return false
 	}
-	// log.Printf("reachable cells: %v d:%v", reachableIDs, reachableD)
 
 	// choose the first, in reading order, most reachable enemy
 	world.sortIDs(reachableIDs)
 	targetID := reachableIDs[0]
 	targetP := world.p[targetID]
-	// log.Printf("chosen target #%v@%v => #%v@%v", actorID, actorP, targetID, targetP)
 
 	// move to the first, in reading order, nearest adjacent cell
 	reach.Update(world, targetP)
 	reachableIDs, reachableD = world.updateAdjacentReach(reach, actorP, reachableIDs[:0], 0)
 	if len(reachableIDs) == 0 {
-		log.Printf("no nearest reachable!") // XXX inconceivable
+		// XXX inconceivable
+		log.Printf("no nearest rearchable for %s@%v#%v targeting %s@%v#%v",
+			string(world.r[actorID]), actorP, actorID,
+			string(world.r[targetID]), targetP, targetID,
+		)
 		return false
 	}
 	world.sortIDs(reachableIDs)
@@ -659,9 +661,13 @@ func (r *reachabilityScore) Update(world *gameWorld, p image.Point) {
 		r.sc[i] = -1
 	}
 
+	// TODO factor out reachabilitySearch
+
 	var srch searchCore // TODO re-use
 	srch.init(len(world.p))
 	srch.push(p, 0, world.empty(p))
+	ri, _ := r.Index(p)
+	r.sc[ri] = 0
 
 	// sort reverse by distance, so we expand (a) closest point first
 	srch.sort = sortPointRevBy{sortPointBy{&srch.p, &srch.d}}
@@ -692,10 +698,10 @@ func (r *reachabilityScore) Update(world *gameWorld, p image.Point) {
 
 func (world *gameWorld) updateAdjacentReach(
 	reach reachabilityScore,
-	p image.Point,
+	from image.Point,
 	ids []int, best int,
 ) ([]int, int) {
-	pts, cellIDs := world.adjacentCells(p)
+	pts, cellIDs := world.adjacentCells(from)
 	for i, cellID := range cellIDs {
 		if cellID != 0 {
 			d := reach.Get(pts[i])
