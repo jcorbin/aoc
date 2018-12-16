@@ -167,6 +167,7 @@ var (
 )
 
 type regs [4]int
+type inst [4]int
 
 func (r regs) eq(other regs) bool {
 	for i, rv := range r {
@@ -179,12 +180,12 @@ func (r regs) eq(other regs) bool {
 
 type sample struct {
 	before regs
-	op     regs
+	op     inst
 	after  regs
 }
 
 func run(in, out *os.File) error {
-	samples, err := read(in)
+	prog, samples, err := read(in)
 	if err != nil {
 		return err
 	}
@@ -229,6 +230,19 @@ func run(in, out *os.File) error {
 	}
 	log.Printf("FOUND%s", buf.Bytes())
 
+	// run the program
+	step := 0
+	var rs regs
+	log.Printf("%v: %v", step, rs)
+	for _, in := range prog {
+		step++
+		code, a, b, c := in[0], in[1], in[2], in[3]
+		op := codes[code]
+		opFunc := ops[op]
+		rs = opFunc(rs, a, b, c)
+		log.Printf("%v: %s %v %v %v => %v", step, names[op], a, b, c, rs)
+	}
+
 	return nil
 }
 
@@ -238,17 +252,16 @@ var (
 	afterPat  = regexp.MustCompile(`After: +\[(\d+), (\d+), (\d+), (\d+)\]`)
 )
 
-func read(r io.Reader) (samples []sample, err error) {
+func read(r io.Reader) (prog []inst, samples []sample, err error) {
 	sc := bufio.NewScanner(r)
 	samples, err = scanSamples(sc)
-	// if err == nil {
-	// 	TODO parse trailer program
-	// }
-	return samples, err
+	if err == nil {
+		prog, err = scanProgram(sc)
+	}
+	return prog, samples, err
 }
 
 func scanSamples(sc *bufio.Scanner) (samples []sample, _ error) {
-	lineNum := 0
 	for done := false; sc.Err() == nil && !done; {
 		if err := func() error {
 			var s sample
@@ -298,7 +311,6 @@ func scanSamples(sc *bufio.Scanner) (samples []sample, _ error) {
 					done = true
 					break
 				}
-				lineNum++
 				if err := step(); err != nil {
 					return err
 				}
@@ -308,11 +320,31 @@ func scanSamples(sc *bufio.Scanner) (samples []sample, _ error) {
 			}
 			return nil
 		}(); err != nil {
-			return samples, fmt.Errorf("%v (in line %d:%q)", err, lineNum, sc.Text())
+			return samples, fmt.Errorf("%v (in line %q)", err, sc.Text())
 		}
 	}
 
 	return samples, sc.Err()
+}
+
+func scanProgram(sc *bufio.Scanner) (prog []inst, _ error) {
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			if len(prog) == 0 {
+				continue
+			}
+			return prog, nil
+		}
+		var next inst
+		if err := expect(line, opPat, func(parts []string) error {
+			return parseInts(next[:], parts[1:])
+		}); err != nil {
+			return prog, fmt.Errorf("%v (in line %q)", err, sc.Text())
+		}
+		prog = append(prog, next)
+	}
+	return prog, sc.Err()
 }
 
 func expect(s string, pat *regexp.Regexp, f func([]string) error) error {
