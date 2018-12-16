@@ -118,6 +118,7 @@ const (
 	gameActor
 	gameHP
 	gameAP
+	gameLabel
 )
 
 type gameWorld struct {
@@ -134,6 +135,7 @@ type gameWorld struct {
 	hp []int
 	ap []int
 
+	free     []int
 	noTarget bool
 	actors   []int
 	goblins  map[int]struct{}
@@ -158,7 +160,19 @@ func (world *gameWorld) describe(id int, buf *bytes.Buffer) {
 	buf.WriteRune('\n')
 }
 
-func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
+func defaultZOrder(z, priorZ int) bool {
+	return z > priorZ
+}
+
+func (world *gameWorld) render(
+	g anansi.Grid,
+	viewOffset image.Point,
+	prefer func(z, priorZ int) bool,
+) {
+	if prefer == nil {
+		prefer = defaultZOrder
+	}
+
 	// world bounded grid
 	gz := make([]int, len(g.Rune)) // TODO re-use allocation
 	for id, t := range world.t {
@@ -177,7 +191,7 @@ func (world *gameWorld) render(g anansi.Grid, viewOffset image.Point) {
 			continue
 		}
 
-		if z := world.z[id]; gz[gi] < z {
+		if z := world.z[id]; prefer(z, gz[gi]) {
 			gz[gi] = z
 			g.Rune[gi] = rune(world.r[id])
 			g.Attr[gi] = mergeBGColors(world.a[id], g.Attr[gi])
@@ -319,7 +333,11 @@ func (world *gameWorld) createActor(p image.Point, r byte, c ansi.SGRColor, hp, 
 }
 
 func (world *gameWorld) createEntity(t gameType) int {
-	// TODO reuse above
+	if len(world.free) > 0 {
+		id := world.free[len(world.free)-1]
+		world.free = world.free[:len(world.free)-1]
+		return id
+	}
 	id := len(world.t)
 	world.t = append(world.t, t)
 	world.p = append(world.p, image.ZP)
@@ -359,6 +377,7 @@ func (world *gameWorld) destroyEntity(id int) {
 	world.a[id] = 0
 	world.hp[id] = 0
 	world.ap[id] = 0
+	world.free = append(world.free, id)
 }
 
 func (world *gameWorld) computeBounds() (bounds image.Rectangle) {
@@ -525,7 +544,7 @@ func (world *gameWorld) move(actorID int, enemySet map[int]struct{}) bool {
 	// find nearest empty cells adjacent to enemies
 	reach.Update(world, actorP)
 	reachableIDs := make([]int, 0, len(enemySet))
-	reachableD := 0
+	reachableD := -1
 	for enemyID := range enemySet {
 		ep := world.p[enemyID]
 		reachableIDs, reachableD = world.updateAdjacentReach(reach, ep, reachableIDs, reachableD)
@@ -539,13 +558,19 @@ func (world *gameWorld) move(actorID int, enemySet map[int]struct{}) bool {
 	world.sortIDs(reachableIDs)
 	targetID := reachableIDs[0]
 	targetP := world.p[targetID]
+	log.Printf(
+		"target %s@%v#%v => %s@%v#%v",
+		string(world.r[actorID]), world.p[actorID], actorID,
+		string(world.r[targetID]), world.p[targetID], targetID,
+	)
 
 	// move to the first, in reading order, nearest adjacent cell
 	reach.Update(world, targetP)
-	reachableIDs, reachableD = world.updateAdjacentReach(reach, actorP, reachableIDs[:0], 0)
+	// world.placeReachLabels(reach, -1) XXX for debugging reachability scores
+	reachableIDs, reachableD = world.updateAdjacentReach(reach, actorP, reachableIDs[:0], -1)
 	if len(reachableIDs) == 0 {
 		// XXX inconceivable
-		log.Printf("no nearest rearchable for %s@%v#%v targeting %s@%v#%v",
+		log.Printf("no nearest reachable for %s@%v#%v targeting %s@%v#%v",
 			string(world.r[actorID]), actorP, actorID,
 			string(world.r[targetID]), targetP, targetID,
 		)
@@ -561,9 +586,9 @@ func (world *gameWorld) move(actorID int, enemySet map[int]struct{}) bool {
 
 	cellP := world.p[cellID]
 	log.Printf(
-		"move %s@%v#%v => #%v@%v",
+		"move %s@%v#%v => %s@%v#%v",
 		string(world.r[actorID]), world.p[actorID], actorID,
-		cellID, cellP,
+		string(world.r[cellID]), cellP, cellID,
 	)
 	world.p[actorID] = cellP
 	world.Index.Update(actorID, cellP)
@@ -591,6 +616,44 @@ func (world *gameWorld) empty(p image.Point) (id int) {
 		id = cur.I()
 	}
 	return id
+}
+
+func (world *gameWorld) placeReachLabels(reach reachabilityScore, z int) {
+	ids := make([]int, 0, len(world.t))
+	for id, t := range world.t {
+		if t&gameLabel != 0 && world.z[id] == z {
+			ids = append(ids, id)
+		}
+	}
+
+	maxsc := world.bounds.Dx() + world.bounds.Dy()
+	for p := reach.Min; p.Y < reach.Max.Y; p.Y++ {
+		for p.X = reach.Min.X; p.X < reach.Max.X; p.X++ {
+			i, _ := reach.Index(p)
+			sc := reach.sc[i]
+			if sc < 0 {
+				continue
+			}
+			var id int
+			if len(ids) > 0 {
+				id = ids[len(ids)-1]
+				ids = ids[:len(ids)-1]
+			} else {
+				id = world.createEntity(gameRender | gameLabel)
+			}
+
+			c := uint8(32 + (256-32)*sc/maxsc)
+			world.p[id] = p
+			world.z[id] = z
+			world.r[id] = '0' + byte(sc%10)
+			world.a[id] = ansi.RGB(c, c, 32).FG()
+			world.Index.Update(id, p)
+		}
+	}
+
+	for _, id := range ids {
+		world.destroyEntity(id)
+	}
 }
 
 type reachabilityScore struct {
@@ -708,7 +771,10 @@ func (world *gameWorld) updateAdjacentReach(
 			if d < 0 {
 				continue
 			}
-			if best > 0 && best > d {
+			if best >= 0 && best < d {
+				continue
+			}
+			if best > d {
 				ids = ids[:0]
 			}
 			ids = append(ids, cellID)
@@ -1026,7 +1092,7 @@ func (game *gameUI) handleWorldInput(e ansi.Escape, a []byte) (bool, error) {
 
 func (game *gameUI) WriteTo(w io.Writer) (n int64, err error) {
 	screen.Clear()
-	game.world.render(screen.Grid, game.viewOffset)
+	game.world.render(screen.Grid, game.viewOffset, nil)
 	overlayLogs()
 	game.overlayBanner()
 	game.overlayMess()

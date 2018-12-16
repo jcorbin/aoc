@@ -56,6 +56,13 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 	}
 
 	var g anansi.Grid
+	clearGrid := func() {
+		g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
+		for i := range g.Rune {
+			g.Rune[i] = 0
+			g.Attr[i] = 0
+		}
+	}
 
 	ci := 0
 	for i := 0; i < 10*tc.rounds; i++ {
@@ -73,12 +80,8 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 			t.Logf("finished round %v (%v elves vs %v goblins)\n", res(), len(world.elves), len(world.goblins))
 		}
 
-		g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
-		for i := range g.Rune {
-			g.Rune[i] = 0
-			g.Attr[i] = 0
-		}
-		world.render(g, image.ZP)
+		clearGrid()
+		world.render(g, image.ZP, nil)
 		lines := gridLines(g)
 
 		logGrid := true
@@ -86,7 +89,22 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 			chk := tc.checkpoints[ci]
 			require.False(t, chk.round < world.round, "missed checkpoint[%v]", chk.round)
 			if chk.round == world.round {
-				require.Equal(t, chk.lines, lines, "expected checkpoint[%v]", chk.round)
+				if !assert.Equal(t, chk.lines, lines, "expected checkpoint[%v]", chk.round) {
+
+					// XXX for showing debug labels
+					// clearGrid()
+					// world.render(g, image.ZP, func(z, priorZ int) bool {
+					// 	if z < 0 {
+					// 		return true
+					// 	}
+					// 	return z > priorZ
+					// })
+					// for _, line := range gridLines(g) {
+					// 	t.Logf("! %s", line)
+					// }
+
+					t.FailNow()
+				}
 				if verbose {
 					t.Logf("passed checkpoint[%v]", chk.round)
 				}
@@ -109,11 +127,66 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 		}
 
 	}
-	assert.Equal(t, tc.testResult, res())
+	if tc.testResult.rounds != 0 {
+		assert.Equal(t, tc.testResult, res())
+	}
 }
 
 func Test_gameWorld_combat(t *testing.T) {
 	for _, tc := range []testScenario{
+
+		{
+			name: "movement ex",
+			initialGrid: []string{
+				"#########",
+				"#G..G..G#", // G(200) G(200) G(200)
+				"#.......#",
+				"#.......#",
+				"#G..E..G#", // G(200) E(200) G(200)
+				"#.......#",
+				"#.......#",
+				"#G..G..G#", // G(200) G(200) G(200)
+				"#########",
+			},
+			checkpoints: []testCheckpoint{
+
+				{1, []string{
+					"#########",
+					"#.G...G.# G(200) G(200)",
+					"#...G...# G(197)",
+					"#...E..G# E(200) G(200)",
+					"#.G.....# G(200)",
+					"#.......#",
+					"#G..G..G# G(200) G(200) G(200)",
+					"#.......#",
+					"#########",
+				}},
+
+				{2, []string{
+					"#########",
+					"#..G.G..# G(200) G(200)",
+					"#...G...# G(194)",
+					"#.G.E.G.# G(200) E(197) G(200)",
+					"#.......#",
+					"#G..G..G# G(200) G(200) G(200)",
+					"#.......#",
+					"#.......#",
+					"#########",
+				}},
+
+				{3, []string{
+					"#########",
+					"#.......#",
+					"#..GGG..# G(200) G(191) G(200)",
+					"#..GEG..# G(200) E(185) G(200)",
+					"#G..G...# G(200) G(200)",
+					"#......G# G(200)",
+					"#.......#",
+					"#.......#",
+					"#########",
+				}},
+			},
+		},
 
 		{
 			name: "ex1",
@@ -248,6 +321,26 @@ func Test_gameWorld_combat(t *testing.T) {
 				"#######",
 			},
 			checkpoints: []testCheckpoint{
+				{7, []string{
+					"#######",
+					"#GE.#E# G(161) E(200) E(200)",
+					"#E#...# E(158)",
+					"#GE##E# G(188) E(200) E(200)",
+					"#.E.#.# E(200)",
+					"#.....#",
+					"#######",
+				}},
+
+				{8, []string{
+					"#######",
+					"#GE.#E# G(155) E(200) E(200)",
+					"#E#...# E(152)",
+					"#GE##.# G(182) E(200)",
+					"#E..#E# E(200) E(200)",
+					"#.....#",
+					"#######",
+				}},
+
 				{37, []string{
 					"#######",
 					"#...#E# E(200)",
