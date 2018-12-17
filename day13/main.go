@@ -8,19 +8,19 @@ import (
 	"image"
 	"io"
 	"log"
-	"math"
 	"os"
 	"path"
 	"sort"
 	"strings"
-	"syscall"
-	"time"
 	"unicode/utf8"
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
 	"github.com/jcorbin/aoc/internal/quadindex"
+	"github.com/jcorbin/aoc/internal/worldui"
 )
+
+var logfile = flag.String("logfile", "", "log file")
 
 func main() {
 	flag.Usage = func() {
@@ -38,64 +38,13 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	anansi.MustRun(run(os.Stdin, os.Stdout))
-}
 
-var (
-	// We need to handle these signals so that we restore terminal state
-	// properly (raw mode and exit the alternate screen).
-	halt = anansi.Notify(syscall.SIGTERM, syscall.SIGINT)
+	log.SetFlags(log.Ltime | log.Lmicroseconds)
+	worldui.MustOpenLogFile(*logfile)
 
-	// terminal resize signals
-	resize = anansi.Notify(syscall.SIGWINCH)
+	var world cartWorld
 
-	// input availability notification
-	inputReady anansi.InputSignal
-
-	// The virtual screen that will be our canvas.
-	screen anansi.Screen
-
-	// in-memory log buffer
-	logs bytes.Buffer
-)
-
-func init() {
-	f, err := os.Create("cart_world.log")
-	if err != nil {
-		log.Fatalf("failed to create cart_world.log: %v", err)
-	}
-	log.SetOutput(io.MultiWriter(
-		&logs,
-		f,
-	))
-}
-
-func overlayLogs() {
-	n := bytes.Count(logs.Bytes(), []byte{'\n'})
-	lb := logs.Bytes()
-	for n > 5 {
-		off := bytes.IndexByte(lb, '\n')
-		if off < 0 {
-			break
-		}
-		lb = lb[off+1:]
-		logs.Next(off + 1)
-		n--
-	}
-
-	screen.To(ansi.Pt(1, screen.Bounds().Dy()-n+1))
-
-	lb = logs.Bytes()
-	for {
-		off := bytes.IndexByte(lb, '\n')
-		if off < 0 {
-			screen.Write(lb)
-			break
-		}
-		screen.Write(lb[:off])
-		screen.WriteString("\r\n")
-		lb = lb[off+1:]
-	}
+	worldui.MustRun(&world)
 }
 
 type cartType uint8
@@ -141,92 +90,15 @@ type cartWorld struct {
 
 	carts []int
 
-	last     time.Time
-	ticking  bool
-	playing  bool
-	playRate int // tick-per-second
-
+	ui         worldui.UI
 	crash      int
 	autoRemove bool
-
-	timer *time.Timer
-
-	viewOffset image.Point
-
-	banner []byte
-
-	hi     bool
-	hiStop bool
-	hiAt   image.Point
-
-	focus image.Point
-
-	mess     []byte
-	messSize image.Point
+	hi         bool
+	hiStop     bool
+	hiAt       image.Point
 }
 
 var traceFlag = flag.Bool("trace", false, "log trace events")
-
-func run(in, out *os.File) error {
-	var world cartWorld
-
-	helpMess += welcomeMess + keysMess
-
-	if err := func() error {
-		if !anansi.IsTerminal(in) {
-			return world.load(in)
-		}
-
-		name := flag.Arg(0)
-		if name == "" {
-			helpMess += inputMessEx + inputMess
-			return world.load(bytes.NewReader([]byte(exProblem)))
-		}
-
-		f, err := os.Open(name)
-		if err == nil {
-			err = world.load(f)
-			if cerr := f.Close(); err == nil {
-				err = cerr
-			}
-		}
-		return err
-	}(); err != nil {
-		return err
-	}
-
-	helpMess += helpMessFooter
-
-	worldMid := world.b.Size().Div(2)
-	screenMid := screen.Bounds().Size().Div(2)
-	world.focus = worldMid.Sub(screenMid)
-
-	if !anansi.IsTerminal(in) {
-		f, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		in = f
-	}
-
-	term := anansi.NewTerm(in, out,
-		&halt,
-		&resize,
-		&inputReady,
-		&screen,
-	)
-	term.SetRaw(true)
-	term.AddMode(
-		ansi.ModeAlternateScreen,
-
-		ansi.ModeMouseSgrExt,
-		ansi.ModeMouseBtnEvent,
-		// ansi.ModeMouseAnyEvent,
-	)
-	resize.Send("initialize screen size")
-	return term.RunWith(&world)
-}
 
 var welcomeMess = "" +
 	`________________/---------\` + "\n" +
@@ -276,89 +148,35 @@ var exProblem = "" +
 
 var helpMess string
 
-func (world *cartWorld) Run(term *anansi.Term) error {
-	world.timer = time.NewTimer(100 * time.Second)
-	world.setMess([]byte(helpMess))
-	world.stopTimer()
-	return term.Loop(world)
-}
+func (world *cartWorld) Init(ui worldui.UI) (err error) {
+	world.ui = ui
 
-func (world *cartWorld) setTimer(d time.Duration) {
-	if world.timer == nil {
-		world.timer = time.NewTimer(d)
-	} else {
-		world.timer.Reset(d)
-	}
-}
-
-func (world *cartWorld) stopTimer() {
-	world.timer.Stop()
-	select {
-	case <-world.timer.C:
-	default:
-	}
-}
-
-func (world *cartWorld) Update(term *anansi.Term) (redraw bool, _ error) {
-	select {
-	case sig := <-halt.C:
-		return false, anansi.SigErr(sig)
-
-	case <-resize.C:
-		if err := screen.SizeToTerm(term); err != nil {
-			return false, err
-		}
-		redraw = true
-
-	case <-inputReady.C:
-		_, err := term.ReadAny()
-		herr := world.handleInput(term)
+	helpMess += welcomeMess + keysMess
+	if !anansi.IsTerminal(os.Stdin) {
+		log.Printf("load stdin")
+		err = world.load(os.Stdin)
+	} else if name := flag.Arg(0); name != "" {
+		log.Printf("load file arg %q", name)
+		f, err := os.Open(name)
 		if err == nil {
-			err = herr
-		}
-		if err != nil {
-			return false, err
-		}
-
-	case now := <-world.timer.C:
-		world.update(now)
-		redraw = true
-	}
-	return redraw, nil
-}
-
-func (world *cartWorld) update(now time.Time) {
-	// no updates while displaying a message
-	if !world.ticking {
-		world.last = now
-		return
-	}
-
-	// single-step
-	if !world.playing {
-		world.tick()
-		world.last = now
-		return
-	}
-
-	// advance playback
-	if ticks := int(math.Round(float64(now.Sub(world.last)) / float64(time.Second) * float64(world.playRate))); ticks > 0 {
-		const maxTicks = 100000
-		if ticks > maxTicks {
-			ticks = maxTicks
-		}
-		for i := 0; i < ticks; i++ {
-			if !world.tick() {
-				world.playing = false
-				break
+			err = world.load(f)
+			if cerr := f.Close(); err == nil {
+				err = cerr
 			}
 		}
-		world.last = now
+	} else {
+		log.Printf("load builtin")
+		helpMess += inputMessEx + inputMess
+		err = world.load(bytes.NewReader([]byte(exProblem)))
 	}
+	helpMess += helpMessFooter
 
-	world.ticking = true
-	world.setTimer(10 * time.Millisecond) // TODO compute next time when ticks > 0; avoid spurious wakeup
+	world.ui.SetFocus(world.b.Size().Div(2))
+	world.ui.Display(helpMess)
+	return err
 }
+
+func (world *cartWorld) Bounds() image.Rectangle { return world.b }
 
 func (world *cartWorld) done() bool {
 	if world.hiStop {
@@ -366,7 +184,7 @@ func (world *cartWorld) done() bool {
 	}
 	switch len(world.carts) {
 	case 0:
-		world.setBanner("No Carts Left")
+		world.ui.Say("No Carts Left")
 		return true
 	case 1:
 		p := world.p[world.carts[0]]
@@ -376,7 +194,7 @@ func (world *cartWorld) done() bool {
 	return false
 }
 
-func (world *cartWorld) tick() bool {
+func (world *cartWorld) Tick() bool {
 	if world.done() {
 		return false
 	}
@@ -497,25 +315,17 @@ func (world *cartWorld) tick() bool {
 	return true
 }
 
-func (world *cartWorld) setBanner(mess string, args ...interface{}) {
-	if len(args) > 0 {
-		mess = fmt.Sprintf(mess, args...)
-	}
-	world.banner = []byte(mess)
-}
-
 func (world *cartWorld) setHighlight(stop bool, at image.Point, mess string, args ...interface{}) {
-	world.setBanner(mess, args...)
+	world.ui.Say(fmt.Sprintf(mess, args...))
 	world.hi = true
 	world.hiStop = stop
 	world.hiAt = at
-	world.ticking = false
-	world.playing = false
-	world.focus = world.hiAt
+	world.ui.Pause()
+	world.ui.SetFocus(world.hiAt)
 }
 
 func (world *cartWorld) clearHighlight() {
-	world.banner = nil
+	world.ui.Say("")
 	world.hi = false
 	world.hiStop = false
 	world.hiAt = image.ZP
@@ -557,87 +367,11 @@ func (world *cartWorld) removeCart(id int) {
 	world.s[id] = 0
 }
 
-func (world *cartWorld) handleInput(term *anansi.Term) error {
-	for e, a, ok := term.Decode(); ok; e, a, ok = term.Decode() {
-		for _, handlerFn := range []func(e ansi.Escape, a []byte) (bool, error){
-			world.handleLowInput,
-			world.handleMessInput,
-			world.handleSimInput,
-		} {
-			if handled, err := handlerFn(e, a); err != nil {
-				return err
-			} else if handled {
-				break
-			}
-		}
-	}
-	return nil
-}
-
-func (world *cartWorld) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
-	switch e {
-
-	case 0x03: // stop on Ctrl-C
-		return true, fmt.Errorf("read %v", e)
-
-	case 0x0c: // clear screen on Ctrl-L
-		screen.Clear()           // clear virtual contents
-		screen.To(ansi.Pt(1, 1)) // cursor back to top
-		screen.Invalidate()      // force full redraw
-		world.setTimer(5 * time.Millisecond)
-		return true, nil
-
-	}
-	return false, nil
-}
-
-func (world *cartWorld) handleMessInput(e ansi.Escape, a []byte) (bool, error) {
-	// no message, ignore
-	if world.mess == nil {
-		return false, nil
-	}
-
-	switch e {
-
-	// <Esc> to dismiss message
-	case ansi.Escape('\x1b'):
-		world.setMess(nil)
-		return true, nil
-
-	// eat any other input when a message is shown
-	default:
-		return true, nil
-	}
-}
-
-func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
+func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 	switch e {
 	// display help
 	case ansi.Escape('?'):
-		world.setMess([]byte(helpMess))
-		return true, nil
-
-	// arrow keys to move view
-	case ansi.CUB, ansi.CUF, ansi.CUU, ansi.CUD:
-		if d, ok := ansi.DecodeCursorCardinal(e, a); ok {
-			p := world.focus.Add(d)
-			if p.X < world.b.Min.X {
-				p.X = world.b.Min.X
-			}
-			if p.Y < world.b.Min.Y {
-				p.Y = world.b.Min.Y
-			}
-			if p.X >= world.b.Max.X {
-				p.X = world.b.Max.X - 1
-			}
-			if p.Y >= world.b.Max.Y {
-				p.Y = world.b.Max.Y - 1
-			}
-			if world.focus != p {
-				world.focus = p
-				world.setTimer(5 * time.Millisecond)
-			}
-		}
+		world.ui.Display(helpMess)
 		return true, nil
 
 	// mouse inspection
@@ -647,7 +381,7 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 				var buf bytes.Buffer
 				buf.Grow(1024)
 
-				p := sp.ToImage().Sub(world.viewOffset)
+				p := sp.ToImage().Sub(world.ui.ViewOffset())
 				fmt.Fprintf(&buf, "Query @%v\n", p)
 
 				n := 0
@@ -668,7 +402,7 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 				}
 				fmt.Fprintf(&buf, "( <Esc> to close )")
 
-				world.setMess(buf.Bytes())
+				world.ui.Display(buf.String())
 			}
 		}
 		return true, nil
@@ -679,10 +413,9 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 			world.t[world.crash] &= ^cartCrash
 			log.Printf("removed @%v, remaining: %v", world.p[world.crash], len(world.carts))
 			world.crash = 0
-			world.ticking = false
-			world.playing = false
+			world.ui.Pause()
 			world.clearHighlight()
-			world.setTimer(5 * time.Millisecond)
+			world.ui.RequestRender()
 		}
 		return true, nil
 
@@ -694,130 +427,14 @@ func (world *cartWorld) handleSimInput(e ansi.Escape, a []byte) (bool, error) {
 		} else {
 			log.Printf("auto remove on")
 		}
-		world.setTimer(5 * time.Millisecond)
-		return true, nil
-
-	// step
-	case ansi.Escape('.'):
-		world.setTimer(5 * time.Millisecond)
-		world.ticking = true
-		return true, nil
-
-	// play/pause
-	case ansi.Escape(' '):
-		world.playing = !world.playing
-		if !world.playing {
-			world.stopTimer()
-			log.Printf("pause")
-		} else {
-			world.last = time.Now()
-			if world.playRate == 0 {
-				world.playRate = 1
-			}
-			world.ticking = true
-			log.Printf("play at %v ticks/s", world.playRate)
-		}
-		world.setTimer(5 * time.Millisecond)
-		return true, nil
-
-	// speed control
-	case ansi.Escape('+'):
-		world.playRate *= 2
-		log.Printf("speed up to %v ticks/s", world.playRate)
-		world.setTimer(5 * time.Millisecond)
-		return true, nil
-	case ansi.Escape('-'):
-		rate := world.playRate / 2
-		if rate <= 0 {
-			rate = 1
-		}
-		if world.playRate != rate {
-			world.playRate = rate
-			log.Printf("slow down to %v ticks/s", world.playRate)
-		}
-		world.setTimer(5 * time.Millisecond)
+		world.ui.RequestRender()
 		return true, nil
 
 	}
 	return false, nil
 }
 
-func (world *cartWorld) WriteTo(w io.Writer) (n int64, err error) {
-	screen.Clear()
-	world.render(screen.Grid)
-	overlayLogs()
-	world.overlayBanner()
-	world.overlayMess()
-	return screen.WriteTo(w)
-}
-
-func (world *cartWorld) setMess(mess []byte) {
-	world.mess = mess
-	if mess == nil {
-		world.messSize = image.ZP
-	} else {
-		world.messSize = measureTextBox(mess).Size()
-	}
-	world.setTimer(5 * time.Millisecond)
-}
-
-func (world *cartWorld) overlayBanner() {
-	at := screen.Grid.Rect.Min
-	bannerWidth := measureTextBox(world.banner).Dx()
-	screenWidth := screen.Bounds().Dx()
-	at.X += screenWidth/2 - bannerWidth/2
-	writeIntoGrid(screen.Grid.SubAt(at), world.banner)
-}
-
-func (world *cartWorld) overlayMess() {
-	if world.mess == nil || world.messSize == image.ZP {
-		return
-	}
-	screenSize := screen.Bounds().Size()
-	screenMid := screenSize.Div(2)
-	messMid := world.messSize.Div(2)
-	offset := screenMid.Sub(messMid)
-	writeIntoGrid(screen.Grid.SubAt(screen.Grid.Rect.Min.Add(offset)), world.mess)
-}
-
-func writeIntoGrid(g anansi.Grid, b []byte) {
-	var cur anansi.CursorState
-	cur.Point = g.Rect.Min
-	for len(b) > 0 {
-		e, a, n := ansi.DecodeEscape(b)
-		b = b[n:]
-		if e == 0 {
-			r, n := utf8.DecodeRune(b)
-			b = b[n:]
-			e = ansi.Escape(r)
-		}
-		switch e {
-		case ansi.Escape('\n'):
-			cur.Y++
-			cur.X = g.Rect.Min.X
-
-		case ansi.CSI('m'):
-			if attr, _, err := ansi.DecodeSGR(a); err == nil {
-				cur.MergeSGR(attr)
-			}
-
-		default:
-			// write runes into grid, with cursor style, ignoring any other
-			// escapes; treating `_` as transparent
-			if !e.IsEscape() {
-				if i, ok := g.CellOffset(cur.Point); ok {
-					if e != ansi.Escape('_') {
-						g.Rune[i] = rune(e)
-						g.Attr[i] = cur.Attr
-					}
-				}
-				cur.X++
-			}
-		}
-	}
-}
-
-func (world *cartWorld) render(g anansi.Grid) {
+func (world *cartWorld) Render(g anansi.Grid, viewOffset image.Point) {
 	var (
 		hiColor     = ansi.RGB(96, 32, 16)
 		crashColor  = ansi.RGB(192, 64, 64)
@@ -827,17 +444,13 @@ func (world *cartWorld) render(g anansi.Grid) {
 		unkColor    = ansi.RGB(192, 192, 64)
 	)
 
-	bnd := g.Bounds()
-	m := bnd.Size().Div(2)
-	world.viewOffset = m.Sub(world.focus)
-
 	for id, t := range world.t {
 		if id == 0 {
 			continue
 		}
 
 		p := world.p[id]
-		sp := p.Add(world.viewOffset).Add(image.Pt(1, 1))
+		sp := p.Add(viewOffset).Add(image.Pt(1, 1))
 		if sp.X < 0 || sp.Y < 0 {
 			continue
 		}
@@ -899,7 +512,7 @@ func (world *cartWorld) render(g anansi.Grid) {
 	}
 
 	if world.hi {
-		sp := world.hiAt.Add(world.viewOffset).Add(image.Pt(1, 1))
+		sp := world.hiAt.Add(viewOffset).Add(image.Pt(1, 1))
 		if sp.X >= 0 && sp.Y >= 0 {
 			if gi, ok := g.CellOffset(ansi.PtFromImage(sp)); ok {
 				g.Attr[gi] = hiColor.BG()
