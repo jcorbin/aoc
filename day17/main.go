@@ -46,34 +46,28 @@ func run(in, out *os.File) error {
 
 	springAt := image.Pt(500, 0)
 
+	var bounds image.Rectangle
+
 	// compute bounds
-	w.Rectangle.Min = springAt
-	w.Rectangle.Max = springAt
-	for _, s := range specs {
-		if w.Rectangle.Min.X > s.x[0] {
-			w.Rectangle.Min.X = s.x[0]
-		}
-		if w.Rectangle.Max.X <= s.x[1] {
-			w.Rectangle.Max.X = s.x[1] + 1
-		}
-		if w.Rectangle.Min.Y > s.y[0] {
-			w.Rectangle.Min.Y = s.y[0]
-		}
-		if w.Rectangle.Max.Y <= s.y[1] {
-			w.Rectangle.Max.Y = s.y[1] + 1
-		}
+	if len(specs) > 0 {
+		s := specs[0]
+		bounds = image.Rect(s.x[0], s.y[0], s.x[1]+1, s.y[1]+1)
 	}
-	w.Rectangle.Min.X--
-	w.Rectangle.Max.X++
+	for _, s := range specs[1:] {
+		specRect := image.Rect(s.x[0], s.y[0], s.x[1]+1, s.y[1]+1)
+		bounds = bounds.Union(specRect)
+	}
+
+	// padding for anything butted up against the edge
+	bounds.Min.X--
+	bounds.Max.X++
 
 	// allocate
+	sr := image.Rectangle{Min: springAt, Max: springAt.Add(image.Pt(1, 1))}
+	w.Rectangle = bounds.Union(sr)
 	w.Stride = w.Rectangle.Dx()
 	w.Origin = w.Rectangle.Min
 	w.d = make([]byte, w.Stride*w.Rectangle.Dy())
-
-	// TODO bit hacky, but avoid counting row 0 with the spring
-	countBounds := w.Rectangle
-	countBounds.Min.Y++
 
 	// fill with sand
 	for i := range w.d {
@@ -296,12 +290,16 @@ func run(in, out *os.File) error {
 	}
 
 	n := 0
-	for _, d := range w.d {
-		switch d {
-		case '|', '~':
-			n++
+	for pt := bounds.Min; pt.Y < bounds.Max.Y; pt.Y++ {
+		for pt.X = bounds.Min.X; pt.X < bounds.Max.X; pt.X++ {
+			i, _ := w.Index(pt)
+			switch w.d[i] {
+			case '|', '~':
+				n++
+			}
 		}
 	}
+
 	log.Printf("HAVE %v", n)
 
 	// part 2
