@@ -289,21 +289,22 @@ func run(in, out *os.File) error {
 		return err
 	}
 
-	n := 0
+	n, m := 0, 0
 	for pt := bounds.Min; pt.Y < bounds.Max.Y; pt.Y++ {
 		for pt.X = bounds.Min.X; pt.X < bounds.Max.X; pt.X++ {
 			i, _ := w.Index(pt)
 			switch w.d[i] {
-			case '|', '~':
+			case '~':
+				m++
+				fallthrough
+			case '|':
 				n++
 			}
 		}
 	}
 
-	log.Printf("HAVE %v", n)
-
-	// part 2
-	// TODO
+	log.Printf("flowing+settled water: %v", n)
+	log.Printf("        settled water: %v", m)
 
 	return nil
 }
