@@ -1,10 +1,10 @@
 package worldui
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"io"
-	"log"
 	"math"
 	"os"
 	"syscall"
@@ -372,14 +372,12 @@ func (ui *worldUI) handleWorldInput(e ansi.Escape, a []byte) (bool, error) {
 		ui.playing = !ui.playing
 		if !ui.playing {
 			ui.stopTimer()
-			log.Printf("pause")
 		} else {
 			ui.last = time.Now()
 			if ui.playRate == 0 {
 				ui.playRate = 1
 			}
 			ui.ticking = true
-			log.Printf("play at %v ticks/s", ui.playRate)
 		}
 		ui.RequestRender()
 		return true, nil
@@ -387,7 +385,6 @@ func (ui *worldUI) handleWorldInput(e ansi.Escape, a []byte) (bool, error) {
 	// speed control
 	case ansi.Escape('+'):
 		ui.playRate *= 2
-		log.Printf("speed up to %v ticks/s", ui.playRate)
 		ui.RequestRender()
 		return true, nil
 	case ansi.Escape('-'):
@@ -397,7 +394,6 @@ func (ui *worldUI) handleWorldInput(e ansi.Escape, a []byte) (bool, error) {
 		}
 		if ui.playRate != rate {
 			ui.playRate = rate
-			log.Printf("slow down to %v ticks/s", ui.playRate)
 		}
 		ui.RequestRender()
 		return true, nil
@@ -417,7 +413,23 @@ func (ui *worldUI) WriteTo(w io.Writer) (n int64, err error) {
 	)), true) // TODO support top-align option
 	ui.overlayBanner()
 	ui.overlayMess()
+	ui.overlayPlaybackCtl()
 	return ui.screen.WriteTo(w)
+}
+
+func (ui *worldUI) overlayPlaybackCtl() {
+	var buf bytes.Buffer
+	buf.Grow(128)
+	if ui.playing {
+		buf.WriteRune('▸')
+		fmt.Fprintf(&buf, "%v ticks/s", ui.playRate)
+	} else {
+		buf.WriteRune('‖')
+	}
+	n := measureTextBox(buf.Bytes()).Dx()
+	bnd := ui.screen.Bounds()
+	ui.screen.To(ansi.Pt(bnd.Max.X-n, 1))
+	ui.screen.Write(buf.Bytes())
 }
 
 func (ui *worldUI) overlayBanner() {
