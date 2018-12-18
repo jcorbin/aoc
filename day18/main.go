@@ -25,112 +25,99 @@ type board struct {
 	d []byte
 }
 
+func (brd board) step(tmp []byte) (to, tt, tl int) {
+	for pt := brd.Min; pt.Y < brd.Max.Y; pt.Y++ {
+		for pt.X = brd.Min.X; pt.X < brd.Max.X; pt.X++ {
+			i, ok := brd.Index(pt)
+			if !ok {
+				continue
+			}
+
+			t, l := 0, 0
+			for _, dp := range [8]image.Point{
+				image.Pt(-1, -1), image.Pt(0, -1), image.Pt(1, -1),
+				image.Pt(-1, 0) /*image.Pt(0, 0),*/, image.Pt(1, 0),
+				image.Pt(-1, 1), image.Pt(0, 1), image.Pt(1, 1),
+			} {
+				if i, ok := brd.Index(pt.Add(dp)); ok {
+					switch brd.d[i] {
+					case '|':
+						t++
+					case '#':
+						l++
+					}
+				}
+			}
+
+			switch brd.d[i] {
+
+			// An *open* acre will become filled with *trees* if *three or
+			// more* adjacent acres contained trees. Otherwise, nothing
+			// happens.
+			case '.':
+				if t >= 3 {
+					tmp[i] = '|'
+					tt++
+				} else {
+					tmp[i] = '.'
+					to++
+				}
+
+			// An acre filled with *trees* will become a *lumberyard* if *three
+			// or more* adjacent acres were lumberyards. Otherwise, nothing
+			// happens.
+			case '|':
+				if l >= 3 {
+					tmp[i] = '#'
+					tl++
+				} else {
+					tmp[i] = '|'
+					tt++
+				}
+
+			// An acre containing a *lumberyard* will remain a *lumberyard* if
+			// it was adjacent to *at least one other lumberyard and at least
+			// one acre containing trees*. Otherwise, it becomes *open*.
+			case '#':
+				if l >= 1 && t >= 1 {
+					tmp[i] = '#'
+					tl++
+				} else {
+					tmp[i] = '.'
+					to++
+				}
+
+			}
+		}
+	}
+	return to, tt, tl
+}
+
 func run(in, out *os.File) error {
 	brd, err := read(in)
 	if err != nil {
 		return err
 	}
-
-	stencil := [8]image.Point{
-		image.Pt(-1, -1), image.Pt(0, -1), image.Pt(1, -1),
-		image.Pt(-1, 0) /*image.Pt(0, 0),*/, image.Pt(1, 0),
-		image.Pt(-1, 1), image.Pt(0, 1), image.Pt(1, 1),
-	}
-
-	countem := func(p image.Point) (o, t, l int) {
-		for _, dp := range stencil {
-			if i, ok := brd.Index(p.Add(dp)); ok {
-				switch brd.d[i] {
-				case '.':
-					o++
-				case '|':
-					t++
-				case '#':
-					l++
-				}
-			}
-		}
-		return o, t, l
-	}
-
-	// part 1
-	tmp := brd
-	tmp.d = make([]byte, len(tmp.d))
+	tmp := make([]byte, len(brd.d))
 	for i := 0; i < *numRounds; i++ {
-		to, tt, tl := 0, 0, 0
-
-		for pt := tmp.Min; pt.Y < tmp.Max.Y; pt.Y++ {
-			for pt.X = tmp.Min.X; pt.X < tmp.Max.X; pt.X++ {
-				i, _ := brd.Index(pt)
-				_, t, l := countem(pt)
-
-				switch brd.d[i] {
-
-				// An *open* acre will become filled with *trees* if *three or
-				// more* adjacent acres contained trees. Otherwise, nothing
-				// happens.
-				case '.':
-					if t >= 3 {
-						tmp.d[i] = '|'
-						tt++
-					} else {
-						tmp.d[i] = '.'
-						to++
-					}
-
-					// An acre filled with *trees* will become a *lumberyard* if *three
-					// or more* adjacent acres were lumberyards. Otherwise, nothing
-					// happens.
-				case '|':
-					if l >= 3 {
-						tmp.d[i] = '#'
-						tl++
-					} else {
-						tmp.d[i] = '|'
-						tt++
-					}
-
-					// An acre containing a *lumberyard* will remain a *lumberyard* if
-					// it was adjacent to *at least one other lumberyard and at least
-					// one acre containing trees*. Otherwise, it becomes *open*.
-				case '#':
-					if l >= 1 && t >= 1 {
-						tmp.d[i] = '#'
-						tl++
-					} else {
-						tmp.d[i] = '.'
-						to++
-					}
-
-				}
-			}
-		}
-		brd.d, tmp.d = tmp.d, brd.d
-
-		// log.Printf("open:%v trees:%v lumberyards:%v", to, tt, tl)
+		_, tt, tl := brd.step(tmp)
+		brd.d, tmp = tmp, brd.d
 		log.Printf("[%v]: %v", i, tt*tl)
 	}
-
-	// part 2
-	// TODO
-
 	return nil
 }
 
 func read(r io.Reader) (brd board, _ error) {
 	sc := bufio.NewScanner(r)
-	// sc.Split(bufio.ScanWords)
 	for sc.Scan() {
 		line := sc.Text()
 		for i := 0; i < len(line); i++ {
 			brd.d = append(brd.d, line[i])
 		}
 	}
-
 	n := int(math.Ceil(math.Sqrt(float64(len(brd.d)))))
 	brd.Stride = n
 	brd.Max.X = n
 	brd.Max.Y = n
-
 	return brd, sc.Err()
 }
