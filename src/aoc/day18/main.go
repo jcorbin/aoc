@@ -9,8 +9,9 @@ import (
 	"math"
 	"os"
 
+	"aoc/internal/geom"
+
 	"github.com/jcorbin/anansi"
-	"github.com/jcorbin/aoc/internal/geom"
 )
 
 var numRounds = flag.Int("n", 0, "num rounds")

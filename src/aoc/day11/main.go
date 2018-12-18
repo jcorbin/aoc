@@ -8,7 +8,7 @@ import (
 
 	"github.com/jcorbin/anansi"
 
-	"github.com/jcorbin/aoc/internal/geom"
+	"aoc/internal/geom"
 )
 
 var (

@@ -12,8 +12,9 @@ import (
 	"regexp"
 	"strconv"
 
+	"aoc/internal/geom"
+
 	"github.com/jcorbin/anansi"
-	"github.com/jcorbin/aoc/internal/geom"
 )
 
 var (

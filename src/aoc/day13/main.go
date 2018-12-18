@@ -15,10 +15,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"aoc/internal/layerui"
+	"aoc/internal/quadindex"
+
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
-	"github.com/jcorbin/aoc/internal/layerui"
-	"github.com/jcorbin/aoc/internal/quadindex"
 )
 
 var logfile = flag.String("logfile", "", "log file")
@@ -149,7 +150,7 @@ var welcomeMess = "" +
 	`+----------------------------------------+` + "\n" +
 	`| A simulation done for AoC 2018 Day 13  |` + "\n" +
 	`|  https://adventofcode.com/2018/day/13  |` + "\n" +
-	`|  https://github.com/jcorbin/aoc        |` + "\n"
+	`|  https://aoc        |` + "\n"
 
 var keysMess = "" +
 	`+----------------------------------------+` + "\n" +

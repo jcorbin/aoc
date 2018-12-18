@@ -16,10 +16,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"aoc/internal/geom"
+	"aoc/internal/quadindex"
+
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
-	"github.com/jcorbin/aoc/internal/geom"
-	"github.com/jcorbin/aoc/internal/quadindex"
 )
 
 var (

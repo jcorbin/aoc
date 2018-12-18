@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/jcorbin/aoc/internal/quadindex"
+	"aoc/internal/quadindex"
 )
 
 func TestKey(t *testing.T) {

@@ -15,10 +15,11 @@ import (
 	"time"
 	"unicode"
 
+	"aoc/internal/display"
+	"aoc/internal/geom"
+
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
-	"github.com/jcorbin/aoc/internal/display"
-	"github.com/jcorbin/aoc/internal/geom"
 )
 
 var (
