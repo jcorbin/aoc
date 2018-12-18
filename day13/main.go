@@ -12,12 +12,13 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/aoc/internal/layerui"
 	"github.com/jcorbin/aoc/internal/quadindex"
-	"github.com/jcorbin/aoc/internal/worldui"
 )
 
 var logfile = flag.String("logfile", "", "log file")
@@ -40,11 +41,48 @@ func main() {
 	flag.Parse()
 
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
-	worldui.MustOpenLogFile(*logfile)
+	layerui.MustOpenLogFile(*logfile)
 
-	var world cartWorld
+	anansi.MustRun(func() error {
+		var world cartWorld
 
-	worldui.MustRun(&world)
+		if err := world.Init(); err != nil {
+			return err
+		}
+
+		in, out := layerui.MustOpenTermFiles(os.Stdin, os.Stdout)
+
+		world.WorldLayer.World = &world
+
+		ui := layerui.LayerUI{
+			Layers: []layerui.Layer{
+				&layerui.LogLayer{SubGrid: func(g anansi.Grid, numLines int) anansi.Grid {
+					if numLines > 5 {
+						numLines = 5
+					}
+					return g.SubAt(ansi.Pt(
+						1, g.Bounds().Dy()-numLines,
+					))
+				}},
+				&world.ModalLayer,
+				&world.BannerLayer,
+				&world.WorldLayer,
+			},
+		}
+		ui.SetupSignals()
+		term := anansi.NewTerm(in, out, &ui)
+		term.SetRaw(true)
+		term.AddMode(
+			ansi.ModeAlternateScreen,
+			ansi.ModeMouseSgrExt,
+			ansi.ModeMouseBtnEvent,
+			// ansi.ModeMouseAnyEvent, TODO option
+		)
+
+		return term.RunWithFunc(func(term *anansi.Term) error {
+			return term.Loop(&ui)
+		})
+	}())
 }
 
 type cartType uint8
@@ -81,6 +119,10 @@ const (
 )
 
 type cartWorld struct {
+	layerui.ModalLayer
+	layerui.BannerLayer
+	layerui.WorldLayer
+
 	quadindex.Index
 	b image.Rectangle // world bounds
 	p []image.Point   // location
@@ -90,7 +132,7 @@ type cartWorld struct {
 
 	carts []int
 
-	ui         worldui.UI
+	needsDraw  time.Duration
 	crash      int
 	autoRemove bool
 	hi         bool
@@ -148,9 +190,7 @@ var exProblem = "" +
 
 var helpMess string
 
-func (world *cartWorld) Init(ui worldui.UI) (err error) {
-	world.ui = ui
-
+func (world *cartWorld) Init() (err error) {
 	helpMess += welcomeMess + keysMess
 	if !anansi.IsTerminal(os.Stdin) {
 		log.Printf("load stdin")
@@ -171,8 +211,8 @@ func (world *cartWorld) Init(ui worldui.UI) (err error) {
 	}
 	helpMess += helpMessFooter
 
-	world.ui.SetFocus(world.b.Size().Div(2))
-	world.ui.Display(helpMess)
+	world.SetFocus(world.b.Size().Div(2))
+	world.Display(helpMess)
 	return err
 }
 
@@ -184,7 +224,7 @@ func (world *cartWorld) done() bool {
 	}
 	switch len(world.carts) {
 	case 0:
-		world.ui.Say("No Carts Left")
+		world.Say("No Carts Left")
 		return true
 	case 1:
 		p := world.p[world.carts[0]]
@@ -316,16 +356,16 @@ func (world *cartWorld) Tick() bool {
 }
 
 func (world *cartWorld) setHighlight(stop bool, at image.Point, mess string, args ...interface{}) {
-	world.ui.Say(fmt.Sprintf(mess, args...))
+	world.Say(fmt.Sprintf(mess, args...))
 	world.hi = true
 	world.hiStop = stop
 	world.hiAt = at
-	world.ui.Pause()
-	world.ui.SetFocus(world.hiAt)
+	world.Pause()
+	world.SetFocus(world.hiAt)
 }
 
 func (world *cartWorld) clearHighlight() {
-	world.ui.Say("")
+	world.Say("")
 	world.hi = false
 	world.hiStop = false
 	world.hiAt = image.ZP
@@ -367,11 +407,16 @@ func (world *cartWorld) removeCart(id int) {
 	world.s[id] = 0
 }
 
+// NeedsDraw returns non-zero if the world needs to be drawn.
+func (world *cartWorld) NeedsDraw() time.Duration {
+	return world.needsDraw
+}
+
 func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 	switch e {
 	// display help
 	case ansi.Escape('?'):
-		world.ui.Display(helpMess)
+		world.Display(helpMess)
 		return true, nil
 
 	// mouse inspection
@@ -381,7 +426,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 				var buf bytes.Buffer
 				buf.Grow(1024)
 
-				p := sp.ToImage().Sub(world.ui.ViewOffset())
+				p := sp.ToImage().Sub(world.ViewOffset())
 				fmt.Fprintf(&buf, "Query @%v\n", p)
 
 				n := 0
@@ -402,7 +447,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 				}
 				fmt.Fprintf(&buf, "( <Esc> to close )")
 
-				world.ui.Display(buf.String())
+				world.Display(buf.String())
 			}
 		}
 		return true, nil
@@ -413,9 +458,9 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 			world.t[world.crash] &= ^cartCrash
 			log.Printf("removed @%v, remaining: %v", world.p[world.crash], len(world.carts))
 			world.crash = 0
-			world.ui.Pause()
+			world.Pause()
 			world.clearHighlight()
-			world.ui.RequestRender()
+			world.needsDraw = 5 * time.Millisecond
 		}
 		return true, nil
 
@@ -427,7 +472,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 		} else {
 			log.Printf("auto remove on")
 		}
-		world.ui.RequestRender()
+		world.needsDraw = 5 * time.Millisecond
 		return true, nil
 
 	}

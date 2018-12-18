@@ -1,4 +1,4 @@
-package worldui
+package layerui
 
 import (
 	"bytes"
@@ -6,8 +6,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/jcorbin/anansi"
+	"github.com/jcorbin/anansi/ansi"
 )
 
 // Logs is an in-memory buffer of all logs written through the standard "log"
@@ -51,14 +53,33 @@ func initLogs() {
 	}
 }
 
-// TODO support scrolling, cap the buffer, load from file if scroll past..
+// TODO cap the buffer, load from file if scroll past..
 
-// DrawLogs writes buffered Logs content into the given screen grid.  If
-// bottomAlign is true than the grid may be shrunk by moving it's top point
-// down to fit the number of lines.
-func DrawLogs(g anansi.Grid, bottomAlign bool) {
-	height := g.Bounds().Dy()
+// LogLayer implements a layer for displaying in-memory buffered Logs.
+type LogLayer struct {
+	SubGrid func(g anansi.Grid, numLines int) anansi.Grid
+	lastLen int
+}
+
+//HandleInput is a no-op.
+func (ll LogLayer) HandleInput(e ansi.Escape, a []byte) (handled bool, err error) {
+	// TODO support scrolling
+	return false, nil
+}
+
+// Draw overlays the tail of buffered Logs content into the screen grid. If
+// LogLayer.SubGrid is not nil, it is used to select a sub-grid of the screen.
+func (ll *LogLayer) Draw(screen anansi.Screen, now time.Time) {
 	lb := Logs.Bytes()
+	numLines := bytes.Count(lb, []byte("\n"))
+	// if len(lb) > 0 { numLines++ }
+
+	g := screen.Grid
+	if ll.SubGrid != nil {
+		g = ll.SubGrid(g, numLines)
+	}
+
+	height := g.Bounds().Dy()
 
 	off := len(lb)
 	for i := 0; i < height; i++ {
@@ -74,18 +95,15 @@ func DrawLogs(g anansi.Grid, bottomAlign bool) {
 		off++
 	}
 
-	b := lb[off:]
+	writeIntoGrid(g, lb[off:])
 
-	numLines := bytes.Count(b, []byte("\n"))
-	if len(b) > 0 {
-		numLines++
+	ll.lastLen = len(lb)
+}
+
+// NeedsDraw returns non-zero if more logs have been written since last Draw.
+func (ll LogLayer) NeedsDraw() time.Duration {
+	if Logs.Len() > ll.lastLen {
+		return 5 * time.Millisecond
 	}
-
-	if bottomAlign && numLines < height {
-		pt := g.Rect.Min
-		pt.Y += height - numLines
-		g = g.SubAt(pt)
-	}
-
-	writeIntoGrid(g, b)
+	return 0
 }
