@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"aoc/internal/layerui"
 	"aoc/internal/quadindex"
@@ -44,46 +43,54 @@ func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	layerui.MustOpenLogFile(*logfile)
 
-	anansi.MustRun(func() error {
-		var world cartWorld
+	anansi.MustRun(run())
+}
 
-		if err := world.Init(); err != nil {
-			return err
-		}
+func run() error {
+	in, out := os.Stdin, os.Stdout
 
-		in, out := layerui.MustOpenTermFiles(os.Stdin, os.Stdout)
+	var world cartWorld
 
-		world.WorldLayer.World = &world
+	if err := world.loadFile(in); err != nil {
+		return err
+	}
 
-		ui := layerui.LayerUI{
-			Layers: []layerui.Layer{
-				&layerui.LogLayer{SubGrid: func(g anansi.Grid, numLines int) anansi.Grid {
-					if numLines > 5 {
-						numLines = 5
-					}
-					return g.SubAt(ansi.Pt(
-						1, g.Bounds().Dy()-numLines,
-					))
-				}},
-				&world.ModalLayer,
-				&world.BannerLayer,
-				&world.WorldLayer,
-			},
-		}
-		ui.SetupSignals()
-		term := anansi.NewTerm(in, out, &ui)
-		term.SetRaw(true)
-		term.AddMode(
-			ansi.ModeAlternateScreen,
-			ansi.ModeMouseSgrExt,
-			ansi.ModeMouseBtnEvent,
-			// ansi.ModeMouseAnyEvent, TODO option
-		)
+	in, out = layerui.MustOpenTermFiles(in, out)
 
-		return term.RunWithFunc(func(term *anansi.Term) error {
-			return term.Loop(&ui)
-		})
-	}())
+	world.WorldLayer.World = &world
+
+	// TODO layerui.Layers(...)
+	ui := layerui.LayerUI{
+		Layers: []layerui.Layer{
+			&layerui.LogLayer{SubGrid: func(g anansi.Grid, numLines int) anansi.Grid {
+				if numLines > 5 {
+					numLines = 5
+				}
+				return g.SubAt(ansi.Pt(
+					1, g.Bounds().Dy()-numLines,
+				))
+			}},
+			&world.ModalLayer,
+			&world.BannerLayer,
+			&world.WorldLayer,
+		},
+	}
+	ui.SetupSignals()
+
+	// TODO LayerUI.NewTermAndRun(...)
+	term := anansi.NewTerm(in, out, &ui)
+	term.SetRaw(true)
+	// TODO y no term.SetEcho() ?
+	term.AddMode(
+		ansi.ModeAlternateScreen,
+		ansi.ModeMouseSgrExt,
+		ansi.ModeMouseBtnEvent,
+		// ansi.ModeMouseAnyEvent, TODO option
+	)
+
+	return term.RunWithFunc(func(term *anansi.Term) error {
+		return term.Loop(&ui)
+	})
 }
 
 type cartType uint8
@@ -133,6 +140,7 @@ type cartWorld struct {
 
 	carts []int
 
+	helpMess   string
 	needsDraw  time.Duration
 	crash      int
 	autoRemove bool
@@ -172,50 +180,51 @@ var usageMess = "" +
 
 var inputMessEx = "" +
 	`+----------------------------------------+` + "\n" +
-	`| Using canned example input.            |` + "\n"
+	`| Using default example input.           |` + "\n"
+
+var inputMessFrom = "" +
+	`+----------------------------------------+` + "\n" +
+	`| Read input from: % 21s |` + "\n"
+
+var messLine = `| % 38s |` + "\n"
 
 var inputMess = "" +
 	`| Problem input may be given on stdin,   |` + "\n" +
 	`| Or by passing a file argument.         |` + "\n"
 
+func buildInputMess(name string) string {
+	var s string
+	switch name {
+	case builtinInput.Name():
+		s = inputMessEx
+
+	default:
+		n := len(name) // TODO runes not bytes
+		if len(name) <= 21 {
+			s = fmt.Sprintf(inputMessFrom, name)
+		} else {
+			if n > 38 {
+				l, r := n/2-1, (n+1)/2
+				name = fmt.Sprintf("%s…%s", name[:l], name[:r])
+			}
+			s = fmt.Sprintf(inputMessFrom, "")
+			s += fmt.Sprintf(messLine, name)
+		}
+	}
+
+	return s + inputMess
+}
+
 var helpMessFooter = "" +
 	`\----------------------------------------/`
 
-var exProblem = "" +
+var builtinInput = builtinReader("" +
 	`/->-\` + "\n" +
 	`|   |  /----\` + "\n" +
 	`| /-+--+-\  |` + "\n" +
 	`| | |  | v  |` + "\n" +
 	`\-+-/  \-+--/` + "\n" +
-	`  \------/`
-
-var helpMess string
-
-func (world *cartWorld) Init() (err error) {
-	helpMess += welcomeMess + keysMess
-	if !anansi.IsTerminal(os.Stdin) {
-		log.Printf("load stdin")
-		err = world.load(os.Stdin)
-	} else if name := flag.Arg(0); name != "" {
-		log.Printf("load file arg %q", name)
-		f, err := os.Open(name)
-		if err == nil {
-			err = world.load(f)
-			if cerr := f.Close(); err == nil {
-				err = cerr
-			}
-		}
-	} else {
-		log.Printf("load builtin")
-		helpMess += inputMessEx + inputMess
-		err = world.load(bytes.NewReader([]byte(exProblem)))
-	}
-	helpMess += helpMessFooter
-
-	world.SetFocus(world.b.Size().Div(2))
-	world.Display(helpMess)
-	return err
-}
+	`  \------/`)
 
 func (world *cartWorld) Bounds() image.Rectangle { return world.b }
 
@@ -417,7 +426,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 	switch e {
 	// display help
 	case ansi.Escape('?'):
-		world.Display(helpMess)
+		world.Display(world.helpMess)
 		return true, nil
 
 	// mouse inspection
@@ -567,13 +576,26 @@ func (world *cartWorld) Render(g anansi.Grid, viewOffset image.Point) {
 	}
 }
 
+func (world *cartWorld) loadFile(in *os.File) error {
+	if name := flag.Arg(0); name != "" {
+		f, err := os.Open(name)
+		if err == nil {
+			err = world.load(f)
+			if cerr := f.Close(); err == nil {
+				err = cerr
+			}
+		}
+		return err
+	}
+	if !anansi.IsTerminal(in) {
+		return world.load(in)
+	}
+	return world.load(builtinInput)
+}
+
 func (world *cartWorld) load(r io.Reader) error {
 	if len(world.t) > 0 {
 		panic("reload of world not supported")
-	}
-
-	if nom, ok := r.(interface{ Name() string }); ok {
-		log.Printf("read input from %s", nom.Name())
 	}
 
 	// zero entity is zero
@@ -663,42 +685,33 @@ func (world *cartWorld) load(r io.Reader) error {
 		}
 	}
 
-	return sc.Err()
-}
-
-func measureTextBox(b []byte) (box ansi.Rectangle) {
-	box.Min = ansi.Pt(1, 1)
-	box.Max = ansi.Pt(1, 1)
-	pt := box.Min
-	for len(b) > 0 {
-		e, _ /*a*/, n := ansi.DecodeEscape(b)
-		b = b[n:]
-		if e == 0 {
-			r, n := utf8.DecodeRune(b)
-			b = b[n:]
-			e = ansi.Escape(r)
-		}
-		switch e {
-
-		case ansi.Escape('\n'):
-			pt.Y++
-			pt.X = 1
-
-			// TODO would be nice to borrow cursor movement processing from anansi.Screen et al
-
-		default:
-			// ignore escapes, advance on runes
-			if !e.IsEscape() {
-				pt.X++
-			}
-
-		}
-		if box.Max.X < pt.X {
-			box.Max.X = pt.X
-		}
-		if box.Max.Y < pt.Y {
-			box.Max.Y = pt.Y
-		}
+	err := sc.Err()
+	if err == nil {
+		world.SetFocus(world.b.Size().Div(2))
+		world.helpMess = "" +
+			welcomeMess +
+			keysMess +
+			buildInputMess(readerName(r)) +
+			helpMessFooter
+		world.Display(world.helpMess)
 	}
-	return box
+	return err
 }
+
+func readerName(r io.Reader) string {
+	if nom, ok := r.(interface{ Name() string }); ok {
+		return nom.Name()
+	}
+	return "<unknown>"
+}
+
+func builtinReader(s string) namedReader {
+	return namedReader{bytes.NewReader([]byte(s)), "<builtin>"}
+}
+
+type namedReader struct {
+	io.Reader
+	name string
+}
+
+func (nr namedReader) Name() string { return nr.name }
