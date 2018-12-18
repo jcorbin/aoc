@@ -18,17 +18,16 @@ var Logs bytes.Buffer
 
 var logsSetup bool
 
-// MustOpenLogFile is a convenience that prints to stderr and exits if
-// OpenLogFile fails.
-func MustOpenLogFile(name string) {
+// WithOpenLogFile is a convenience that calls the given function after
+// OpenLogFile, restoring os.Stderr log output before returning any error.
+func WithOpenLogFile(name string, f func() error) error {
 	if name == "" {
 		initLogs()
-		return
+	} else if err := OpenLogFile(name); err != nil {
+		return err
 	}
-	if err := OpenLogFile(name); err != nil {
-		fmt.Fprintf(os.Stderr, err.Error())
-		os.Exit(1)
-	}
+	defer log.SetOutput(os.Stderr)
+	return f()
 }
 
 // OpenLogFile creates a file with the given name, and sets the "log" package

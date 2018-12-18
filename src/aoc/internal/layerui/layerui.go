@@ -3,6 +3,7 @@ package layerui
 import (
 	"fmt"
 	"io"
+	"os"
 	"syscall"
 	"time"
 
@@ -17,6 +18,11 @@ type Layer interface {
 	NeedsDraw() time.Duration
 }
 
+// Layers is a convenience constructor for LayerUI.
+func Layers(layers ...Layer) LayerUI {
+	return LayerUI{Layers: layers}
+}
+
 // LayerUI implements an anansi.Loop around a list of Layers.
 type LayerUI struct {
 	Layers []Layer
@@ -27,6 +33,33 @@ type LayerUI struct {
 	inputReady anansi.InputSignal
 	screen     anansi.Screen
 	timer      drawTimer
+}
+
+// RunMain sets up signals, creates a new anansi terminal, and runs the ui
+// loop unedr it.
+func (lui LayerUI) RunMain() error {
+	in, out, err := OpenTermFiles(os.Stdin, os.Stdout)
+	if err != nil {
+		return err
+	}
+
+	lui.SetupSignals()
+
+	term := anansi.NewTerm(in, out, &lui)
+	term.SetRaw(true)
+	// TODO y no term.SetEcho() ?
+	term.AddMode(
+		ansi.ModeAlternateScreen,
+		ansi.ModeMouseSgrExt,
+		ansi.ModeMouseBtnEvent,
+		// ansi.ModeMouseAnyEvent, TODO option
+	)
+
+	// TODO consider borging anansi.Loop* into here now that it's the
+	// primary/only user.
+	return term.RunWithFunc(func(term *anansi.Term) error {
+		return term.Loop(&lui)
+	})
 }
 
 // Enter registers signal notification, input notification, and initializes

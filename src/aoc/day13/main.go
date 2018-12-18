@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"aoc/internal/infernio"
 	"aoc/internal/layerui"
 	"aoc/internal/quadindex"
 
@@ -41,56 +42,32 @@ func main() {
 	flag.Parse()
 
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
-	layerui.MustOpenLogFile(*logfile)
 
-	anansi.MustRun(run())
+	anansi.MustRun(layerui.WithOpenLogFile(*logfile, run))
 }
 
 func run() error {
-	in, out := os.Stdin, os.Stdout
-
 	var world cartWorld
 
-	if err := world.loadFile(in); err != nil {
+	if err := infernio.LoadInput(builtinInput, world.load); err != nil {
 		return err
 	}
 
-	in, out = layerui.MustOpenTermFiles(in, out)
-
 	world.WorldLayer.World = &world
 
-	// TODO layerui.Layers(...)
-	ui := layerui.LayerUI{
-		Layers: []layerui.Layer{
-			&layerui.LogLayer{SubGrid: func(g anansi.Grid, numLines int) anansi.Grid {
-				if numLines > 5 {
-					numLines = 5
-				}
-				return g.SubAt(ansi.Pt(
-					1, g.Bounds().Dy()-numLines,
-				))
-			}},
-			&world.ModalLayer,
-			&world.BannerLayer,
-			&world.WorldLayer,
-		},
-	}
-	ui.SetupSignals()
-
-	// TODO LayerUI.NewTermAndRun(...)
-	term := anansi.NewTerm(in, out, &ui)
-	term.SetRaw(true)
-	// TODO y no term.SetEcho() ?
-	term.AddMode(
-		ansi.ModeAlternateScreen,
-		ansi.ModeMouseSgrExt,
-		ansi.ModeMouseBtnEvent,
-		// ansi.ModeMouseAnyEvent, TODO option
-	)
-
-	return term.RunWithFunc(func(term *anansi.Term) error {
-		return term.Loop(&ui)
-	})
+	return layerui.Layers(
+		&layerui.LogLayer{SubGrid: func(g anansi.Grid, numLines int) anansi.Grid {
+			if numLines > 5 {
+				numLines = 5
+			}
+			return g.SubAt(ansi.Pt(
+				1, g.Bounds().Dy()-numLines,
+			))
+		}},
+		&world.ModalLayer,
+		&world.BannerLayer,
+		&world.WorldLayer,
+	).RunMain()
 }
 
 type cartType uint8
@@ -158,7 +135,7 @@ var welcomeMess = "" +
 	`+----------------------------------------+` + "\n" +
 	`| A simulation done for AoC 2018 Day 13  |` + "\n" +
 	`|  https://adventofcode.com/2018/day/13  |` + "\n" +
-	`|  https://aoc        |` + "\n"
+	`|  https://github.com/jcorbin/aoc        |` + "\n"
 
 var keysMess = "" +
 	`+----------------------------------------+` + "\n" +
@@ -218,7 +195,7 @@ func buildInputMess(name string) string {
 var helpMessFooter = "" +
 	`\----------------------------------------/`
 
-var builtinInput = builtinReader("" +
+var builtinInput = infernio.Builtin("" +
 	`/->-\` + "\n" +
 	`|   |  /----\` + "\n" +
 	`| /-+--+-\  |` + "\n" +
@@ -576,23 +553,6 @@ func (world *cartWorld) Render(g anansi.Grid, viewOffset image.Point) {
 	}
 }
 
-func (world *cartWorld) loadFile(in *os.File) error {
-	if name := flag.Arg(0); name != "" {
-		f, err := os.Open(name)
-		if err == nil {
-			err = world.load(f)
-			if cerr := f.Close(); err == nil {
-				err = cerr
-			}
-		}
-		return err
-	}
-	if !anansi.IsTerminal(in) {
-		return world.load(in)
-	}
-	return world.load(builtinInput)
-}
-
 func (world *cartWorld) load(r io.Reader) error {
 	if len(world.t) > 0 {
 		panic("reload of world not supported")
@@ -691,27 +651,9 @@ func (world *cartWorld) load(r io.Reader) error {
 		world.helpMess = "" +
 			welcomeMess +
 			keysMess +
-			buildInputMess(readerName(r)) +
+			buildInputMess(infernio.ReaderName(r)) +
 			helpMessFooter
 		world.Display(world.helpMess)
 	}
 	return err
 }
-
-func readerName(r io.Reader) string {
-	if nom, ok := r.(interface{ Name() string }); ok {
-		return nom.Name()
-	}
-	return "<unknown>"
-}
-
-func builtinReader(s string) namedReader {
-	return namedReader{bytes.NewReader([]byte(s)), "<builtin>"}
-}
-
-type namedReader struct {
-	io.Reader
-	name string
-}
-
-func (nr namedReader) Name() string { return nr.name }
