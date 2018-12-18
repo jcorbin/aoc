@@ -439,6 +439,17 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 		}
 		return true, nil
 
+	// toggle auto remove
+	case ansi.Escape('*'):
+		world.autoRemove = !world.autoRemove
+		if !world.autoRemove {
+			log.Printf("auto remove off")
+			world.needsDraw = 5 * time.Millisecond
+			return true, nil
+		}
+		log.Printf("auto remove on")
+		fallthrough
+
 	// clear crash
 	case ansi.Escape('X'):
 		if world.crash != 0 {
@@ -449,17 +460,6 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 			world.clearHighlight()
 			world.needsDraw = 5 * time.Millisecond
 		}
-		return true, nil
-
-	// toggle auto remove
-	case ansi.Escape('*'):
-		world.autoRemove = !world.autoRemove
-		if world.autoRemove {
-			log.Printf("auto remove on")
-		} else {
-			log.Printf("auto remove on")
-		}
-		world.needsDraw = 5 * time.Millisecond
 		return true, nil
 
 	}
