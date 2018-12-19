@@ -106,3 +106,16 @@ func (ll LogLayer) NeedsDraw() time.Duration {
 	}
 	return 0
 }
+
+// BottomNLines returns a function that returns a bottom-aligned subgrid of at
+// most n lines within the grid it's passed.
+func BottomNLines(n int) func(g anansi.Grid, numLines int) anansi.Grid {
+	return func(g anansi.Grid, numLines int) anansi.Grid {
+		if numLines > 5 {
+			numLines = 5
+		}
+		return g.SubAt(ansi.Pt(
+			1, g.Bounds().Dy()-numLines,
+		))
+	}
+}

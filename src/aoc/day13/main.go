@@ -56,14 +56,7 @@ func run() error {
 	world.WorldLayer.World = &world
 
 	return layerui.Layers(
-		&layerui.LogLayer{SubGrid: func(g anansi.Grid, numLines int) anansi.Grid {
-			if numLines > 5 {
-				numLines = 5
-			}
-			return g.SubAt(ansi.Pt(
-				1, g.Bounds().Dy()-numLines,
-			))
-		}},
+		&layerui.LogLayer{SubGrid: layerui.BottomNLines(5)},
 		&world.ModalLayer,
 		&world.BannerLayer,
 		&world.WorldLayer,
