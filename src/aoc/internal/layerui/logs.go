@@ -22,7 +22,7 @@ var logsSetup bool
 // OpenLogFile, restoring os.Stderr log output before returning any error.
 func WithOpenLogFile(name string, f func() error) error {
 	if name == "" {
-		initLogs()
+		InitLogs()
 	} else if err := OpenLogFile(name); err != nil {
 		return err
 	}
@@ -45,7 +45,9 @@ func OpenLogFile(name string) error {
 	return nil
 }
 
-func initLogs() {
+// InitLogs installes the Logs buffer by calling log.SetOutput, unless
+// OpenLogFile or a prior InitLogs has already done so.
+func InitLogs() {
 	if !logsSetup {
 		log.SetOutput(&Logs)
 		logsSetup = true
@@ -94,7 +96,7 @@ func (ll *LogLayer) Draw(screen anansi.Screen, now time.Time) {
 		off++
 	}
 
-	writeIntoGrid(g, lb[off:])
+	WriteIntoGrid(g, lb[off:])
 
 	ll.lastLen = len(lb)
 }

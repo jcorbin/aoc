@@ -29,10 +29,10 @@ func (ban *BannerLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 func (ban *BannerLayer) Draw(screen anansi.Screen, now time.Time) {
 	ban.needsDraw = 0
 	at := screen.Grid.Rect.Min
-	bannerWidth := measureTextBox(ban.banner).Dx()
+	bannerWidth := MeasureText(ban.banner).Dx()
 	screenWidth := screen.Bounds().Dx()
 	at.X += screenWidth/2 - bannerWidth/2
-	writeIntoGrid(screen.Grid.SubAt(at), ban.banner)
+	WriteIntoGrid(screen.Grid.SubAt(at), ban.banner)
 }
 
 // NeedsDraw returns non-zero if the layer needs to be drawn (if the mesage
@@ -56,7 +56,7 @@ func (mod *ModalLayer) Display(mess string) {
 		mod.messSize = image.ZP
 	} else {
 		mod.mess = []byte(mess)
-		mod.messSize = measureTextBox(mod.mess).Size()
+		mod.messSize = MeasureText(mod.mess).Size()
 	}
 	mod.needsDraw = 5 * time.Millisecond
 }
@@ -95,5 +95,5 @@ func (mod *ModalLayer) Draw(screen anansi.Screen, now time.Time) {
 	screenMid := screenSize.Div(2)
 	messMid := mod.messSize.Div(2)
 	offset := screenMid.Sub(messMid)
-	writeIntoGrid(screen.Grid.SubAt(screen.Grid.Rect.Min.Add(offset)), mod.mess)
+	WriteIntoGrid(screen.Grid.SubAt(screen.Grid.Rect.Min.Add(offset)), mod.mess)
 }

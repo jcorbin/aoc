@@ -196,7 +196,7 @@ func (world *WorldLayer) Draw(screen anansi.Screen, now time.Time) {
 	} else {
 		buf.WriteRune('‖')
 	}
-	n := measureTextBox(buf.Bytes()).Dx()
+	n := MeasureText(buf.Bytes()).Dx()
 	bnd := screen.Bounds()
 	screen.To(ansi.Pt(bnd.Max.X-n, 1))
 	screen.Write(buf.Bytes())

@@ -32,7 +32,7 @@ func OpenTermFiles(in, out *os.File) (_, _ *os.File, rerr error) {
 		}
 		out = f
 	}
-	initLogs()
+	InitLogs()
 	return in, out, nil
 }
 

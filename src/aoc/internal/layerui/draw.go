@@ -7,7 +7,12 @@ import (
 	"github.com/jcorbin/anansi/ansi"
 )
 
-func writeIntoGrid(g anansi.Grid, b []byte) ansi.Point {
+// WriteIntoGrid writes the contents of a byte slice into a grid (starting at
+// its minimum bounding point) by ansi parsing it, and handling runes an
+// ansi.SGR sequences.
+//
+// NOTE cursor positioning sequences not supported
+func WriteIntoGrid(g anansi.Grid, b []byte) ansi.Point {
 	var cur anansi.CursorState
 	cur.Point = g.Rect.Min
 	for len(b) > 0 {
@@ -45,7 +50,11 @@ func writeIntoGrid(g anansi.Grid, b []byte) ansi.Point {
 	return cur.Point
 }
 
-func measureTextBox(b []byte) (box ansi.Rectangle) {
+// MeasureText parses runes and ansi escape sequence, counting the needed
+// bounding box.
+//
+// NOTE all escape sequences are ignored, particularly cursor positioning
+func MeasureText(b []byte) (box ansi.Rectangle) {
 	box.Min = ansi.Pt(1, 1)
 	box.Max = ansi.Pt(1, 1)
 	pt := box.Min
