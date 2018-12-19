@@ -1,6 +1,7 @@
 package main
 
 import (
+	"aoc/internal/layerui"
 	"bufio"
 	"bytes"
 	"image"
@@ -14,6 +15,7 @@ import (
 
 func init() {
 	log.SetFlags(0)
+	layerui.InitLogs()
 }
 
 type testResult struct {
@@ -36,7 +38,7 @@ type testScenario struct {
 }
 
 func (tc testScenario) run(t *testing.T, verbose bool) {
-	logs.Reset()
+	layerui.Logs.Reset()
 
 	var buf bytes.Buffer
 	for _, line := range tc.initialGrid {
@@ -70,11 +72,11 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 		if verbose {
 			t.Logf("start round %v", world.round+1)
 		}
-		if !world.tick() {
+		if !world.Tick() {
 			break
 		}
 		if verbose {
-			sc := bufio.NewScanner(&logs)
+			sc := bufio.NewScanner(&layerui.Logs)
 			for sc.Scan() {
 				t.Logf("%s\n", sc.Bytes())
 			}
@@ -82,7 +84,7 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 		}
 
 		clearGrid()
-		world.render(g, image.ZP, nil)
+		world.Render(g, image.ZP)
 		lines := gridLines(g)
 
 		logGrid := true
@@ -91,19 +93,6 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 			require.False(t, chk.round < world.round, "missed checkpoint[%v]", chk.round)
 			if chk.round == world.round {
 				if !assert.Equal(t, chk.lines, lines, "expected checkpoint[%v]", chk.round) {
-
-					// XXX for showing debug labels
-					// clearGrid()
-					// world.render(g, image.ZP, func(z, priorZ int) bool {
-					// 	if z < 0 {
-					// 		return true
-					// 	}
-					// 	return z > priorZ
-					// })
-					// for _, line := range gridLines(g) {
-					// 	t.Logf("! %s", line)
-					// }
-
 					t.FailNow()
 				}
 				if verbose {
@@ -130,7 +119,7 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 	}
 	if tc.finalGrid != nil {
 		clearGrid()
-		world.render(g, image.ZP, nil)
+		world.Render(g, image.ZP)
 		assert.Equal(t, tc.finalGrid, gridLines(g), "expected final grid")
 	}
 
