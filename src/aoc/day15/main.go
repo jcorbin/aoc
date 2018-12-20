@@ -48,7 +48,7 @@ func main() {
 
 func run() error {
 	var world gameWorld
-	if err := infernio.LoadInput(nil /* TODO builtinInput */, world.load); err != nil {
+	if err := infernio.LoadInput(builtinInput, world.load); err != nil {
 		return err
 	}
 
@@ -64,7 +64,16 @@ func run() error {
 	).RunMain()
 }
 
-var defaultWorldData = ""
+var builtinInput = infernio.Builtin("" +
+	"#########\n" +
+	"#G......#\n" +
+	"#.E.#...#\n" +
+	"#..##..G#\n" +
+	"#...##..#\n" +
+	"#...#...#\n" +
+	"#.G...G.#\n" +
+	"#.....G.#\n" +
+	"#########")
 
 type gameType uint8
 
