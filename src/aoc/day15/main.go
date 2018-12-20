@@ -59,6 +59,7 @@ func run() error {
 	world.ui.WorldLayer.World = &world
 
 	return anui.Run(
+		ansi.ModeBracketedPaste,
 		&world.ui.LogLayer,
 		anui.DrawFuncLayer(world.DrawHPOverlay),
 		&world.ui.WorldLayer,
@@ -236,7 +237,7 @@ func mergeBGColors(a, b ansi.SGRAttr) ansi.SGRAttr {
 
 func (world *gameWorld) load(r io.Reader) error {
 	if len(world.t) > 0 {
-		panic("reload of world not supported")
+		world.clear()
 	}
 	world.createEntity(0)
 
@@ -282,6 +283,32 @@ func (world *gameWorld) load(r io.Reader) error {
 		world.ui.SetFocus(foc)
 	}
 	return err
+}
+
+func (world *gameWorld) clear() {
+	world.Index.Clear()
+	world.bounds = image.ZR
+
+	world.t = world.t[:0]
+	world.p = world.p[:0]
+	world.z = world.z[:0]
+	world.r = world.r[:0]
+	world.a = world.a[:0]
+	world.hp = world.hp[:0]
+	world.ap = world.ap[:0]
+
+	world.free = world.free[:0]
+
+	world.round = 0
+	world.noTarget = false
+	world.actors = world.actors[:0]
+	world.deaths = 0
+	for id := range world.goblins {
+		delete(world.goblins, id)
+	}
+	for id := range world.elves {
+		delete(world.elves, id)
+	}
 }
 
 func (world *gameWorld) loadCell(p image.Point, c byte) {
@@ -817,6 +844,19 @@ func (world *gameWorld) sortIDs(ids []int) {
 		}
 		return pi.Y == pj.Y && pi.X < pj.X
 	})
+}
+
+type pasteLayer struct {
+	active bool
+	bytes.Buffer
+}
+
+func (pl *pasteLayer) HandleInput(e ansi.Escape, a []byte) (handled bool, err error) {
+	switch e {
+	case ansi.CSI('~'):
+		log.Printf("WUT %v %q", e, a)
+	}
+	return false, nil
 }
 
 func (world *gameWorld) HandleInput(e ansi.Escape, a []byte) (handled bool, err error) {

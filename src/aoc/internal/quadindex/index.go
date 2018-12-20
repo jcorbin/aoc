@@ -12,6 +12,13 @@ type Index struct {
 	invalid int
 }
 
+// Clear empties the index.
+func (qi *Index) Clear() {
+	qi.ix = qi.ix[:0]
+	qi.ks = qi.ks[:0]
+	qi.invalid = 0
+}
+
 // Get the key value stored for the given index.
 func (qi *Index) Get(i int) Key {
 	if i >= len(qi.ks) {
