@@ -14,9 +14,13 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"syscall"
-	"time"
 
 	"github.com/jcorbin/anansi"
+)
+
+var (
+	errInputStart = errors.New("invalid room pattern: must begin with ^")
+	errInputEnd   = errors.New("invalid input, doesn't end in $")
 )
 
 var (
@@ -76,7 +80,9 @@ func takeMemProfile() {
 	}
 }
 
-var hack int // FIXME
+type pointScore map[image.Point]int
+type pointGraph map[image.Point]pointSet
+type pointSet map[image.Point]struct{}
 
 func run(in, out *os.File) error {
 	pattern := *patFlag
@@ -97,30 +103,29 @@ func run(in, out *os.File) error {
 	// part 1
 	log.Printf("building rooms from pattern")
 	var bld builder
-	start, err := bld.buildRooms(pattern)
-	if err != nil {
+	if err := bld.buildRooms(pattern); err != nil {
 		return err
 	}
 
-	if *drawFlag {
-		log.Printf("drawing rooms")
-		var rm roomMap
-		start.build(&rm, image.ZP)
-		fmt.Printf("%s\n", rm.draw())
-	}
+	// if *drawFlag {
+	// 	log.Printf("drawing rooms")
+	// 	var rm roomMap
+	// 	start.build(&rm, image.ZP)
+	// 	fmt.Printf("%s\n", rm.draw())
+	// }
 
 	log.Printf("filling rooms")
 	// XXX why doesn't this return the right max value?
-	log.Printf("%v", start.fill(0)+1)
+	log.Printf("%v", bld.pg.fill(image.ZP, 0, make(pointScore, len(bld.pg))))
 
-	hack = 0
-	if *drawFlag {
-		log.Printf("drawing rooms (again)")
-		var rm roomMap
-		start.build(&rm, image.ZP)
-		fmt.Printf("%s\n", rm.draw())
-	}
-	log.Printf("%v", hack)
+	// hack = 0
+	// if *drawFlag {
+	// 	log.Printf("drawing rooms (again)")
+	// 	var rm roomMap
+	// 	start.build(&rm, image.ZP)
+	// 	fmt.Printf("%s\n", rm.draw())
+	// }
+	// log.Printf("%v", hack)
 
 	// part 2
 	// TODO
@@ -128,18 +133,24 @@ func run(in, out *os.File) error {
 	return nil
 }
 
-func (r *room) fill(d int) int {
-	if r == nil {
-		return -1
+func (pg pointGraph) fill(p image.Point, d int, pd pointScore) int {
+	if rv, def := pd[p]; def {
+		return rv
 	}
-	// TODO is this necessary?
-	if r.d >= 0 && r.d <= d {
-		return r.d
+
+	pd[p] = d
+	rv := d
+	for _, np := range [...]image.Point{
+		p.Add(image.Pt(0, -1)),
+		p.Add(image.Pt(1, 0)),
+		p.Add(image.Pt(0, 1)),
+		p.Add(image.Pt(-1, 0)),
+	} {
+		if _, con := pg[p][np]; con {
+			rv = max(rv, pg.fill(np, d+1, pd))
+		}
 	}
-	r.d = d
-	n, e, s, w := r.n.fill(d+1), r.e.fill(d+1), r.s.fill(d+1), r.w.fill(d+1)
-	// log.Printf("FILL %v %v %v %v", n, e, s, w) XXX why ...
-	return max(0, n, e, s, w)
+	return rv
 }
 
 func max(a int, bs ...int) int {
@@ -151,180 +162,65 @@ func max(a int, bs ...int) int {
 	return a
 }
 
-type room struct {
-	p          image.Point
-	n, e, s, w *room
-	d          int
-}
-
-type buildState struct {
-	*builder
-
-	i    int
-	cur  *room
-	pend []*room
-
-	curStack []*room
-}
-
-var (
-	slab      []room
-	slabi     int
-	allocated int
-)
-
-func (bs *buildState) grow(p image.Point) *room {
-	if cur := bs.At(p); cur.Next() {
-		bs.cur = bs.rooms[cur.I()]
-	} else {
-		if slabi >= len(slab) {
-			slab = make([]room, 1024*1024)
-			slabi = 0
-			allocated += len(slab)
-		}
-		bs.cur = &slab[slabi]
-		slabi++
-		bs.cur.p = p
-		bs.cur.d = -1
-
-		i := len(bs.rooms)
-		bs.rooms = append(bs.rooms, bs.cur)
-		bs.Index.Update(i, p)
-	}
-	return bs.cur
-}
-
-func (bs *buildState) push() {
-	bs.curStack = append(bs.curStack, bs.cur)
-	bs.pend = nil
-}
-
-func (bs *buildState) pop(emit func(buildState)) {
-	csi := len(bs.curStack) - 1
-	for _, r := range bs.pend {
-		i := bs.i + 1
-
-		if _, seen := bs.seen[i][r]; seen {
-			continue
-		}
-		seenRooms := bs.seen[i]
-		if seenRooms == nil {
-			if bs.seen == nil {
-				bs.seen = make(map[int]map[*room]struct{}, 64)
-			}
-			seenRooms = make(map[*room]struct{}, 64)
-			bs.seen[i] = seenRooms
-		}
-		seenRooms[r] = struct{}{}
-
-		next := buildState{
-			builder: bs.builder,
-			i:       i,
-			cur:     r,
-		}
-		if csi > 0 {
-			next.curStack = bs.curStack[:csi:csi]
-		}
-		emit(next)
-	}
-	bs.curStack = bs.curStack[:csi]
-}
-
-func (bs *buildState) alt() {
-	bs.pend = append(bs.pend, bs.cur)
-	bs.cur = bs.curStack[len(bs.curStack)-1]
-}
-
-var (
-	errInputStart = errors.New("invalid room pattern: must begin with ^")
-	errInputEnd   = errors.New("invalid input, doesn't end in $")
-)
-
-func (bs *buildState) expand(pattern string, emit func(buildState)) error {
-	// TODO rework this to use a set of currently expanding points rather than
-	// backtracking:
-	// - start opens a new context (stack push prior)
-	// - alt adds a continuation to the next gen
-	// - end takes the current set of next continuations and runs with them
-	for ; bs.i < len(pattern); bs.i++ {
-		prior := bs.cur
-		// log.Printf("> %q in %p", string(pattern[bs.i]), bs.cur)
-		switch pattern[bs.i] {
-		case 'N':
-			prior.n = bs.grow(prior.p.Add(image.Pt(0, -1)))
-			bs.cur.s = prior
-		case 'E':
-			prior.e = bs.grow(prior.p.Add(image.Pt(1, 0)))
-			bs.cur.w = prior
-		case 'S':
-			prior.s = bs.grow(prior.p.Add(image.Pt(0, 1)))
-			bs.cur.n = prior
-		case 'W':
-			prior.w = bs.grow(prior.p.Add(image.Pt(-1, 0)))
-			bs.cur.e = prior
-		case '(':
-			bs.push()
-		case '|':
-			bs.alt()
-		case ')':
-			bs.pop(emit)
-		case '$':
-			bs.i++
-			if bs.i == len(pattern) {
-				return nil
-			}
-			bs.i = len(pattern)
-
-		default:
-			return fmt.Errorf("invalid pattern input %q", string(pattern[bs.i]))
-		}
-		// log.Printf("... %p", bs.cur)
-	}
-
-	return errInputEnd
-}
-
 type builder struct {
-	quadindex.Index
-	rooms []*room
-	seen  map[int]map[*room]struct{}
+	pg pointGraph
+
+	// TODO surely this is too simple
+	st []image.Point
 }
 
-func (bld *builder) buildRooms(pattern string) (*room, error) {
-	var start buildState
+func (bld *builder) buildRooms(pattern string) error {
+	bld.pg = make(pointGraph, 1024)
+	bld.st = make([]image.Point, 0, 1024)
 
-	if pattern[start.i] != '^' {
-		return nil, errInputStart
+	i := 0
+	if pattern[i] != '^' {
+		return errInputStart
 	}
-	start.builder = bld
-	start.grow(image.ZP)
-	start.i++
+	i++
 
-	frontier := []buildState{start}
-	emit := func(alt buildState) {
-		// log.Printf("EMIT %q ^ %q", pattern[:alt.i], pattern[alt.i:])
-		frontier = append(frontier, alt)
-	}
-
-	tick := time.NewTicker(time.Second)
-	n := 0
-	for len(frontier) > 0 {
-		n++
-		st := frontier[len(frontier)-1]
-		frontier = frontier[:len(frontier)-1]
-
-		select {
-		case <-tick.C:
-			log.Printf("expanded %v states, depth %v @%v allocated:%v", n, len(frontier), st.i, allocated)
+	cur := image.ZP
+	for ; i < len(pattern)-1; i++ {
+		switch pattern[i] {
+		case 'N':
+			cur = bld.add(cur, cur.Add(image.Pt(0, -1)))
+		case 'E':
+			cur = bld.add(cur, cur.Add(image.Pt(1, 0)))
+		case 'S':
+			cur = bld.add(cur, cur.Add(image.Pt(0, 1)))
+		case 'W':
+			cur = bld.add(cur, cur.Add(image.Pt(-1, 0)))
+		case '(':
+			bld.st = append(bld.st, cur)
+		case '|':
+			cur = bld.st[len(bld.st)-1]
+		case ')':
+			bld.st = bld.st[:len(bld.st)-1]
 		default:
-		}
-
-		if err := st.expand(pattern, emit); err != nil {
-			return nil, err
+			return fmt.Errorf("invalid pattern input %q", string(pattern[i]))
 		}
 	}
 
-	return start.cur, nil
+	if pattern[i] != '$' {
+		return errInputEnd
+	}
+	return nil
+}
+
+func (bld *builder) add(a, b image.Point) image.Point {
+	aSet := bld.pg[a]
+	bSet := bld.pg[b]
+	if aSet == nil {
+		aSet = make(pointSet, 64)
+		bld.pg[a] = aSet
+	}
+	if bSet == nil {
+		bSet = make(pointSet, 64)
+		bld.pg[b] = bSet
+	}
+	aSet[b] = struct{}{}
+	bSet[a] = struct{}{}
+	return b
 }
 
 type roomMap struct {
@@ -378,51 +274,51 @@ func (rm *roomMap) setCell(p image.Point, r byte) bool {
 	return true
 }
 
-func (r *room) build(rm *roomMap, p image.Point) {
-	rm.setCell(p.Add(image.Pt(-1, -1)), '#')
-	if pp := p.Add(image.Pt(0, -1)); r.n == nil {
-		rm.setCell(pp, '#')
-	} else if rm.setCell(pp, '-') {
-		r.n.build(rm, pp.Add(image.Pt(0, -1)))
-	}
-	rm.setCell(p.Add(image.Pt(1, -1)), '#')
+// func (bld *builder) draw(rm *roomMap, p image.Point) {
+// 	rm.setCell(p.Add(image.Pt(-1, -1)), '#')
+// 	if pp := p.Add(image.Pt(0, -1)); r.n == nil {
+// 		rm.setCell(pp, '#')
+// 	} else if rm.setCell(pp, '-') {
+// 		r.n.build(rm, pp.Add(image.Pt(0, -1)))
+// 	}
+// 	rm.setCell(p.Add(image.Pt(1, -1)), '#')
 
-	if pp := p.Add(image.Pt(-1, 0)); r.w == nil {
-		rm.setCell(pp, '#')
-	} else if rm.setCell(pp, '|') {
-		r.w.build(rm, pp.Add(image.Pt(-1, 0)))
-	}
+// 	if pp := p.Add(image.Pt(-1, 0)); r.w == nil {
+// 		rm.setCell(pp, '#')
+// 	} else if rm.setCell(pp, '|') {
+// 		r.w.build(rm, pp.Add(image.Pt(-1, 0)))
+// 	}
 
-	if p == image.ZP {
-		rm.setCell(p, 'X')
-	} else if r.d < 0 {
-		rm.setCell(p, '.')
-	} else {
-		if hack < r.d {
-			hack = r.d
-		}
-		if r.d < 10 {
-			rm.setCell(p, '0'+byte(r.d))
-		} else if r.d < 36 {
-			rm.setCell(p, 'a'+byte(r.d-10))
-		} else if r.d < 62 {
-			rm.setCell(p, 'A'+byte(r.d-36))
-		} else if r.d < 62 {
-			rm.setCell(p, '?')
-		}
-	}
+// 	if p == image.ZP {
+// 		rm.setCell(p, 'X')
+// 	} else if r.d < 0 {
+// 		rm.setCell(p, '.')
+// 	} else {
+// 		if hack < r.d {
+// 			hack = r.d
+// 		}
+// 		if r.d < 10 {
+// 			rm.setCell(p, '0'+byte(r.d))
+// 		} else if r.d < 36 {
+// 			rm.setCell(p, 'a'+byte(r.d-10))
+// 		} else if r.d < 62 {
+// 			rm.setCell(p, 'A'+byte(r.d-36))
+// 		} else if r.d < 62 {
+// 			rm.setCell(p, '?')
+// 		}
+// 	}
 
-	if pp := p.Add(image.Pt(1, 0)); r.e == nil {
-		rm.setCell(pp, '#')
-	} else if rm.setCell(pp, '|') {
-		r.e.build(rm, pp.Add(image.Pt(1, 0)))
-	}
+// 	if pp := p.Add(image.Pt(1, 0)); r.e == nil {
+// 		rm.setCell(pp, '#')
+// 	} else if rm.setCell(pp, '|') {
+// 		r.e.build(rm, pp.Add(image.Pt(1, 0)))
+// 	}
 
-	rm.setCell(p.Add(image.Pt(-1, 1)), '#')
-	if pp := p.Add(image.Pt(0, 1)); r.s == nil {
-		rm.setCell(pp, '#')
-	} else if rm.setCell(pp, '-') {
-		r.s.build(rm, pp.Add(image.Pt(0, 1)))
-	}
-	rm.setCell(p.Add(image.Pt(1, 1)), '#')
-}
+// 	rm.setCell(p.Add(image.Pt(-1, 1)), '#')
+// 	if pp := p.Add(image.Pt(0, 1)); r.s == nil {
+// 		rm.setCell(pp, '#')
+// 	} else if rm.setCell(pp, '-') {
+// 		r.s.build(rm, pp.Add(image.Pt(0, 1)))
+// 	}
+// 	rm.setCell(p.Add(image.Pt(1, 1)), '#')
+// }
