@@ -82,14 +82,14 @@ func (lui *LayerUI) Enter(term *anansi.Term) error {
 
 // Exit is the converse of Enter.
 func (lui *LayerUI) Exit(term *anansi.Term) error {
-	err := lui.screen.Enter(term)
-	if eerr := lui.inputReady.Enter(term); err == nil {
+	err := lui.screen.Exit(term)
+	if eerr := lui.inputReady.Exit(term); err == nil {
 		err = eerr
 	}
-	if eerr := lui.resize.Enter(term); err == nil {
+	if eerr := lui.resize.Exit(term); err == nil {
 		err = eerr
 	}
-	if eerr := lui.halt.Enter(term); err == nil {
+	if eerr := lui.halt.Exit(term); err == nil {
 		err = eerr
 	}
 	return err
