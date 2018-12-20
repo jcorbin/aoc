@@ -60,7 +60,10 @@ func run() error {
 		&world.ModalLayer,
 		&world.BannerLayer,
 		&world.WorldLayer,
-	).RunMain()
+	).RunMain(
+		ansi.ModeMouseSgrExt,
+		ansi.ModeMouseBtnEvent,
+	)
 }
 
 type cartType uint8

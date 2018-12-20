@@ -35,64 +35,48 @@ type LayerUI struct {
 	timer      drawTimer
 }
 
-// RunMain sets up signals, creates a new anansi terminal, and runs the ui
-// loop unedr it.
-func (lui LayerUI) RunMain() error {
+// RunMain sets up signals, creates a new anansi terminal, and runs the ui loop
+// under it.
+func (lui LayerUI) RunMain(args ...interface{}) error {
 	in, out, err := OpenTermFiles(os.Stdin, os.Stdout)
 	if err != nil {
 		return err
 	}
 
+	ctx := anansi.Contexts(
+		&lui.halt,
+		&lui.resize,
+		&lui.inputReady,
+		&lui.screen,
+	)
+
+	modes := []ansi.Mode{
+		ansi.ModeAlternateScreen,
+	}
+
+	for i := range args {
+		switch arg := args[i].(type) {
+		case anansi.Context:
+			ctx = anansi.Contexts(ctx, arg)
+		case ansi.Mode:
+			modes = append(modes, arg)
+		default:
+			panic(fmt.Sprintf("unsupported LayerUI.RunMain argument type %T", arg))
+		}
+	}
+
 	lui.SetupSignals()
 
-	term := anansi.NewTerm(in, out, &lui)
+	term := anansi.NewTerm(in, out, ctx)
 	term.SetRaw(true)
-	// TODO y no term.SetEcho() ?
-	term.AddMode(
-		ansi.ModeAlternateScreen,
-		ansi.ModeMouseSgrExt,
-		ansi.ModeMouseBtnEvent,
-		// ansi.ModeMouseAnyEvent, TODO option
-	)
+	term.SetEcho(false)
+	term.AddMode(modes...)
 
 	// TODO consider borging anansi.Loop* into here now that it's the
 	// primary/only user.
 	return term.RunWithFunc(func(term *anansi.Term) error {
 		return term.Loop(&lui)
 	})
-}
-
-// Enter registers signal notification, input notification, and initializes
-// the screen.
-func (lui *LayerUI) Enter(term *anansi.Term) error {
-	if err := lui.halt.Enter(term); err != nil {
-		return err
-	}
-	if err := lui.resize.Enter(term); err != nil {
-		return err
-	}
-	if err := lui.inputReady.Enter(term); err != nil {
-		return err
-	}
-	if err := lui.screen.Enter(term); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Exit is the converse of Enter.
-func (lui *LayerUI) Exit(term *anansi.Term) error {
-	err := lui.screen.Exit(term)
-	if eerr := lui.inputReady.Exit(term); err == nil {
-		err = eerr
-	}
-	if eerr := lui.resize.Exit(term); err == nil {
-		err = eerr
-	}
-	if eerr := lui.halt.Exit(term); err == nil {
-		err = eerr
-	}
-	return err
 }
 
 // SetupSignals enables halt and resize signal notification.
