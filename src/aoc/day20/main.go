@@ -116,19 +116,23 @@ func run(in, out *os.File) error {
 
 	log.Printf("filling rooms")
 	// XXX why doesn't this return the right max value?
-	log.Printf("%v", bld.pg.fill(image.ZP, 0, make(pointScore, len(bld.pg))))
+	pd := make(pointScore, len(bld.pg))
+	log.Printf("farthest: %v", bld.pg.fill(image.ZP, 0, pd))
 
-	// hack = 0
+	n := 0
+	for _, d := range pd {
+		if d >= 1000 {
+			n++
+		}
+	}
+	log.Printf("1000 or over: %v", n)
+
 	// if *drawFlag {
 	// 	log.Printf("drawing rooms (again)")
 	// 	var rm roomMap
 	// 	start.build(&rm, image.ZP)
 	// 	fmt.Printf("%s\n", rm.draw())
 	// }
-	// log.Printf("%v", hack)
-
-	// part 2
-	// TODO
 
 	return nil
 }
@@ -294,9 +298,6 @@ func (rm *roomMap) setCell(p image.Point, r byte) bool {
 // 	} else if r.d < 0 {
 // 		rm.setCell(p, '.')
 // 	} else {
-// 		if hack < r.d {
-// 			hack = r.d
-// 		}
 // 		if r.d < 10 {
 // 			rm.setCell(p, '0'+byte(r.d))
 // 		} else if r.d < 36 {
