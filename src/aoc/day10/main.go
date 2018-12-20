@@ -18,6 +18,8 @@ import (
 	"github.com/jcorbin/anansi/ansi"
 )
 
+var justSolve = flag.Bool("solve", false, "just solve it")
+
 func main() {
 	flag.Parse()
 	anansi.MustRun(run(os.Stdin, os.Stdout))
@@ -85,9 +87,7 @@ func run(in, out *os.File) error {
 		return err
 	}
 
-	log.Printf("read: %v", len(sp.p))
-
-	if !anansi.IsTerminal(out) {
+	if *justSolve || !anansi.IsTerminal(out) {
 		return solve(sp, out)
 	}
 
@@ -199,17 +199,12 @@ func solve(sp space, out *os.File) error {
 		// log.Printf("tick %v n:%v dn:%v", sp.t, n, dn)
 	}
 
-	for i := 0; i < 5; i++ {
-		sp.rewind()
-	}
+	sp.rewind()
+	fmt.Fprintf(out, "--- t:%v %v\r\n", sp.t, sp.bounds().Size())
+	bi := sp.render()
+	anansi.WriteBitmap(out, &bi)
+	fmt.Fprintf(out, "\r\n")
 
-	for i := 0; i < 10; i++ {
-		fmt.Fprintf(out, "--- t:%v %v\r\n", sp.t, sp.bounds().Size())
-		bi := sp.render()
-		anansi.WriteBitmap(out, &bi)
-		fmt.Fprintf(out, "\r\n")
-		sp.update()
-	}
 	return nil
 }
 
