@@ -2,6 +2,7 @@ package main
 
 import (
 	"image"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -112,21 +113,21 @@ var testCases = []struct {
 	}},
 }
 
-// func Test_build_maps(t *testing.T) {
-// 	for _, tc := range testCases {
-// 		t.Run(tc.pattern, func(t *testing.T) {
-// 			var bld builder
-// 			err := bld.buildRooms(tc.pattern)
-// 			require.NoError(t, err)
-// 			var rm roomMap
-// 			bld.pg.draw(&rm, image.ZP)
-// 			t.Logf("map bounds %v", rm.bounds)
-// 			assert.Equal(t,
-// 				tc.lines,
-// 				strings.Split(rm.draw(), "\n"))
-// 		})
-// 	}
-// }
+func Test_build_maps(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.pattern, func(t *testing.T) {
+			var bld builder
+			err := bld.buildRooms(tc.pattern)
+			require.NoError(t, err)
+			var rm roomMap
+			bld.pg.draw(&rm, image.ZP, nil)
+			t.Logf("map bounds %v", rm.bounds)
+			assert.Equal(t,
+				tc.lines,
+				strings.Split(rm.draw(), "\n"))
+		})
+	}
+}
 
 func Test_explore_rooms(t *testing.T) {
 	for _, tc := range testCases {

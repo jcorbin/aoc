@@ -107,12 +107,12 @@ func run(in, out *os.File) error {
 		return err
 	}
 
-	// if *drawFlag {
-	// 	log.Printf("drawing rooms")
-	// 	var rm roomMap
-	// 	start.build(&rm, image.ZP)
-	// 	fmt.Printf("%s\n", rm.draw())
-	// }
+	if *drawFlag {
+		log.Printf("drawing rooms")
+		var rm roomMap
+		bld.pg.draw(&rm, image.ZP, nil)
+		fmt.Printf("%s\n", rm.draw())
+	}
 
 	log.Printf("filling rooms")
 	// XXX why doesn't this return the right max value?
@@ -127,14 +127,19 @@ func run(in, out *os.File) error {
 	}
 	log.Printf("1000 or over: %v", n)
 
-	// if *drawFlag {
-	// 	log.Printf("drawing rooms (again)")
-	// 	var rm roomMap
-	// 	start.build(&rm, image.ZP)
-	// 	fmt.Printf("%s\n", rm.draw())
-	// }
+	if *drawFlag {
+		log.Printf("drawing rooms (again)")
+		var rm roomMap
+		bld.pg.draw(&rm, image.ZP, pd)
+		fmt.Printf("%s\n", rm.draw())
+	}
 
 	return nil
+}
+
+func (pg pointGraph) connected(a, b image.Point) bool {
+	_, con := pg[a][b]
+	return con
 }
 
 func (pg pointGraph) fill(p image.Point, d int, pd pointScore) int {
@@ -150,7 +155,7 @@ func (pg pointGraph) fill(p image.Point, d int, pd pointScore) int {
 		p.Add(image.Pt(0, 1)),
 		p.Add(image.Pt(-1, 0)),
 	} {
-		if _, con := pg[p][np]; con {
+		if pg.connected(p, np) {
 			rv = max(rv, pg.fill(np, d+1, pd))
 		}
 	}
@@ -278,48 +283,46 @@ func (rm *roomMap) setCell(p image.Point, r byte) bool {
 	return true
 }
 
-// func (bld *builder) draw(rm *roomMap, p image.Point) {
-// 	rm.setCell(p.Add(image.Pt(-1, -1)), '#')
-// 	if pp := p.Add(image.Pt(0, -1)); r.n == nil {
-// 		rm.setCell(pp, '#')
-// 	} else if rm.setCell(pp, '-') {
-// 		r.n.build(rm, pp.Add(image.Pt(0, -1)))
-// 	}
-// 	rm.setCell(p.Add(image.Pt(1, -1)), '#')
+func (pg pointGraph) draw(rm *roomMap, p image.Point, pd pointScore) {
+	for _, corner := range [...]image.Point{
+		image.Pt(-1, -1),
+		image.Pt(1, -1),
+		image.Pt(-1, 1),
+		image.Pt(1, 1),
+	} {
+		rm.setCell(p.Mul(2).Add(corner), '#')
+	}
 
-// 	if pp := p.Add(image.Pt(-1, 0)); r.w == nil {
-// 		rm.setCell(pp, '#')
-// 	} else if rm.setCell(pp, '|') {
-// 		r.w.build(rm, pp.Add(image.Pt(-1, 0)))
-// 	}
+	for _, door := range [...]struct {
+		d image.Point
+		r byte
+	}{
+		{image.Pt(0, -1), '-'},
+		{image.Pt(-1, 0), '|'},
+		{image.Pt(0, 1), '-'},
+		{image.Pt(1, 0), '|'},
+	} {
+		if np := p.Add(door.d); !pg.connected(p, np) {
+			rm.setCell(p.Mul(2).Add(door.d), '#')
+		} else if rm.setCell(p.Mul(2).Add(door.d), door.r) {
+			pg.draw(rm, np, pd)
+		}
+	}
 
-// 	if p == image.ZP {
-// 		rm.setCell(p, 'X')
-// 	} else if r.d < 0 {
-// 		rm.setCell(p, '.')
-// 	} else {
-// 		if r.d < 10 {
-// 			rm.setCell(p, '0'+byte(r.d))
-// 		} else if r.d < 36 {
-// 			rm.setCell(p, 'a'+byte(r.d-10))
-// 		} else if r.d < 62 {
-// 			rm.setCell(p, 'A'+byte(r.d-36))
-// 		} else if r.d < 62 {
-// 			rm.setCell(p, '?')
-// 		}
-// 	}
+	if p == image.ZP {
+		rm.setCell(p.Mul(2), 'X')
+	} else if d, def := pd[p]; !def {
+		rm.setCell(p.Mul(2), '.')
+	} else {
+		if d < 10 {
+			rm.setCell(p.Mul(2), '0'+byte(d))
+		} else if d < 36 {
+			rm.setCell(p.Mul(2), 'a'+byte(d-10))
+		} else if d < 62 {
+			rm.setCell(p.Mul(2), 'A'+byte(d-36))
+		} else if d < 62 {
+			rm.setCell(p.Mul(2), '?')
+		}
+	}
 
-// 	if pp := p.Add(image.Pt(1, 0)); r.e == nil {
-// 		rm.setCell(pp, '#')
-// 	} else if rm.setCell(pp, '|') {
-// 		r.e.build(rm, pp.Add(image.Pt(1, 0)))
-// 	}
-
-// 	rm.setCell(p.Add(image.Pt(-1, 1)), '#')
-// 	if pp := p.Add(image.Pt(0, 1)); r.s == nil {
-// 		rm.setCell(pp, '#')
-// 	} else if rm.setCell(pp, '-') {
-// 		r.s.build(rm, pp.Add(image.Pt(0, 1)))
-// 	}
-// 	rm.setCell(p.Add(image.Pt(1, 1)), '#')
-// }
+}
