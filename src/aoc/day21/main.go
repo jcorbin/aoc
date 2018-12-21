@@ -1,11 +1,10 @@
 package main
 
 import (
+	"aoc/internal/elvm"
 	"bufio"
-	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"regexp"
@@ -35,181 +34,38 @@ func main() {
 	anansi.MustRun(run(os.Stdin, os.Stdout))
 }
 
-func btoi(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+type taps map[int]tapFunc
+type tapFunc func(vm *elvm.VM, in elvm.Instruction) error
+
+func dumpTap(vm *elvm.VM, in elvm.Instruction) error {
+	log.Print(vm)
+	return nil
 }
 
-func addr(r *regs, a, b, c int) { r[c] = r[a] + r[b] }
-func addi(r *regs, a, b, c int) { r[c] = r[a] + b }
-func mulr(r *regs, a, b, c int) { r[c] = r[a] * r[b] }
-func muli(r *regs, a, b, c int) { r[c] = r[a] * b }
-func banr(r *regs, a, b, c int) { r[c] = r[a] & r[b] }
-func bani(r *regs, a, b, c int) { r[c] = r[a] & b }
-func borr(r *regs, a, b, c int) { r[c] = r[a] | r[b] }
-func bori(r *regs, a, b, c int) { r[c] = r[a] | b }
-func setr(r *regs, a, b, c int) { r[c] = r[a] }
-func seti(r *regs, a, b, c int) { r[c] = a }
-func gtir(r *regs, a, b, c int) { r[c] = btoi(a > r[b]) }
-func gtri(r *regs, a, b, c int) { r[c] = btoi(r[a] > b) }
-func gtrr(r *regs, a, b, c int) { r[c] = btoi(r[a] > r[b]) }
-func eqir(r *regs, a, b, c int) { r[c] = btoi(a == r[b]) }
-func eqri(r *regs, a, b, c int) { r[c] = btoi(r[a] == b) }
-func eqrr(r *regs, a, b, c int) { r[c] = btoi(r[a] == r[b]) }
-
-type opFunc func(r *regs, a, b, c int)
-
+// TODO refactor this into a proper "comparatorSpy"
 var (
-	ops = [16]opFunc{
-		addr, addi,
-		mulr, muli,
-		banr, bani,
-		borr, bori,
-		setr, seti,
-		gtir, gtri, gtrr,
-		eqir, eqri, eqrr,
-	}
-	names = [16]string{
-		"addr", "addi",
-		"mulr", "muli",
-		"banr", "bani",
-		"borr", "bori",
-		"setr", "seti",
-		"gtir", "gtri", "gtrr",
-		"eqir", "eqri", "eqrr",
-	}
-	name2opCode = map[string]int{
-		"addr": 0,
-		"addi": 1,
-		"mulr": 2,
-		"muli": 3,
-		"banr": 4,
-		"bani": 5,
-		"borr": 6,
-		"bori": 7,
-		"setr": 8,
-		"seti": 9,
-		"gtir": 10,
-		"gtri": 11,
-		"gtrr": 12,
-		"eqir": 13,
-		"eqri": 14,
-		"eqrr": 15,
-	}
+	firstReg3N = make(map[int]int, 1024)
+	lastReg3T  time.Time
+	lastReg3N  int
+	lastReg3   int
 )
 
-type regs [6]int
-type inst [4]int
-type comp struct {
-	op      opFunc
-	a, b, c int
-}
-type program []inst
-
-func (r regs) eq(other regs) bool {
-	for i, rv := range r {
-		if rv != other[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func (prog program) run(ipReg int, vm regs, lim int) (n int, ok bool) {
-	ip := &vm[ipReg]
-
-	if *verbose {
-		// slow interpretor when logging verbose
-		var buf bytes.Buffer
-		for i := 0; *ip < len(prog); i++ {
-			n++
-			if lim > 0 && i >= lim {
-				return n, false
-			}
-			in := prog[*ip]
-			op, a, b, c := in[0], in[1], in[2], in[3]
-			buf.Reset()
-			fmt.Fprintf(&buf, "ip=%v %v %s %v %v %v", *ip, vm, names[op], a, b, c)
-			ops[op](&vm, a, b, c)
-			fmt.Fprintf(&buf, " %v", vm)
-			log.Printf(buf.String())
-			*ip++
-		}
-	} else {
-		// faster interpretor when just barging through
-		t0 := time.Now()
-		i := 0
-		for ; *ip < len(prog); i++ {
-			n++
-			if tapFn := tap[*ip]; tapFn != nil {
-				tapFn(n, *ip, vm)
-			}
-			if lim > 0 && i >= lim {
-				return n, false
-			}
-			in := prog[*ip]
-			switch op, a, b, c := in[0], in[1], in[2], in[3]; op {
-			case 0:
-				vm[c] = vm[a] + vm[b]
-			case 1:
-				vm[c] = vm[a] + b
-			case 2:
-				vm[c] = vm[a] * vm[b]
-			case 3:
-				vm[c] = vm[a] * b
-			case 4:
-				vm[c] = vm[a] & vm[b]
-			case 5:
-				vm[c] = vm[a] & b
-			case 6:
-				vm[c] = vm[a] | vm[b]
-			case 7:
-				vm[c] = vm[a] | b
-			case 8:
-				vm[c] = vm[a]
-			case 9:
-				vm[c] = a
-			case 10:
-				vm[c] = btoi(a > vm[b])
-			case 11:
-				vm[c] = btoi(vm[a] > b)
-			case 12:
-				vm[c] = btoi(vm[a] > vm[b])
-			case 13:
-				vm[c] = btoi(a == vm[b])
-			case 14:
-				vm[c] = btoi(vm[a] == b)
-			case 15:
-				vm[c] = btoi(vm[a] == vm[b])
-			}
-			*ip++
-		}
-		t1 := time.Now()
-		log.Printf(
-			"%v ops in %v (%v/op)",
-			i,
-			t1.Sub(t0),
-			t1.Sub(t0)/time.Duration(i),
-		)
-	}
-	return n, true
-}
-
-type taps map[int]tapFunc
-type tapFunc func(n, ip int, vm regs)
-
-func dumpTap(n, ip int, vm regs) { log.Printf("n=%v ip=%v %v", n, ip, vm) }
-
-var firstReg3N = make(map[int]int, 1024)
-
-func maxReg3Tap(n, ip int, vm regs) {
-	r3 := vm[3]
+func maxReg3Tap(vm *elvm.VM, in elvm.Instruction) error {
+	const stopAfter = time.Second
+	r3 := vm.R[3]
 	if _, def := firstReg3N[r3]; !def {
-		firstReg3N[r3] = n
-		log.Printf("best so far: n=%v ip=%v r3=%v", n, ip, r3)
+		firstReg3N[r3] = vm.N
+		if len(firstReg3N) == 1 {
+			log.Printf("first halt: %v vm:%v", r3, vm)
+		}
+		lastReg3T = time.Now()
+		lastReg3N = vm.N
+		lastReg3 = r3
+	} else if since := time.Now().Sub(lastReg3T); !lastReg3T.IsZero() && since > stopAfter {
+		log.Printf("last halt: %v vm:%v", lastReg3, vm)
+		return fmt.Errorf("stopping since we haven't seen a better R3 in the last %v (%v ops)", stopAfter, vm.N-lastReg3N)
 	}
+	return nil
 }
 
 var tapActs = map[string]tapFunc{
@@ -248,61 +104,54 @@ func (ts taps) Set(arg string) error {
 }
 
 func run(in, out *os.File) error {
-	ipReg, prog, err := read(in)
+	prog, err := elvm.DecodeProgram(in)
 	if err != nil {
 		return err
 	}
 
-	vm := regs{}
-	vm[0] = *initR0
-	vm[1] = *initR1
-	vm[2] = *initR2
-	vm[3] = *initR3
-	vm[4] = *initR4
-	vm[5] = *initR5
-
-	if n, ok := prog.run(ipReg, vm, *limit); !ok {
-		log.Printf("NOPE")
-	} else {
-		log.Printf("OK after %v", n)
+	var vm elvm.VM
+	if err := vm.Load(prog); err != nil {
+		return err
 	}
 
+	vm.R[0] = *initR0
+	vm.R[1] = *initR1
+	vm.R[2] = *initR2
+	vm.R[3] = *initR3
+	vm.R[4] = *initR4
+	vm.R[5] = *initR5
+
+	var trc elvm.Tracer
+
+	if *verbose {
+		bw := bufio.NewWriterSize(os.Stdout, 64*1024)
+		trc = elvm.Tracers(trc, &elvm.PrintTracer{W: bw})
+		defer bw.Flush()
+	}
+
+	if len(tap) > 0 {
+		trc = elvm.Tracers(trc, tap)
+	}
+
+	// TODO run the VM in chunks when not limited, listening for SIGINT
+	// and stopping gracefully.
+	defer func(n0 int, t0 time.Time) {
+		n1, t1 := vm.N, time.Now()
+		en, et := n1-n0, t1.Sub(t0)
+		log.Printf("%v ops in %v (%v/op)", en, et, et/time.Duration(en))
+	}(vm.N, time.Now())
+	return vm.Execute(*limit, trc)
+}
+
+func (ts taps) Before(vm *elvm.VM, in elvm.Instruction) error {
+	if tapFn := ts[*vm.IP]; tapFn != nil {
+		if err := tapFn(vm, in); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-var (
-	ipPat = regexp.MustCompile(`#ip (\d+)`)
-	opPat = regexp.MustCompile(`(\w+) (\d+) (\d+) (\d+)`)
-)
-
-func read(r io.Reader) (ipReg int, prog program, err error) {
-	sc := bufio.NewScanner(r)
-	if sc.Scan() {
-		line := sc.Text()
-		parts := ipPat.FindStringSubmatch(line)
-		if len(parts) == 0 {
-			return 0, nil, fmt.Errorf("unexpected line %q expected %v", line, ipPat)
-		}
-		ipReg, _ = strconv.Atoi(parts[1])
-	}
-	for sc.Scan() {
-		line := sc.Text()
-		parts := opPat.FindStringSubmatch(line)
-		if len(parts) == 0 {
-			return 0, nil, fmt.Errorf("unexpected line %q expected %v", line, opPat)
-		}
-		code, def := name2opCode[parts[1]]
-		if !def {
-			return 0, nil, fmt.Errorf("invalid op %q", parts[1])
-		}
-
-		var in inst
-		in[0] = code
-		in[1], _ = strconv.Atoi(parts[2])
-		in[2], _ = strconv.Atoi(parts[3])
-		in[3], _ = strconv.Atoi(parts[4])
-		prog = append(prog, in)
-	}
-
-	return ipReg, prog, sc.Err()
+func (ts taps) After(vm *elvm.VM, in elvm.Instruction) error {
+	return nil
 }
