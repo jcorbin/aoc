@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"flag"
 	"fmt"
 	"image"
@@ -61,8 +60,9 @@ func run() error {
 		&world.BannerLayer,
 		&world.WorldLayer,
 	).RunMain(
-		ansi.ModeMouseSgrExt,
-		ansi.ModeMouseBtnEvent,
+	// TODO for inspecting
+	// ansi.ModeMouseSgrExt,
+	// ansi.ModeMouseBtnEvent,
 	)
 }
 
@@ -402,7 +402,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 		world.Display(world.helpMess)
 		return true, nil
 
-	// mouse inspection
+	/* mouse inspection TODO bring back as an independent layer
 	case ansi.CSI('m'), ansi.CSI('M'):
 		if m, sp, err := ansi.DecodeXtermExtendedMouse(e, a); err == nil {
 			if m.ButtonID() == 1 && m.IsRelease() {
@@ -434,6 +434,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 			}
 		}
 		return true, nil
+	*/
 
 	// toggle auto remove
 	case ansi.Escape('*'):
