@@ -26,11 +26,12 @@ func Layers(layers ...Layer) LayerUI {
 // LayerUI implements an anansi.Loop around a list of Layers.
 type LayerUI struct {
 	Layers     []Layer
+	now        time.Time
 	halt       anansi.Signal
 	resize     anansi.Signal
 	inputReady anansi.InputSignal
 	screen     anansi.Screen
-	timer      drawTimer
+	timer      anansi.Timer
 }
 
 // RunMain sets up signals, creates a new anansi terminal, and runs the ui loop
@@ -102,7 +103,7 @@ func (lui *LayerUI) Update(term *anansi.Term) (bool, error) {
 	case <-lui.resize.C:
 		err := lui.screen.SizeToTerm(term)
 		if err == nil {
-			lui.timer.set(5 * time.Millisecond)
+			lui.timer.Request(5 * time.Millisecond)
 		}
 		return false, err
 
@@ -115,7 +116,7 @@ func (lui *LayerUI) Update(term *anansi.Term) (bool, error) {
 		return false, err
 
 	case now := <-lui.timer.C:
-		lui.timer.update(now)
+		lui.now = now
 		return true, nil
 
 	default:
@@ -131,7 +132,7 @@ func (lui *LayerUI) setTimerIfNeeded() (d time.Duration) {
 		}
 	}
 	if d > 0 {
-		lui.timer.set(d)
+		lui.timer.Request(d)
 	}
 	return d
 }
@@ -171,7 +172,7 @@ func (lui *LayerUI) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 		lui.screen.Clear()           // clear virtual contents
 		lui.screen.To(ansi.Pt(1, 1)) // cursor back to top
 		lui.screen.Invalidate()      // force full redraw
-		lui.timer.set(5 * time.Millisecond)
+		lui.timer.Request(5 * time.Millisecond)
 		return true, nil
 
 	}
@@ -182,45 +183,10 @@ func (lui *LayerUI) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 func (lui *LayerUI) WriteTo(w io.Writer) (n int64, err error) {
 	lui.screen.Clear()
 	for i := len(lui.Layers) - 1; i >= 0; i-- {
-		lui.Layers[i].Draw(lui.screen, lui.timer.last)
+		lui.Layers[i].Draw(lui.screen, lui.now)
 	}
 	if n, err = lui.screen.WriteTo(w); err == nil {
 		lui.setTimerIfNeeded()
 	}
 	return n, err
-}
-
-type drawTimer struct {
-	C        <-chan time.Time
-	deadline time.Time
-	last     time.Time
-	timer    *time.Timer
-}
-
-func (dt *drawTimer) update(now time.Time) {
-	dt.deadline = time.Time{}
-	dt.last = now
-}
-
-func (dt *drawTimer) set(d time.Duration) {
-	deadline := time.Now().Add(d)
-	if !dt.deadline.IsZero() && deadline.After(dt.deadline) {
-		return
-	}
-	if dt.timer == nil {
-		dt.timer = time.NewTimer(d)
-		dt.C = dt.timer.C
-	} else {
-		dt.timer.Reset(d)
-	}
-	dt.deadline = deadline
-}
-
-func (dt *drawTimer) stop() {
-	dt.timer.Stop()
-	dt.deadline = time.Time{}
-	select {
-	case <-dt.C:
-	default:
-	}
 }
