@@ -14,7 +14,7 @@ import (
 // Layer is a composable user interface element run under LayerUI.
 type Layer interface {
 	HandleInput(e ansi.Escape, a []byte) (handled bool, err error)
-	Draw(anansi.Screen, time.Time)
+	Draw(screen anansi.Screen, now time.Time)
 	NeedsDraw() time.Duration
 }
 
