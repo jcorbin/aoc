@@ -25,9 +25,7 @@ func Layers(layers ...Layer) LayerUI {
 
 // LayerUI implements an anansi.Loop around a list of Layers.
 type LayerUI struct {
-	Layers []Layer
-
-	needsDraw  time.Duration
+	Layers     []Layer
 	halt       anansi.Signal
 	resize     anansi.Signal
 	inputReady anansi.InputSignal
@@ -125,18 +123,17 @@ func (lui *LayerUI) Update(term *anansi.Term) (bool, error) {
 	}
 }
 
-func (lui *LayerUI) setTimerIfNeeded() time.Duration {
-	needsDraw := lui.needsDraw
+func (lui *LayerUI) setTimerIfNeeded() (d time.Duration) {
 	for i := 0; i < len(lui.Layers); i++ {
 		nd := lui.Layers[i].NeedsDraw()
-		if needsDraw == 0 || (nd > 0 && nd < needsDraw) {
-			needsDraw = nd
+		if d == 0 || (nd > 0 && nd < d) {
+			d = nd
 		}
 	}
-	if needsDraw > 0 {
-		lui.timer.set(needsDraw)
+	if d > 0 {
+		lui.timer.set(d)
 	}
-	return needsDraw
+	return d
 }
 
 func (lui *LayerUI) handleInput(term *anansi.Term) error {
@@ -174,7 +171,7 @@ func (lui *LayerUI) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 		lui.screen.Clear()           // clear virtual contents
 		lui.screen.To(ansi.Pt(1, 1)) // cursor back to top
 		lui.screen.Invalidate()      // force full redraw
-		lui.needsDraw = 5 * time.Millisecond
+		lui.timer.set(5 * time.Millisecond)
 		return true, nil
 
 	}
@@ -183,7 +180,6 @@ func (lui *LayerUI) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 
 // WriteTo calls Layer.Draw in in reverse order.
 func (lui *LayerUI) WriteTo(w io.Writer) (n int64, err error) {
-	lui.needsDraw = 0
 	lui.screen.Clear()
 	for i := len(lui.Layers) - 1; i >= 0; i-- {
 		lui.Layers[i].Draw(lui.screen, lui.timer.last)
