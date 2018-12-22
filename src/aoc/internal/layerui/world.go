@@ -69,7 +69,9 @@ func (world *WorldLayer) ViewOffset() image.Point {
 	return world.viewOffset
 }
 
-func (world *WorldLayer) advance(now time.Time) {
+// Update advances the world simulation by calling tick one or more times if
+// enabled.
+func (world *WorldLayer) Update(now time.Time) {
 	// no updates while displaying a message
 	if !world.ticking {
 		world.last = now
@@ -100,6 +102,10 @@ func (world *WorldLayer) advance(now time.Time) {
 	}
 
 	world.ticking = true
+
+	if world.playing {
+		world.needsDraw = time.Second / time.Duration(world.playRate)
+	}
 }
 
 // NeedsDraw returns non-zero if the layer needs to be drawn.
@@ -184,13 +190,10 @@ func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 // upper-right corner.
 func (world *WorldLayer) Draw(screen anansi.Screen, now time.Time) {
 	world.needsDraw = 0
-	world.advance(now)
 	world.viewOffset = screen.Bounds().Size().Div(2).Sub(world.focus)
+	world.Update(now)
 	world.Render(screen.Grid, world.viewOffset)
 	world.DrawPlayOverlay(screen, now)
-	if world.playing {
-		world.needsDraw = time.Second / time.Duration(world.playRate)
-	}
 }
 
 // DrawPlayOverlay draws an overlay in the upper right to indicate playback
