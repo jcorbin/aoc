@@ -54,15 +54,14 @@ func run() error {
 
 	world.WorldLayer.World = &world
 
-	return layerui.Layers(
+	return layerui.Run(
 		&layerui.LogLayer{SubGrid: layerui.BottomNLines(5)},
 		&world.ModalLayer,
 		&world.BannerLayer,
 		&world.WorldLayer,
-	).RunMain(
-	// TODO for inspecting
-	// ansi.ModeMouseSgrExt,
-	// ansi.ModeMouseBtnEvent,
+		// TODO for inspecting
+		// ansi.ModeMouseSgrExt,
+		// ansi.ModeMouseBtnEvent,
 	)
 }
 

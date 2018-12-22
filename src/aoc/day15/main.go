@@ -58,10 +58,10 @@ func run() error {
 	worldLayer := layerui.WorldLayer{World: &world}
 	worldLayer.SetFocus(foc)
 
-	return layerui.Layers(
+	return layerui.Run(
 		&layerui.LogLayer{SubGrid: layerui.BottomNLines(5)},
 		&worldLayer,
-	).RunMain()
+	)
 }
 
 var builtinInput = infernio.Builtin("" +

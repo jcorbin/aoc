@@ -11,21 +11,75 @@ import (
 	"github.com/jcorbin/anansi/ansi"
 )
 
-// Layer is a composable user interface element run under LayerUI.
+// Layer is a composable user interface element.
 type Layer interface {
 	HandleInput(e ansi.Escape, a []byte) (handled bool, err error)
 	Draw(screen anansi.Screen, now time.Time)
 	NeedsDraw() time.Duration
 }
 
-// Layers is a convenience constructor for LayerUI.
-func Layers(layers ...Layer) LayerUI {
-	return LayerUI{Layers: layers}
+// Layers combines the given layer(s) into a single layer that dispatches
+// HandleInput in order and Draw in reverse order. Its NeedsDraw method returns
+// the smallest non-zero value from the constituent layers.
+func Layers(ls ...Layer) Layer {
+	if len(ls) == 0 {
+		return nil
+	}
+	a := ls[0]
+	for i := 1; i < len(ls); i++ {
+		b := ls[i]
+		if b == nil || b == Layer(nil) {
+			continue
+		}
+		if a == nil || a == Layer(nil) {
+			a = b
+			continue
+		}
+		as, haveAs := a.(layers)
+		bs, haveBs := b.(layers)
+		if haveAs && haveBs {
+			a = append(as, bs...)
+		} else if haveAs {
+			a = append(as, b)
+		} else if haveBs {
+			a = append(layers{a}, bs...)
+		} else {
+			a = layers{a, b}
+		}
+	}
+	return a
 }
 
-// LayerUI implements an anansi.Loop around a list of Layers.
+type layers []Layer
+
+func (ls layers) NeedsDraw() (d time.Duration) {
+	for i := 0; i < len(ls); i++ {
+		nd := ls[i].NeedsDraw()
+		if d == 0 || (nd > 0 && nd < d) {
+			d = nd
+		}
+	}
+	return d
+}
+
+func (ls layers) HandleInput(e ansi.Escape, a []byte) (handled bool, err error) {
+	for i := 0; i < len(ls); i++ {
+		if handled, err = ls[i].HandleInput(e, a); handled || err != nil {
+			return handled, err
+		}
+	}
+	return false, nil
+}
+
+func (ls layers) Draw(screen anansi.Screen, now time.Time) {
+	for i := len(ls) - 1; i >= 0; i-- {
+		ls[i].Draw(screen, now)
+	}
+}
+
+// LayerUI implements an anansi.Loop around a list of layers.
 type LayerUI struct {
-	Layers     []Layer
+	Layer
 	now        time.Time
 	halt       anansi.Signal
 	resize     anansi.Signal
@@ -34,9 +88,9 @@ type LayerUI struct {
 	timer      anansi.Timer
 }
 
-// RunMain sets up signals, creates a new anansi terminal, and runs the ui loop
-// under it.
-func (lui LayerUI) RunMain(args ...interface{}) error {
+// Run a new LayerUI.
+func Run(args ...interface{}) error {
+	var lui LayerUI
 	in, out, err := OpenTermFiles(os.Stdin, os.Stdout)
 	if err != nil {
 		return err
@@ -59,8 +113,10 @@ func (lui LayerUI) RunMain(args ...interface{}) error {
 			ctx = anansi.Contexts(ctx, arg)
 		case ansi.Mode:
 			modes = append(modes, arg)
+		case Layer:
+			lui.Layer = Layers(lui.Layer, arg)
 		default:
-			panic(fmt.Sprintf("unsupported LayerUI.RunMain argument type %T", arg))
+			panic(fmt.Sprintf("unsupported LayerUI.Run argument type %T", arg))
 		}
 	}
 
@@ -125,12 +181,7 @@ func (lui *LayerUI) Update(term *anansi.Term) (bool, error) {
 }
 
 func (lui *LayerUI) setTimerIfNeeded() (d time.Duration) {
-	for i := 0; i < len(lui.Layers); i++ {
-		nd := lui.Layers[i].NeedsDraw()
-		if d == 0 || (nd > 0 && nd < d) {
-			d = nd
-		}
-	}
+	d = lui.NeedsDraw()
 	if d > 0 {
 		lui.timer.Request(d)
 	}
@@ -140,25 +191,14 @@ func (lui *LayerUI) setTimerIfNeeded() (d time.Duration) {
 func (lui *LayerUI) handleInput(term *anansi.Term) error {
 	for e, a, ok := term.Decode(); ok; e, a, ok = term.Decode() {
 		handled, err := lui.handleLowInput(e, a)
+		if err == nil && !handled {
+			handled, err = lui.HandleInput(e, a)
+		}
 		if err != nil {
 			return err
 		}
-		if handled {
-			continue
-		}
-
-		for i := 0; i < len(lui.Layers); i++ {
-			if handled, err = lui.Layers[i].HandleInput(e, a); err != nil {
-				return err
-			}
-			if handled {
-				break
-			}
-		}
 	}
-
 	lui.setTimerIfNeeded()
-
 	return nil
 }
 
@@ -182,9 +222,7 @@ func (lui *LayerUI) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 // WriteTo calls Layer.Draw in in reverse order.
 func (lui *LayerUI) WriteTo(w io.Writer) (n int64, err error) {
 	lui.screen.Clear()
-	for i := len(lui.Layers) - 1; i >= 0; i-- {
-		lui.Layers[i].Draw(lui.screen, lui.now)
-	}
+	lui.Draw(lui.screen, lui.now)
 	if n, err = lui.screen.WriteTo(w); err == nil {
 		lui.setTimerIfNeeded()
 	}
