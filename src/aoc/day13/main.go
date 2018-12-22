@@ -624,21 +624,9 @@ func (world *cartWorld) load(r io.Reader) error {
 	// compute bounds
 	world.b = image.ZR
 	if len(world.p) > 1 {
-		world.b.Min = world.p[1]
-		world.b.Max = world.p[1]
+		world.b = pointRect(world.p[1])
 		for _, p := range world.p[1:] {
-			if world.b.Min.X > p.X {
-				world.b.Min.X = p.X
-			}
-			if world.b.Min.Y > p.Y {
-				world.b.Min.Y = p.Y
-			}
-			if world.b.Max.X < p.X {
-				world.b.Max.X = p.X
-			}
-			if world.b.Max.Y < p.Y {
-				world.b.Max.Y = p.Y
-			}
+			world.b = world.b.Union(pointRect(p))
 		}
 	}
 
@@ -653,4 +641,8 @@ func (world *cartWorld) load(r io.Reader) error {
 		world.Display(world.helpMess)
 	}
 	return err
+}
+
+func pointRect(p image.Point) image.Rectangle {
+	return image.Rectangle{p, p.Add(image.Pt(1, 1))}
 }
