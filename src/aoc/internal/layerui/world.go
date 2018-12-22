@@ -187,7 +187,15 @@ func (world *WorldLayer) Draw(screen anansi.Screen, now time.Time) {
 	world.advance(now)
 	world.viewOffset = screen.Bounds().Size().Div(2).Sub(world.focus)
 	world.Render(screen.Grid, world.viewOffset)
+	world.DrawPlayOverlay(screen, now)
+	if world.playing {
+		world.needsDraw = time.Second / time.Duration(world.playRate)
+	}
+}
 
+// DrawPlayOverlay draws an overlay in the upper right to indicate playback
+// state and speed.
+func (world *WorldLayer) DrawPlayOverlay(screen anansi.Screen, now time.Time) {
 	var buf bytes.Buffer
 	buf.Grow(128)
 	if world.playing {
@@ -200,7 +208,4 @@ func (world *WorldLayer) Draw(screen anansi.Screen, now time.Time) {
 	bnd := screen.Bounds()
 	screen.To(ansi.Pt(bnd.Max.X-n, 1))
 	screen.Write(buf.Bytes())
-	if world.playing {
-		world.needsDraw = time.Second / time.Duration(world.playRate)
-	}
 }
