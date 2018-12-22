@@ -27,7 +27,7 @@ type Registers [6]int
 type Instruction [4]int
 
 // Name returns the mnemonic name of the instruction.
-func (in Instruction) Name() string { return names[in[0]] }
+func (in Instruction) Name() string { return opSpecs[in[0]].name }
 
 // Program represents a program runnable on a VM.
 type Program struct {
@@ -38,14 +38,37 @@ type Program struct {
 	IPReg int
 }
 
-var names = [16]string{
-	"addr", "addi",
-	"mulr", "muli",
-	"banr", "bani",
-	"borr", "bori",
-	"setr", "seti",
-	"gtir", "gtri", "gtrr",
-	"eqir", "eqri", "eqrr",
+type operandMode uint8
+
+const (
+	operandIgnore operandMode = iota
+	operandValue              // immediate
+	operandRead
+	operandWrite
+)
+
+type opSpec struct {
+	name, sym string
+	a, b, c   operandMode
+}
+
+var opSpecs = [16]opSpec{
+	{"addr", "+", operandRead, operandRead, operandWrite},
+	{"addi", "+", operandRead, operandValue, operandWrite},
+	{"mulr", "*", operandRead, operandRead, operandWrite},
+	{"muli", "*", operandRead, operandValue, operandWrite},
+	{"banr", "&", operandRead, operandRead, operandWrite},
+	{"bani", "&", operandRead, operandValue, operandWrite},
+	{"borr", "|", operandRead, operandRead, operandWrite},
+	{"bori", "|", operandRead, operandValue, operandWrite},
+	{"setr", "=", operandRead, operandIgnore, operandWrite},
+	{"seti", "=", operandValue, operandIgnore, operandWrite},
+	{"gtir", ">", operandValue, operandRead, operandWrite},
+	{"gtri", ">", operandRead, operandValue, operandWrite},
+	{"gtrr", ">", operandRead, operandRead, operandWrite},
+	{"eqir", "==", operandValue, operandRead, operandWrite},
+	{"eqri", "==", operandRead, operandValue, operandWrite},
+	{"eqrr", "==", operandRead, operandRead, operandWrite},
 }
 
 var errLimitExceeded = errors.New("operation limit exceeded")
@@ -68,37 +91,37 @@ func (vm *VM) Step() {
 	vm.N++
 	in := vm.Ops[*vm.IP]
 	switch op, a, b, c := in[0], in[1], in[2], in[3]; op {
-	case 0:
+	case 0: // addr
 		vm.R[c] = vm.R[a] + vm.R[b]
-	case 1:
+	case 1: // addi
 		vm.R[c] = vm.R[a] + b
-	case 2:
+	case 2: // mulr
 		vm.R[c] = vm.R[a] * vm.R[b]
-	case 3:
+	case 3: // muli
 		vm.R[c] = vm.R[a] * b
-	case 4:
+	case 4: // banr
 		vm.R[c] = vm.R[a] & vm.R[b]
-	case 5:
+	case 5: // bani
 		vm.R[c] = vm.R[a] & b
-	case 6:
+	case 6: // borr
 		vm.R[c] = vm.R[a] | vm.R[b]
-	case 7:
+	case 7: // bori
 		vm.R[c] = vm.R[a] | b
-	case 8:
+	case 8: // setr
 		vm.R[c] = vm.R[a]
-	case 9:
+	case 9: // seti
 		vm.R[c] = a
-	case 10:
+	case 10: // gtir
 		vm.R[c] = btoi(a > vm.R[b])
-	case 11:
+	case 11: // gtri
 		vm.R[c] = btoi(vm.R[a] > b)
-	case 12:
+	case 12: // gtrr
 		vm.R[c] = btoi(vm.R[a] > vm.R[b])
-	case 13:
+	case 13: // eqir
 		vm.R[c] = btoi(a == vm.R[b])
-	case 14:
+	case 14: // eqri
 		vm.R[c] = btoi(vm.R[a] == b)
-	case 15:
+	case 15: // eqrr
 		vm.R[c] = btoi(vm.R[a] == vm.R[b])
 	}
 	*vm.IP++
@@ -162,5 +185,76 @@ func (vm *VM) String() string {
 
 func (in Instruction) String() string {
 	op, a, b, c := in[0], in[1], in[2], in[3]
-	return fmt.Sprintf("%s %v %v %v", names[op], a, b, c)
+	return fmt.Sprintf("%s %v %v %v", opSpecs[op].name, a, b, c)
+}
+
+// Describe returns a high level description of what the instruction
+// does (normal infix notation).
+func (prog Program) Describe(ip int) string {
+	in := prog.Ops[ip]
+	op, a, b, c := in[0], in[1], in[2], in[3]
+	spec := opSpecs[op]
+	if spec.c != operandWrite {
+		return fmt.Sprint(in)
+	}
+
+	// control flow
+	if c == prog.IPReg {
+		switch spec.sym {
+
+		case "=":
+			switch spec.a {
+			case operandValue:
+				return fmt.Sprintf("goto %v", a)
+			case operandRead:
+				return fmt.Sprintf("goto R%v", a)
+			}
+
+		case "+":
+			mode, by := spec.a, a
+			if c == a {
+				mode, by = spec.b, b
+			}
+			switch mode {
+			case operandValue:
+				return fmt.Sprintf("jump %+d", by)
+			case operandRead:
+				return fmt.Sprintf("jump +R%v", by)
+			}
+
+		}
+	}
+
+	// updates
+	if c == a || c == b {
+		mode, by := spec.a, a
+		if c == a {
+			mode, by = spec.b, b
+		}
+		switch mode {
+		case operandValue:
+			return fmt.Sprintf("R%v %s= %v", c, spec.sym, by)
+		case operandRead:
+			return fmt.Sprintf("R%v %s= R%v", c, spec.sym, by)
+		}
+	}
+
+	if spec.b == operandIgnore {
+		switch spec.a {
+		case operandRead:
+			return fmt.Sprintf("%v %s R%v", c, spec.sym, a)
+		case operandValue:
+			return fmt.Sprintf("%v %s %v", c, spec.sym, a)
+		}
+	}
+
+	if spec.a == operandRead && spec.b == operandRead {
+		return fmt.Sprintf("R%v = %v %s %v", c, a, spec.sym, b)
+	} else if spec.a == operandRead && spec.b == operandValue {
+		return fmt.Sprintf("R%v = %v %s %v", c, a, spec.sym, b)
+	} else if spec.a == operandValue && spec.b == operandRead {
+		return fmt.Sprintf("R%v = %v %s %v", c, a, spec.sym, b)
+	}
+
+	return in.String()
 }

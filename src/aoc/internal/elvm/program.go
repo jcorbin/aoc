@@ -20,9 +20,9 @@ func NewProgramDecoder(r io.Reader) *ProgramDecoder {
 	dec := &ProgramDecoder{
 		Scanner: bufio.NewScanner(r),
 	}
-	opmap := make(map[string]int, len(names))
-	for code, name := range names {
-		opmap[name] = code
+	opmap := make(map[string]int, len(opSpecs))
+	for code, spec := range opSpecs {
+		opmap[spec.name] = code
 	}
 	dec.opmap = opmap
 	return dec

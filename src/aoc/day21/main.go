@@ -17,6 +17,7 @@ import (
 var tap = taps{}
 
 var (
+	dis     = flag.Bool("dis", false, "dump descriptive text")
 	verbose = flag.Bool("v", false, "verbose logs")
 	initR0  = flag.Int("r0", 0, "initial register 0")
 	initR1  = flag.Int("r1", 0, "initial register 1")
@@ -107,6 +108,17 @@ func run(in, out *os.File) error {
 	prog, err := elvm.DecodeProgram(in)
 	if err != nil {
 		return err
+	}
+
+	if *dis {
+		w := 1
+		for n := len(prog.Ops); n > 0; n /= 10 {
+			w++
+		}
+		for ip := range prog.Ops {
+			fmt.Printf("% *d %s\n", w, ip, prog.Describe(ip))
+		}
+		return nil
 	}
 
 	var vm elvm.VM

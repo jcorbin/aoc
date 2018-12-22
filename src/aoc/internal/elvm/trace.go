@@ -109,7 +109,7 @@ func (pt *PrintTracer) WriteVM(vm *VM) {
 // WriteInstruction writes an instruction to the buffer.
 func (pt *PrintTracer) WriteInstruction(in Instruction) {
 	op, a, b, c := in[0], in[1], in[2], in[3]
-	pt.WriteString(names[op])
+	pt.WriteString(opSpecs[op].name)
 	pt.WriteByte(' ')
 	pt.WriteInt(a)
 	pt.WriteByte(' ')
