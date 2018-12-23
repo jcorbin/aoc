@@ -72,6 +72,8 @@ func (world *WorldLayer) ViewOffset() image.Point {
 // Update advances the world simulation by calling tick one or more times if
 // enabled.
 func (world *WorldLayer) Update(now time.Time) {
+	world.needsDraw = 0
+
 	// no updates while displaying a message
 	if !world.ticking {
 		world.last = now
@@ -188,11 +190,15 @@ func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 // World.Render()s into the screen grid, and draws a playback control in the
 // upper-right corner.
 func (world *WorldLayer) Draw(screen anansi.Screen, now time.Time) {
-	world.needsDraw = 0
-	world.viewOffset = screen.Bounds().Size().Div(2).Sub(world.focus)
 	world.Update(now)
-	world.Render(screen.Grid, world.viewOffset)
+	world.DrawWorld(screen, now)
 	world.DrawPlayOverlay(screen, now)
+}
+
+// DrawWorld renders as much of the World as will fit into the screen.
+func (world *WorldLayer) DrawWorld(screen anansi.Screen, now time.Time) {
+	world.viewOffset = screen.Bounds().Size().Div(2).Sub(world.focus)
+	world.Render(screen.Grid, world.viewOffset)
 }
 
 // DrawPlayOverlay draws an overlay in the upper right to indicate playback
