@@ -50,7 +50,17 @@ type layers []Layer
 
 func (ls layers) NeedsDraw() (d time.Duration) {
 	for i := 0; i < len(ls); i++ {
-		nd := ls[i].NeedsDraw()
+		d = minNeedsDraw(d, ls[i].NeedsDraw())
+	}
+	return d
+}
+
+func minNeedsDraw(ds ...time.Duration) time.Duration {
+	if len(ds) == 0 {
+		return 0
+	}
+	d := ds[0]
+	for _, nd := range ds[1:] {
 		if d == 0 || (nd > 0 && nd < d) {
 			d = nd
 		}

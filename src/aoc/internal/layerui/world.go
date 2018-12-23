@@ -110,11 +110,10 @@ func (world *WorldLayer) Update(now time.Time) {
 
 // NeedsDraw returns non-zero if the layer needs to be drawn.
 func (world *WorldLayer) NeedsDraw() time.Duration {
-	nd := world.needsDraw
-	if d := world.World.NeedsDraw(); nd == 0 || (d > 0 && d < nd) {
-		nd = d
-	}
-	return nd
+	return minNeedsDraw(
+		world.needsDraw,
+		world.World.NeedsDraw(),
+	)
 }
 
 // HandleInput handles world input: cursor keys to move view focus, '.' to
