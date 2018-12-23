@@ -82,3 +82,15 @@ func (ls layers) Draw(screen anansi.Screen, now time.Time) {
 		ls[i].Draw(screen, now)
 	}
 }
+
+// DrawFuncLayer is a convenience Layer implemented around a draw function.
+type DrawFuncLayer func(screen anansi.Screen, now time.Time)
+
+// HandleInput ignores the input, returning false and nil error.
+func (f DrawFuncLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) { return false, nil }
+
+// Draw calls the aliased function.
+func (f DrawFuncLayer) Draw(screen anansi.Screen, now time.Time) { f(screen, now) }
+
+// NeedsDraw returns 0.
+func (f DrawFuncLayer) NeedsDraw() time.Duration { return 0 }
