@@ -52,15 +52,15 @@ func run() error {
 		return err
 	}
 
-	foc := world.bounds.Size().Div(2)
-	foc.X /= 2
-	foc.X *= 3
-	worldLayer := layerui.WorldLayer{World: &world}
-	worldLayer.SetFocus(foc)
+	world.ui.LogLayer.SubGrid = layerui.BottomNLines(5)
+	world.ui.ViewLayer.Client = &world
+	world.ui.WorldLayer.View = &world.ui.ViewLayer
+	world.ui.WorldLayer.World = &world
 
 	return layerui.Run(
-		&layerui.LogLayer{SubGrid: layerui.BottomNLines(5)},
-		&worldLayer,
+		&world.ui.LogLayer,
+		layerui.DrawFuncLayer(world.DrawHPOverlay),
+		&world.ui.WorldLayer,
 	)
 }
 
@@ -87,6 +87,12 @@ const (
 )
 
 type gameWorld struct {
+	ui struct {
+		layerui.LogLayer
+		layerui.ViewLayer
+		layerui.WorldLayer
+	}
+
 	sidebar   bytes.Buffer
 	needsDraw time.Duration
 	bounds    image.Rectangle
@@ -137,18 +143,18 @@ func (world *gameWorld) describe(id int, buf *bytes.Buffer) {
 	buf.WriteRune('\n')
 }
 
-func (world *gameWorld) Render(g anansi.Grid, viewOffset image.Point) {
-	// draw primary grid
+func (world *gameWorld) Render(g anansi.Grid, viewport image.Rectangle) {
+	viewOffset := g.Rect.Min.ToImage().Sub(viewport.Min)
 	gz := make([]int, len(g.Rune)) // TODO re-use allocation
 	for id, t := range world.t {
 		if id == 0 || t&gameRender == 0 {
 			continue
 		}
-		sp := world.p[id].Add(viewOffset)
-		if sp.X < 0 || sp.Y < 0 {
+		p := world.p[id]
+		if !p.In(viewport) {
 			continue
 		}
-		gi, ok := g.CellOffset(ansi.PtFromImage(sp))
+		gi, ok := g.CellOffset(ansi.PtFromImage(p.Add(viewOffset)))
 		if !ok {
 			continue
 		}
@@ -160,37 +166,31 @@ func (world *gameWorld) Render(g anansi.Grid, viewOffset image.Point) {
 			g.Attr[gi] = mergeBGColors(g.Attr[gi], world.a[id])
 		}
 	}
+}
 
-	// update hp sidebar
+func (world *gameWorld) DrawHPOverlay(screen anansi.Screen, now time.Time) {
+	viewOffset := world.ui.ViewLayer.Offset()
+	viewport := world.bounds.Intersect(screen.Bounds().ToImage().Sub(viewOffset))
 
 	// TODO switch to left side if more space
-	sidebarAt := image.Pt(
-		world.bounds.Max.X+2, // TODO why 2?
-		world.bounds.Min.Y,
-	).Add(viewOffset)
-	if sidebarAt.Y < 0 {
-		sidebarAt.Y = 0
-	}
-	if sidebarAt.X < 0 {
+	sidebarGrid := screen.Grid.SubAt(ansi.PtFromImage(image.Pt(
+		viewOffset.X+world.bounds.Max.X+1,
+		viewOffset.Y+world.bounds.Min.Y,
+	)))
+	if sidebarGrid.Rect.Empty() {
 		return
 	}
-	sidebarGrid := g.SubAt(ansi.PtFromImage(sidebarAt))
 
 	world.sidebar.Reset()
 	world.sortIDs(world.actors)
-	bnd := g.Bounds()
 	cur := sidebarGrid.Rect.Min
 	cur.X = sidebarGrid.Rect.Min.X
 	for _, id := range world.actors {
-		sp := world.p[id].Add(viewOffset)
-		if sp.X < 0 || sp.Y < 0 {
+		p := world.p[id]
+		if !p.In(viewport) {
 			continue
 		}
-		gp := ansi.PtFromImage(sp)
-		if !gp.In(bnd) {
-			continue
-		}
-
+		gp := ansi.PtFromImage(p.Add(viewOffset))
 		for ; cur.Y < gp.Y; cur.Y++ {
 			world.sidebar.WriteByte('\n')
 			cur.X = sidebarGrid.Rect.Min.X
@@ -214,11 +214,11 @@ func (world *gameWorld) Render(g anansi.Grid, viewOffset image.Point) {
 			world.sidebar.WriteByte(')')
 			cur.X += 1 + n + 1
 		}
+
 		// TODO optional #id annotation
 		// world.sidebar.WriteByte('#')
 		// n, _ := world.sidebar.WriteString(strconv.Itoa(id))
 		// cur.X += 1 + n
-
 	}
 
 	layerui.WriteIntoGrid(sidebarGrid, world.sidebar.Bytes())
@@ -273,7 +273,14 @@ func (world *gameWorld) load(r io.Reader) error {
 			world.elves[id] = struct{}{}
 		}
 	}
-	return sc.Err()
+	err := sc.Err()
+	if err == nil {
+		foc := world.bounds.Size().Div(2)
+		foc.X /= 2
+		foc.X *= 3
+		world.ui.SetFocus(foc)
+	}
+	return err
 }
 
 func (world *gameWorld) loadCell(p image.Point, c byte) {
@@ -376,36 +383,20 @@ func (world *gameWorld) destroyEntity(id int) {
 }
 
 func (world *gameWorld) computeBounds() (bounds image.Rectangle) {
-	if len(world.t) == 0 {
-		return bounds
-	}
-	id := 1
-	for ; id < len(world.t); id++ {
+	for id := 1; id < len(world.t); id++ {
 		if world.t[id]&gameRender != 0 {
-			bounds.Min = world.p[id]
-			bounds.Max = world.p[id]
-			break
-		}
-	}
-	for ; id < len(world.t); id++ {
-		if world.t[id]&gameRender == 0 {
-			continue
-		}
-		p := world.p[id]
-		if bounds.Min.X > p.X {
-			bounds.Min.X = p.X
-		}
-		if bounds.Min.Y > p.Y {
-			bounds.Min.Y = p.Y
-		}
-		if bounds.Max.X < p.X {
-			bounds.Max.X = p.X
-		}
-		if bounds.Max.Y < p.Y {
-			bounds.Max.Y = p.Y
+			if bounds == image.ZR {
+				bounds = pointRect(world.p[id])
+			} else {
+				bounds = bounds.Union(pointRect(world.p[id]))
+			}
 		}
 	}
 	return bounds
+}
+
+func pointRect(p image.Point) image.Rectangle {
+	return image.Rectangle{p, p.Add(image.Pt(1, 1))}
 }
 
 func (world *gameWorld) done() bool {

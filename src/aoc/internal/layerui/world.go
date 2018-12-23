@@ -3,7 +3,6 @@ package layerui
 import (
 	"bytes"
 	"fmt"
-	"image"
 	"math"
 	"time"
 
@@ -13,9 +12,6 @@ import (
 
 // World is a discretely timed simulation world driven under a UI.
 type World interface {
-	// Bounds returns the bounding box of the world space.
-	Bounds() image.Rectangle
-
 	// Tick should advance the simulation one step, returning false if the tick
 	// wasn't complete/succesful; false return pauses playback.
 	Tick() bool
@@ -23,25 +19,21 @@ type World interface {
 	NeedsDraw() time.Duration
 	HandleInput(e ansi.Escape, a []byte) (handled bool, err error)
 
-	// Render the world contents to the given grid, starting from the given
-	// view offset point.
-	Render(g anansi.Grid, viewOffset image.Point)
+	ViewClient
 }
 
 // WorldLayer implements a layer that controls and displays a World
 // simulation.
 type WorldLayer struct {
 	World
-
-	needsDraw time.Duration
+	View Layer
 
 	last     time.Time
 	ticking  bool
 	playing  bool
 	playRate int // tick-per-second
 
-	focus      image.Point
-	viewOffset image.Point
+	needsDraw time.Duration
 }
 
 // Play starts playback.
@@ -56,17 +48,6 @@ func (world *WorldLayer) Pause() {
 	world.ticking = false
 	world.playing = false
 	world.needsDraw = 5 * time.Millisecond
-}
-
-// SetFocus sets the view center point used to determine offset when Draw-ing.
-func (world *WorldLayer) SetFocus(p image.Point) {
-	world.focus = p
-	world.needsDraw = 5 * time.Millisecond
-}
-
-// ViewOffset returns the current view offset (as of the last draw).
-func (world *WorldLayer) ViewOffset() image.Point {
-	return world.viewOffset
 }
 
 // Update advances the world simulation by calling tick one or more times if
@@ -110,42 +91,28 @@ func (world *WorldLayer) Update(now time.Time) {
 	}
 }
 
+func (world *WorldLayer) init() {
+	if world.View == nil {
+		world.View = DrawFuncLayer(world.DrawWorld)
+	}
+}
+
 // NeedsDraw returns non-zero if the layer needs to be drawn.
 func (world *WorldLayer) NeedsDraw() time.Duration {
+	world.init()
 	return minNeedsDraw(
 		world.needsDraw,
 		world.World.NeedsDraw(),
+		world.View.NeedsDraw(),
 	)
 }
 
 // HandleInput handles world input: cursor keys to move view focus, '.' to
 // step, ' ' to play/pause, and '+'/'-' for playback rate control.
 func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
-	switch e {
-	// arrow keys to move view
-	case ansi.CUB, ansi.CUF, ansi.CUU, ansi.CUD:
-		if d, ok := ansi.DecodeCursorCardinal(e, a); ok {
-			p := world.focus.Add(d)
-			bounds := world.Bounds()
-			if p.X < bounds.Min.X {
-				p.X = bounds.Min.X
-			}
-			if p.Y < bounds.Min.Y {
-				p.Y = bounds.Min.Y
-			}
-			if p.X >= bounds.Max.X {
-				p.X = bounds.Max.X - 1
-			}
-			if p.Y >= bounds.Max.Y {
-				p.Y = bounds.Max.Y - 1
-			}
-			if world.focus != p {
-				world.focus = p
-				world.needsDraw = 5 * time.Millisecond
-			}
-		}
-		return true, nil
+	world.init()
 
+	switch e {
 	// step
 	case ansi.Escape('.'):
 		world.needsDraw = 5 * time.Millisecond
@@ -182,27 +149,37 @@ func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 		return true, nil
 
 	default:
+		if hanlded, err := world.View.HandleInput(e, a); hanlded || err != nil {
+			return hanlded, err
+		}
 		return world.World.HandleInput(e, a)
 	}
 }
 
-// Draw advances the world (may call World.Tick as much as needed),
-// World.Render()s into the screen grid, and draws a playback control in the
-// upper-right corner.
+// Draw calls Update, renders the world into the screen, and calls DrawPlayOverlay.
 func (world *WorldLayer) Draw(screen anansi.Screen, now time.Time) {
+	world.init()
+
 	world.Update(now)
-	world.DrawWorld(screen, now)
+	world.View.Draw(screen, now)
 	world.DrawPlayOverlay(screen, now)
 }
 
 // DrawWorld renders as much of the World as will fit into the screen.
 func (world *WorldLayer) DrawWorld(screen anansi.Screen, now time.Time) {
-	world.viewOffset = screen.Bounds().Size().Div(2).Sub(world.focus)
-	world.Render(screen.Grid, world.viewOffset)
+	vp := world.World.Bounds()
+	bnd := screen.Bounds()
+	if n := vp.Dx() - bnd.Dx(); n > 0 {
+		vp.Max.X -= n
+	}
+	if n := vp.Dy() - bnd.Dy(); n > 0 {
+		vp.Max.Y -= n
+	}
+	world.World.Render(screen.Grid, vp)
 }
 
-// DrawPlayOverlay draws an overlay in the upper right to indicate playback
-// state and speed.
+// DrawPlayOverlay draws an overlay in the upper right to indicate playback state
+// and speed.
 func (world *WorldLayer) DrawPlayOverlay(screen anansi.Screen, now time.Time) {
 	var buf bytes.Buffer
 	buf.Grow(128)

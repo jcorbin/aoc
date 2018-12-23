@@ -47,18 +47,21 @@ func main() {
 
 func run() error {
 	var world cartWorld
+	world.ui.LogLayer.SubGrid = layerui.BottomNLines(5)
+	world.ui.ViewLayer.Client = &world
+	world.ui.WorldLayer.View = &world.ui.ViewLayer
+	world.ui.WorldLayer.World = &world
 
 	if err := infernio.LoadInput(builtinInput, world.load); err != nil {
 		return err
 	}
 
-	world.WorldLayer.World = &world
-
 	return layerui.Run(
-		&layerui.LogLayer{SubGrid: layerui.BottomNLines(5)},
-		&world.ModalLayer,
-		&world.BannerLayer,
-		&world.WorldLayer,
+		&world.ui.ModalLayer,
+		&world.ui.BannerLayer,
+		&world.ui.LogLayer,
+		&world.ui.WorldLayer,
+
 		// TODO for inspecting
 		// ansi.ModeMouseSgrExt,
 		// ansi.ModeMouseBtnEvent,
@@ -99,9 +102,13 @@ const (
 )
 
 type cartWorld struct {
-	layerui.ModalLayer
-	layerui.BannerLayer
-	layerui.WorldLayer
+	ui struct {
+		layerui.ModalLayer
+		layerui.BannerLayer
+		layerui.LogLayer
+		layerui.ViewLayer
+		layerui.WorldLayer
+	}
 
 	quadindex.Index
 	b image.Rectangle // world bounds
@@ -206,7 +213,7 @@ func (world *cartWorld) done() bool {
 	}
 	switch len(world.carts) {
 	case 0:
-		world.Say("No Carts Left")
+		world.ui.Say("No Carts Left")
 		return true
 	case 1:
 		p := world.p[world.carts[0]]
@@ -338,16 +345,16 @@ func (world *cartWorld) Tick() bool {
 }
 
 func (world *cartWorld) setHighlight(stop bool, at image.Point, mess string, args ...interface{}) {
-	world.Say(fmt.Sprintf(mess, args...))
+	world.ui.Say(fmt.Sprintf(mess, args...))
 	world.hi = true
 	world.hiStop = stop
 	world.hiAt = at
-	world.Pause()
-	world.SetFocus(world.hiAt)
+	world.ui.Pause()
+	world.ui.SetFocus(world.hiAt)
 }
 
 func (world *cartWorld) clearHighlight() {
-	world.Say("")
+	world.ui.Say("")
 	world.hi = false
 	world.hiStop = false
 	world.hiAt = image.ZP
@@ -398,7 +405,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 	switch e {
 	// display help
 	case ansi.Escape('?'):
-		world.Display(world.helpMess)
+		world.ui.Display(world.helpMess)
 		return true, nil
 
 	/* mouse inspection TODO bring back as an independent layer
@@ -452,7 +459,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 			world.t[world.crash] &= ^cartCrash
 			log.Printf("removed @%v, remaining: %v", world.p[world.crash], len(world.carts))
 			world.crash = 0
-			world.Pause()
+			world.ui.Pause()
 			world.clearHighlight()
 			world.needsDraw = 5 * time.Millisecond
 		}
@@ -462,7 +469,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 	return false, nil
 }
 
-func (world *cartWorld) Render(g anansi.Grid, viewOffset image.Point) {
+func (world *cartWorld) Render(g anansi.Grid, viewport image.Rectangle) {
 	var (
 		hiColor     = ansi.RGB(96, 32, 16)
 		crashColor  = ansi.RGB(192, 64, 64)
@@ -472,18 +479,19 @@ func (world *cartWorld) Render(g anansi.Grid, viewOffset image.Point) {
 		unkColor    = ansi.RGB(192, 192, 64)
 	)
 
+	viewOffset := g.Rect.Min.ToImage().Sub(viewport.Min)
+
 	for id, t := range world.t {
 		if id == 0 {
 			continue
 		}
 
 		p := world.p[id]
-		sp := p.Add(viewOffset).Add(image.Pt(1, 1))
-		if sp.X < 0 || sp.Y < 0 {
+		if !p.In(viewport) {
 			continue
 		}
 
-		gi, ok := g.CellOffset(ansi.PtFromImage(sp))
+		gi, ok := g.CellOffset(ansi.PtFromImage(p.Add(viewOffset)))
 		if !ok {
 			continue
 		}
@@ -539,12 +547,9 @@ func (world *cartWorld) Render(g anansi.Grid, viewOffset image.Point) {
 		g.Attr[gi] = a
 	}
 
-	if world.hi {
-		sp := world.hiAt.Add(viewOffset).Add(image.Pt(1, 1))
-		if sp.X >= 0 && sp.Y >= 0 {
-			if gi, ok := g.CellOffset(ansi.PtFromImage(sp)); ok {
-				g.Attr[gi] = hiColor.BG()
-			}
+	if world.hi && world.hiAt.In(viewport) {
+		if gi, ok := g.CellOffset(ansi.PtFromImage(world.hiAt.Add(viewOffset))); ok {
+			g.Attr[gi] = hiColor.BG()
 		}
 	}
 }
@@ -631,13 +636,13 @@ func (world *cartWorld) load(r io.Reader) error {
 
 	err := sc.Err()
 	if err == nil {
-		world.SetFocus(world.b.Size().Div(2))
+		world.ui.SetFocus(world.b.Size().Div(2))
 		world.helpMess = "" +
 			welcomeMess +
 			keysMess +
 			buildInputMess(infernio.ReaderName(r)) +
 			helpMessFooter
-		world.Display(world.helpMess)
+		world.ui.Display(world.helpMess)
 	}
 	return err
 }

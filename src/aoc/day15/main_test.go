@@ -7,6 +7,7 @@ import (
 	"image"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/jcorbin/anansi"
 	"github.com/stretchr/testify/assert"
@@ -59,12 +60,20 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 	}
 
 	var g anansi.Grid
-	clearGrid := func() {
-		g.Resize(world.bounds.Size().Add(image.Pt(100, 1)))
+
+	renderWorldLines := func() []string {
+		bnd := world.Bounds()
+		g.Resize(bnd.Size().Add(image.Pt(100, 1)))
 		for i := range g.Rune {
 			g.Rune[i] = 0
 			g.Attr[i] = 0
 		}
+
+		var sc anansi.Screen
+		sc.Grid = g
+		world.Render(g, bnd)
+		world.DrawHPOverlay(sc, time.Now())
+		return gridLines(g)
 	}
 
 	ci := 0
@@ -83,9 +92,7 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 			t.Logf("finished round %v (%v elves vs %v goblins)\n", res(), len(world.elves), len(world.goblins))
 		}
 
-		clearGrid()
-		world.Render(g, image.ZP)
-		lines := gridLines(g)
+		lines := renderWorldLines()
 
 		logGrid := true
 		if ci < len(tc.checkpoints) {
@@ -118,9 +125,7 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 
 	}
 	if tc.finalGrid != nil {
-		clearGrid()
-		world.Render(g, image.ZP)
-		assert.Equal(t, tc.finalGrid, gridLines(g), "expected final grid")
+		assert.Equal(t, tc.finalGrid, renderWorldLines(), "expected final grid")
 	}
 
 	if tc.testResult.rounds != 0 {
@@ -439,6 +444,9 @@ func gridLines(g anansi.Grid) []string {
 			}
 		}
 		lines = append(lines, buf.String())
+	}
+	if i := len(lines) - 1; lines[i] == "" {
+		lines = lines[:i]
 	}
 	return lines
 }
