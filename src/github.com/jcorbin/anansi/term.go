@@ -182,6 +182,7 @@ type loopClientFuncs struct {
 	w func(w io.Writer) (n int64, err error)
 }
 
+// LoopClientFuncs FIXME is a conveninec for using Term.RunLoop.
 func LoopClientFuncs(
 	u func(term *Term) (redraw bool, _ error),
 	w func(w io.Writer) (n int64, err error),
