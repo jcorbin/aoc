@@ -21,3 +21,8 @@ func (rc RCore) Index(p image.Point) (int, bool) {
 
 // Bounds helps to implement the image.Image interface.
 func (rc RCore) Bounds() image.Rectangle { return rc.Rectangle }
+
+// PointRect returns a rectangle containing only the given point.
+func PointRect(p image.Point) image.Rectangle {
+	return image.Rectangle{p, p.Add(image.Pt(1, 1))}
+}

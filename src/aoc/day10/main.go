@@ -1,6 +1,7 @@
 package main
 
 import (
+	"aoc/internal/geom"
 	"bufio"
 	"errors"
 	"flag"
@@ -31,25 +32,14 @@ type space struct {
 }
 
 func (sp space) bounds() (r image.Rectangle) {
-	r.Min = sp.p[0]
-	r.Max = sp.p[0]
-	for i := 1; i < len(sp.p); i++ {
+	for i := 0; i < len(sp.p); i++ {
 		p := sp.p[i]
-		if r.Min.X > p.X {
-			r.Min.X = p.X
-		}
-		if r.Min.Y > p.Y {
-			r.Min.Y = p.Y
-		}
-		if r.Max.X < p.X {
-			r.Max.X = p.X
-		}
-		if r.Max.Y < p.Y {
-			r.Max.Y = p.Y
+		if i == 0 {
+			r = geom.PointRect(p)
+		} else {
+			r = r.Union(geom.PointRect(p))
 		}
 	}
-	r.Max.X++
-	r.Max.Y++
 	return r
 }
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"aoc/internal/geom"
 	"aoc/internal/infernio"
 	"aoc/internal/layerui"
 	"aoc/internal/quadindex"
@@ -628,9 +629,9 @@ func (world *cartWorld) load(r io.Reader) error {
 	// compute bounds
 	world.b = image.ZR
 	if len(world.p) > 1 {
-		world.b = pointRect(world.p[1])
+		world.b = geom.PointRect(world.p[1])
 		for _, p := range world.p[1:] {
-			world.b = world.b.Union(pointRect(p))
+			world.b = world.b.Union(geom.PointRect(p))
 		}
 	}
 
@@ -645,8 +646,4 @@ func (world *cartWorld) load(r io.Reader) error {
 		world.ui.Display(world.helpMess)
 	}
 	return err
-}
-
-func pointRect(p image.Point) image.Rectangle {
-	return image.Rectangle{p, p.Add(image.Pt(1, 1))}
 }

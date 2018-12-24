@@ -386,17 +386,13 @@ func (world *gameWorld) computeBounds() (bounds image.Rectangle) {
 	for id := 1; id < len(world.t); id++ {
 		if world.t[id]&gameRender != 0 {
 			if bounds == image.ZR {
-				bounds = pointRect(world.p[id])
+				bounds = geom.PointRect(world.p[id])
 			} else {
-				bounds = bounds.Union(pointRect(world.p[id]))
+				bounds = bounds.Union(geom.PointRect(world.p[id]))
 			}
 		}
 	}
 	return bounds
-}
-
-func pointRect(p image.Point) image.Rectangle {
-	return image.Rectangle{p, p.Add(image.Pt(1, 1))}
 }
 
 func (world *gameWorld) done() bool {
