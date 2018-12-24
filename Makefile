@@ -1,6 +1,7 @@
 GOPATH=$(shell git rev-parse --show-toplevel)
 
 PACKAGES=aoc/...
+PACKAGES+=github.com/jcorbin/anansi/...
 
 DAYS=$(shell \
 	find src/aoc -type d -mindepth 1 -maxdepth 1 -name 'day*' \
