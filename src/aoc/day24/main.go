@@ -431,6 +431,16 @@ var (
 	groupPattern  = regexp.MustCompile(`^(\d+) units each with (\d+) hit points(?: \((.+?)\))? with an attack that does (\d+) (\w+) damage at initiative (\d+)$`)
 )
 
+func parseAttrParts(attrs map[string]struct{}, s string) map[string]struct{} {
+	if attrs == nil {
+		attrs = make(map[string]struct{})
+	}
+	for _, attack := range strings.Split(s, ", ") {
+		attrs[attack] = struct{}{}
+	}
+	return attrs
+}
+
 func (scene *scenario) load(r io.Reader) error {
 	sc := bufio.NewScanner(r)
 
@@ -477,28 +487,16 @@ func (scene *scenario) load(r io.Reader) error {
 		var g group
 		g.n, _ = strconv.Atoi(parts[1])
 		g.hp, _ = strconv.Atoi(parts[2])
-
 		for _, attrParts := range attrPattern.FindAllStringSubmatch(parts[3], -1) {
 			switch attrParts[1] {
 			case "weak":
-				if g.weak == nil {
-					g.weak = make(map[string]struct{})
-				}
-				for _, attack := range strings.Split(attrParts[2], ", ") {
-					g.weak[attack] = struct{}{}
-				}
+				g.weak = parseAttrParts(g.weak, attrParts[2])
 			case "immune":
-				if g.immune == nil {
-					g.immune = make(map[string]struct{})
-				}
-				for _, attack := range strings.Split(attrParts[2], ", ") {
-					g.immune[attack] = struct{}{}
-				}
+				g.immune = parseAttrParts(g.immune, attrParts[2])
 			default:
 				panic("inconceivable")
 			}
 		}
-
 		g.damage, _ = strconv.Atoi(parts[4])
 		g.attack = parts[5]
 		g.init, _ = strconv.Atoi(parts[6])
