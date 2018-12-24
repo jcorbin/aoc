@@ -211,7 +211,7 @@ func run(in, out *os.File) error {
 
 	if *bitmap {
 		bi := sim.makeBitmap()
-		_, err = anansi.WriteBitmap(os.Stdout, &bi)
+		_, err = anansi.WriteBitmap(os.Stdout, bi)
 		return err
 	}
 

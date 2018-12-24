@@ -160,7 +160,7 @@ func run(in, out *os.File) error {
 			}
 
 			bi := sp.render()
-			m, err = anansi.WriteBitmap(w, &bi)
+			m, err = anansi.WriteBitmap(w, bi)
 			n += int64(m)
 			if err != nil {
 				return n, err
@@ -192,7 +192,7 @@ func solve(sp space, out *os.File) error {
 	sp.rewind()
 	fmt.Fprintf(out, "--- t:%v %v\r\n", sp.t, sp.bounds().Size())
 	bi := sp.render()
-	anansi.WriteBitmap(out, &bi)
+	anansi.WriteBitmap(out, bi)
 	fmt.Fprintf(out, "\r\n")
 
 	return nil
