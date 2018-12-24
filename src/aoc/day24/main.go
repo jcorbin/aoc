@@ -28,6 +28,11 @@ func main() {
 	anansi.MustRun(run(os.Stdin, os.Stdout))
 }
 
+type scenario struct {
+	groupOrder []string
+	groups     map[string][]group
+}
+
 type group struct {
 	n      int
 	hp     int
@@ -36,11 +41,6 @@ type group struct {
 	damage int
 	attack string
 	init   int
-}
-
-type scenario struct {
-	groupOrder []string
-	groups     map[string][]group
 }
 
 var builtinInput = infernio.Builtin("" +
@@ -59,43 +59,38 @@ func run(in, out *os.File) error {
 	}
 
 	var scene scenario
+
+	runRound := func(bg string, b int) bool {
+		if b != 0 {
+			scene.applyBoost(bg, b)
+		}
+		scene.run(verboseOut)
+		winningName, winningScore := scene.winningScore()
+		if winningScore == 0 {
+			log.Printf("stasis")
+			return false
+		}
+		log.Printf("%s won with %v", winningName, winningScore)
+		return winningName == *boostGroup
+	}
+
 	if err := infernio.LoadInput(builtinInput, scene.load); err != nil {
 		return err
 	}
-	orig := scene.copy()
-
-	// apply optional boost
-	if *boost != 0 {
-		scene.applyBoost(*boostGroup, *boost)
-	}
-
-	scene.run(verboseOut)
-	winningName, winningScore := scene.winningScore()
-	log.Printf("%s won with %v", winningName, winningScore)
 
 	if *boost != 0 {
+		runRound(*boostGroup, *boost)
 		return nil
 	}
 
-	if *boost == 0 {
-		log.Printf("searching for min boost for %q", *boostGroup)
-		for b := 1; ; b++ {
-			// log.Printf("trying %v", b)
-			scene = orig.copy()
-			scene.applyBoost(*boostGroup, b)
-			scene.run(verboseOut)
-
-			winningName, winningScore := scene.winningScore()
-			if winningScore == 0 {
-				log.Printf("stasis")
-			} else {
-				log.Printf("%s won with %v", winningName, winningScore)
-				if winningName == *boostGroup {
-					log.Printf("minimum boost: %v", b)
-					break
-				}
-			}
+	log.Printf("searching for min boost for %q", *boostGroup)
+	for b := 0; ; b++ {
+		orig := scene.copy()
+		if runRound(*boostGroup, b) {
+			log.Printf("minimum boost: %v", b)
+			break
 		}
+		scene = orig.copy()
 	}
 
 	return nil
@@ -386,12 +381,9 @@ func (scene *scenario) rankGroups(w io.Writer) {
 }
 
 var (
-	headerPattern = regexp.MustCompile(`^(.+):$`) // e.g. "Immune System:"
+	headerPattern = regexp.MustCompile(`^(.+):$`)
 	attrPattern   = regexp.MustCompile(`(weak|immune) to (\w+(?:, \w+)*)`)
-	groupPattern  = regexp.MustCompile(
-		`^(\d+) units each with (\d+) hit points(?: \((.+?)\))? with an attack that does (\d+) (\w+) damage at initiative (\d+)$`,
-		// 17 units each with 5390 hit points (weak to radiation, bludgeoning) with an attack that does 4507 fire damage at initiative 2
-	)
+	groupPattern  = regexp.MustCompile(`^(\d+) units each with (\d+) hit points(?: \((.+?)\))? with an attack that does (\d+) (\w+) damage at initiative (\d+)$`)
 )
 
 func (scene *scenario) load(r io.Reader) error {
