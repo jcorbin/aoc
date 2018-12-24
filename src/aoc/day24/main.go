@@ -2,6 +2,7 @@ package main
 
 import (
 	"aoc/internal/infernio"
+	"aoc/internal/progprof"
 	"bufio"
 	"flag"
 	"fmt"
@@ -25,12 +26,24 @@ var (
 
 func main() {
 	flag.Parse()
+	defer progprof.Start()()
 	anansi.MustRun(run(os.Stdin, os.Stdout))
 }
 
-type scenario struct {
+type scenarioData struct {
 	groupOrder []string
 	groups     map[string][]group
+}
+
+type scenario struct {
+	scenarioData
+
+	order    []groupID
+	orderCmp func(i, j int) bool
+	targets  map[groupID]groupID
+	attacker map[groupID]groupID
+
+	selCmp, atkCmp func(i, j int) bool
 }
 
 type group struct {
@@ -59,6 +72,8 @@ func run(in, out *os.File) error {
 	}
 
 	var scene scenario
+	scene.selCmp = scene.selectionCompare
+	scene.atkCmp = scene.attackCompare
 
 	runRound := func(bg string, b int) bool {
 		if b != 0 {
@@ -85,25 +100,29 @@ func run(in, out *os.File) error {
 
 	log.Printf("searching for min boost for %q", *boostGroup)
 	for b := 0; ; b++ {
-		orig := scene.copy()
+		backup := scene.backup()
 		if runRound(*boostGroup, b) {
 			log.Printf("minimum boost: %v", b)
 			break
 		}
-		scene = orig.copy()
+		scene.restore(backup)
 	}
 
 	return nil
 }
 
-func (scene *scenario) copy() scenario {
-	var c scenario
-	c.groups = make(map[string][]group, len(scene.groups))
+func (scene *scenario) backup() (d scenarioData) {
+	d.groups = make(map[string][]group, len(scene.groups))
 	for groupName, gs := range scene.groups {
-		c.groups[groupName] = append([]group(nil), gs...)
+		d.groups[groupName] = append([]group(nil), gs...)
 	}
-	c.groupOrder = append([]string(nil), scene.groupOrder...)
-	return c
+	d.groupOrder = append([]string(nil), scene.groupOrder...)
+	return d
+}
+
+func (scene *scenario) restore(d scenarioData) {
+	scene.groups = d.groups
+	scene.groupOrder = d.groupOrder
 }
 
 func (scene *scenario) run(w io.Writer) {
@@ -220,15 +239,12 @@ func (scene *scenario) attack(w io.Writer, targets map[groupID]groupID) (totalKi
 	// selected, if any. Groups attack in decreasing order of initiative,
 	// regardless of whether they are part of the infection or the immune
 	// system. (If a group contains no units, it cannot attack.)
-	order := make([]groupID, 0, len(targets))
+	scene.order = scene.order[:0]
 	for id := range targets {
-		order = append(order, id)
+		scene.order = append(scene.order, id)
 	}
-	sort.Slice(order, func(i, j int) bool {
-		a := scene.groups[order[i].name][order[i].i]
-		b := scene.groups[order[j].name][order[j].i]
-		return a.init > b.init
-	})
+	scene.orderCmp = scene.atkCmp
+	sort.Sort(scene)
 
 	// The damage an attacking group deals to a defending group depends on the
 	// attacking group\'s attack type and the defending group\'s immunities and
@@ -238,8 +254,7 @@ func (scene *scenario) attack(w io.Writer, targets map[groupID]groupID) (totalKi
 	// group instead takes *no damage*; if the defending group is *weak* to the
 	// attacking group\'s attack type, the defending group instead takes
 	// *double damage*.
-	// dead := make(map[groupID]struct{}, len(targets))
-	for _, atkID := range order {
+	for _, atkID := range scene.order {
 		// The defending group only loses *whole units* from damage; damage is
 		// always dealt in such a way that it kills the most units possible,
 		// and any remaining damage to a unit that does not immediately kill it
@@ -277,25 +292,28 @@ func (scene *scenario) selectTargets() map[groupID]groupID {
 
 	// In decreasing order of effective power, groups choose their targets; in
 	// a tie, the group with the higher initiative chooses first.
-	var order []groupID
+	scene.order = scene.order[:0]
 	for _, groupName := range scene.groupOrder {
 		for i := range scene.groups[groupName] {
-			order = append(order, groupID{groupName, i})
+			scene.order = append(scene.order, groupID{groupName, i})
 		}
 	}
-	sort.Slice(order, func(i, j int) bool {
-		a := scene.groups[order[i].name][order[i].i]
-		b := scene.groups[order[j].name][order[j].i]
-		if a.effectivePower() > b.effectivePower() {
-			return true
+	scene.orderCmp = scene.selCmp
+	sort.Sort(scene)
+
+	if scene.targets == nil {
+		scene.targets = make(map[groupID]groupID, len(scene.order))
+		scene.attacker = make(map[groupID]groupID, len(scene.order))
+	} else {
+		for id := range scene.targets {
+			delete(scene.targets, id)
 		}
-		return a.effectivePower() == b.effectivePower() && a.init > b.init
-	})
+		for id := range scene.attacker {
+			delete(scene.attacker, id)
+		}
+	}
 
-	targets := make(map[groupID]groupID, len(order))
-	attacker := make(map[groupID]groupID, len(order))
-
-	for _, atkID := range order {
+	for _, atkID := range scene.order {
 		// The attacking group chooses to target the group in the enemy army to
 		// which it would deal the most damage (after accounting for weaknesses and
 		// immunities, but not accounting for whether the defending group has
@@ -304,11 +322,11 @@ func (scene *scenario) selectTargets() map[groupID]groupID {
 		var targetID groupID
 		var targ group
 		var best int
-		for _, id := range order {
+		for _, id := range scene.order {
 			if id.name == atkID.name {
 				continue // same side
 			}
-			if _, taken := attacker[id]; taken {
+			if _, taken := scene.attacker[id]; taken {
 				continue
 			}
 			def := scene.groups[id.name][id.i]
@@ -335,12 +353,39 @@ func (scene *scenario) selectTargets() map[groupID]groupID {
 			// log.Printf("%v => %v ? %v => %v", atkID, id, dmg, targetID)
 		}
 		if best > 0 {
-			targets[atkID] = targetID
-			attacker[targetID] = atkID
+			scene.targets[atkID] = targetID
+			scene.attacker[targetID] = atkID
 		}
 	}
 
-	return targets
+	return scene.targets
+}
+
+func (scene *scenario) Len() int {
+	return len(scene.order)
+}
+
+func (scene *scenario) Swap(i int, j int) {
+	scene.order[i], scene.order[j] = scene.order[j], scene.order[i]
+}
+
+func (scene *scenario) Less(i int, j int) bool {
+	return scene.orderCmp(i, j)
+}
+
+func (scene *scenario) selectionCompare(i, j int) bool {
+	a := scene.groups[scene.order[i].name][scene.order[i].i]
+	b := scene.groups[scene.order[j].name][scene.order[j].i]
+	if a.effectivePower() > b.effectivePower() {
+		return true
+	}
+	return a.effectivePower() == b.effectivePower() && a.init > b.init
+}
+
+func (scene *scenario) attackCompare(i, j int) bool {
+	a := scene.groups[scene.order[i].name][scene.order[i].i]
+	b := scene.groups[scene.order[j].name][scene.order[j].i]
+	return a.init > b.init
 }
 
 func (g group) effectiveDamage(def group) int {
