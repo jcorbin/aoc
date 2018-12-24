@@ -1,6 +1,7 @@
 package main
 
 import (
+	"aoc/internal/progprof"
 	"aoc/internal/quadindex"
 	"bytes"
 	"errors"
@@ -10,10 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/signal"
-	"runtime"
-	"runtime/pprof"
-	"syscall"
 
 	"github.com/jcorbin/anansi"
 )
@@ -26,58 +23,12 @@ var (
 var (
 	drawFlag = flag.Bool("draw", false, "draw rather than solve")
 	patFlag  = flag.String("pat", "", "pattern from cli rather than stdin")
-
-	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
-	memprofile = flag.String("memprofile", "", "write memory profile to `file`")
 )
 
 func main() {
 	flag.Parse()
-
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal("could not create CPU profile: ", err)
-		}
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal("could not start CPU profile: ", err)
-		}
-		log.Printf("CPU profiling to %q", f.Name())
-		defer pprof.StopCPUProfile()
-	}
-
-	if *cpuprofile != "" || *memprofile != "" {
-		go func() {
-			ch := make(chan os.Signal, 1)
-			signal.Notify(ch, syscall.SIGINT)
-			<-ch
-			signal.Stop(ch)
-			if *cpuprofile != "" {
-				pprof.StopCPUProfile()
-				log.Printf("stopped CPU profiling")
-			}
-			takeMemProfile()
-		}()
-	}
-
+	defer progprof.Start()()
 	anansi.MustRun(run(os.Stdin, os.Stdout))
-
-	takeMemProfile()
-}
-
-func takeMemProfile() {
-	if *memprofile != "" {
-		f, err := os.Create(*memprofile)
-		if err != nil {
-			log.Fatal("could not create memory profile: ", err)
-		}
-		runtime.GC() // get up-to-date statistics
-		if err := pprof.WriteHeapProfile(f); err != nil {
-			log.Fatal("could not write memory profile: ", err)
-		}
-		log.Printf("heap profile to %q", f.Name())
-		f.Close()
-	}
 }
 
 type pointScore map[image.Point]int
