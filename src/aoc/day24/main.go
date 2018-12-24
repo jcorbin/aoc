@@ -12,8 +12,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jcorbin/anansi"
+)
+
+var (
+	boost      = flag.Int("boost", 0, "boost value")
+	boostGroup = flag.String("boostGroup", "Immune System", "boost group")
+	verbose    = flag.Bool("v", false, "verbose output")
 )
 
 func main() {
@@ -46,36 +53,117 @@ var builtinInput = infernio.Builtin("" +
 	"4485 units each with 2961 hit points (immune to radiation; weak to fire, cold) with an attack that does 12 slashing damage at initiative 4\n")
 
 func run(in, out *os.File) error {
-	var scene scenario
+	var verboseOut io.Writer
+	if *verbose {
+		verboseOut = out
+	}
 
+	var scene scenario
 	if err := infernio.LoadInput(builtinInput, scene.load); err != nil {
 		return err
 	}
+	orig := scene.copy()
 
-	// part 1
-	for len(scene.groups) > 1 {
-		scene.survey(out)
-		out.WriteString("\n")
-		scene.rankGroups(out)
-		out.WriteString("\n")
-		scene.attack(out, scene.selectTargets())
-		scene.cleanup()
-		out.WriteString("\n")
+	// apply optional boost
+	if *boost != 0 {
+		scene.applyBoost(*boostGroup, *boost)
 	}
 
-	scene.survey(out)
-	log.Printf("winning score: %v", scene.winningScore())
+	scene.run(verboseOut)
+	winningName, winningScore := scene.winningScore()
+	log.Printf("%s won with %v", winningName, winningScore)
 
-	// After the fight is over, if both armies still contain units, a new fight
-	// begins; combat only ends once one army has lost all of its units.
+	if *boost != 0 {
+		return nil
+	}
 
-	// part 2
-	// TODO
+	if *boost == 0 {
+		log.Printf("searching for min boost for %q", *boostGroup)
+		for b := 1; ; b++ {
+			// log.Printf("trying %v", b)
+			scene = orig.copy()
+			scene.applyBoost(*boostGroup, b)
+			scene.run(verboseOut)
+
+			winningName, winningScore := scene.winningScore()
+			if winningScore == 0 {
+				log.Printf("stasis")
+			} else {
+				log.Printf("%s won with %v", winningName, winningScore)
+				if winningName == *boostGroup {
+					log.Printf("minimum boost: %v", b)
+					break
+				}
+			}
+		}
+	}
 
 	return nil
 }
 
-func (scene *scenario) winningScore() int {
+func (scene *scenario) copy() scenario {
+	var c scenario
+	c.groups = make(map[string][]group, len(scene.groups))
+	for groupName, gs := range scene.groups {
+		c.groups[groupName] = append([]group(nil), gs...)
+	}
+	c.groupOrder = append([]string(nil), scene.groupOrder...)
+	return c
+}
+
+func (scene *scenario) run(w io.Writer) {
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	n := 0
+	t0 := time.Now()
+	for len(scene.groups) > 1 {
+		select {
+		case <-tick.C:
+			t1 := time.Now()
+			log.Printf("running... %v in %v (%.1f/s)",
+				n, t1.Sub(t0),
+				float64(n)/(float64(t1.Sub(t0))/float64(time.Second)),
+			)
+			// if w == nil {
+			// 	w = os.Stdout
+			// }
+		default:
+		}
+		n++
+		if w != nil {
+			scene.survey(w)
+			io.WriteString(w, "\n")
+		}
+		if w != nil {
+			scene.rankGroups(w)
+			io.WriteString(w, "\n")
+		}
+		if scene.attack(w, scene.selectTargets()) == 0 {
+			if w != nil {
+				io.WriteString(w, "no winner, stasis reached\n")
+			}
+			return
+		}
+		scene.cleanup()
+		if w != nil {
+			io.WriteString(w, "\n")
+		}
+		// After the fight is over, if both armies still contain units, a new fight
+		// begins; combat only ends once one army has lost all of its units.
+	}
+	if w != nil {
+		scene.survey(w)
+	}
+}
+
+func (scene *scenario) applyBoost(groupName string, dmg int) {
+	gs := scene.groups[groupName]
+	for i := range gs {
+		gs[i].damage += dmg
+	}
+}
+
+func (scene *scenario) winningScore() (string, int) {
 	for len(scene.groups) == 1 {
 		for _, groupName := range scene.groupOrder {
 			gs := scene.groups[groupName]
@@ -86,10 +174,10 @@ func (scene *scenario) winningScore() int {
 			for _, g := range gs {
 				n += g.n
 			}
-			return n
+			return groupName, n
 		}
 	}
-	return 0
+	return "", 0
 }
 
 func (scene *scenario) survey(w io.Writer) {
@@ -132,7 +220,7 @@ func (scene *scenario) cleanup() {
 	}
 }
 
-func (scene *scenario) attack(w io.Writer, targets map[groupID]groupID) {
+func (scene *scenario) attack(w io.Writer, targets map[groupID]groupID) (totalKilled int) {
 	// During the *attacking* phase, each group deals damage to the target it
 	// selected, if any. Groups attack in decreasing order of initiative,
 	// regardless of whether they are part of the infection or the immune
@@ -177,12 +265,15 @@ func (scene *scenario) attack(w io.Writer, targets map[groupID]groupID) {
 			killed = def.n
 		}
 		def.n -= killed
-		fmt.Fprintf(w,
-			"%v group %v attacks defending group %v, killing %v units\n",
-			atkID.name, atkID.i+1, defID.i+1, killed)
-
+		if w != nil {
+			fmt.Fprintf(w,
+				"%v group %v attacks defending group %v, killing %v units\n",
+				atkID.name, atkID.i+1, defID.i+1, killed)
+		}
+		totalKilled += killed
 		scene.groups[defID.name][defID.i] = def
 	}
+	return totalKilled
 }
 
 func (scene *scenario) selectTargets() map[groupID]groupID {
