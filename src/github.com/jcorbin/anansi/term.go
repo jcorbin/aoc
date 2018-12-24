@@ -170,6 +170,7 @@ func (term *Term) Loop(client TermLoopClient) (err error) {
 	return err
 }
 
+// RunLoop FIXME is an experimental API.
 func (term *Term) RunLoop(client TermLoopClient) (err error) {
 	return term.RunWithFunc(func(term *Term) error {
 		return term.Loop(client)
