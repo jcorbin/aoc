@@ -75,7 +75,7 @@ func (world *WorldLayer) Update(now time.Time) {
 		if ticks > maxTicks {
 			ticks = maxTicks
 		}
-		for i := 0; i < ticks; i++ {
+		for i := 0; world.playing && world.ticking && i < ticks; i++ {
 			if !world.Tick() {
 				world.playing = false
 				break
@@ -85,10 +85,19 @@ func (world *WorldLayer) Update(now time.Time) {
 	}
 
 	world.ticking = true
-
 	if world.playing {
-		world.needsDraw = time.Second / time.Duration(world.playRate)
+		world.needsDraw = world.untilNextTick()
+		if world.needsDraw < time.Second/60 {
+			world.needsDraw = time.Second / 60
+		}
 	}
+}
+
+func (world *WorldLayer) untilNextTick() time.Duration {
+	if world.playRate == 0 {
+		world.playRate = 1
+	}
+	return time.Second / time.Duration(world.playRate)
 }
 
 func (world *WorldLayer) init() {
@@ -121,15 +130,12 @@ func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 
 	// play/pause
 	case ansi.Escape(' '):
-		world.playing = !world.playing
+		world.last = time.Now()
 		if world.playing {
-			world.last = time.Now()
-			if world.playRate == 0 {
-				world.playRate = 1
-			}
-			world.ticking = true
+			world.Pause()
+		} else {
+			world.Play()
 		}
-		world.needsDraw = 5 * time.Millisecond
 		return true, nil
 
 	// speed control
