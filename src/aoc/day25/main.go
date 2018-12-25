@@ -27,44 +27,56 @@ func run(in, out *os.File) error {
 	}
 
 	log.Printf("read points: %v", pts)
-	clusters := clusterPoints(pts, *radius)
-	log.Printf("grouped into %v clusters", len(clusters))
+	_, numClusters := clusterPoints(pts, *radius)
+	log.Printf("grouped into %v clusters", numClusters)
 
 	return nil
 }
 
-func clusterPoints(pts []point4, r int) (clusters [][]point4) {
+func clusterPoints(pts []point4, r int) (clusterIDs []int, numClusters int) {
+	// only goes up to track unique clusters; numClusters can go back down
+	// after coalescing.
+	nextClusterID := 0
+
+	// assigning one cluster id to every point given
+	clusterIDs = make([]int, len(pts))
+
 	for j := 0; j < len(pts); j++ {
-		pt := pts[j]
+		clusterIDs[j] = func(pt point4) int {
 
-		// strike clusters that point is close to
-		var coll []point4
-		for i, cluster := range clusters {
-			for _, opt := range cluster {
-				if d := opt.sub(pt).abs().sum(); d <= r {
-					coll = append(coll, cluster...)
-					clusters[i] = nil
-					break
+			// find a prior cluster
+			for i := 0; i < j; i++ {
+				if pts[i].sub(pt).abs().sum() <= r {
+					clusterID := clusterIDs[i]
+
+					// coalesce any other clusters...
+					for ; i < j; i++ {
+						if pts[i].sub(pt).abs().sum() <= r {
+							if ocid := clusterIDs[i]; ocid != clusterID {
+
+								// ...rewriting all their prior assignments
+								clusterIDs[i] = clusterID
+								for k := 0; k < j; k++ {
+									if clusterIDs[k] == ocid {
+										clusterIDs[k] = clusterID
+									}
+								}
+								numClusters--
+							}
+						}
+					}
+					return clusterID
 				}
 			}
-		}
 
-		// compact struck clusters
-		if len(coll) > 0 {
-			i := 0
-			for j := 0; j < len(clusters); j++ {
-				if clusters[j] != nil {
-					clusters[i] = clusters[j]
-					i++
-				}
-			}
-			clusters = clusters[:i]
-		}
+			// assign a new cluster if we didn't find a prior
+			numClusters++
+			nextClusterID++
+			return nextClusterID
 
-		// append point, and new cluster
-		clusters = append(clusters, append(coll, pt))
+		}(pts[j])
 	}
-	return clusters
+	return clusterIDs, numClusters
 }
 
 var point4Pattern = regexp.MustCompile(`^(-?\d+),(-?\d+),(-?\d+),(-?\d+)$`)
