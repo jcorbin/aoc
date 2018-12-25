@@ -113,8 +113,8 @@ func (ll LogLayer) NeedsDraw() time.Duration {
 // most n lines within the grid it's passed.
 func BottomNLines(n int) func(g anansi.Grid, numLines int) anansi.Grid {
 	return func(g anansi.Grid, numLines int) anansi.Grid {
-		if numLines > 5 {
-			numLines = 5
+		if numLines > n {
+			numLines = n
 		}
 		return g.SubAt(ansi.Pt(
 			1, g.Bounds().Dy()-numLines,
