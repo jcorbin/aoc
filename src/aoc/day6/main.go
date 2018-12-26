@@ -182,42 +182,19 @@ func distance(a, b image.Point) (n int) {
 
 func (prob *problem) init() {
 	// compute bounding box
-	prob.Min = prob.points[0]
-	prob.Max = prob.points[1]
+	prob.Rectangle = geom.PointRect(prob.points[0])
 	for _, pt := range prob.points[1:] {
-		if prob.Min.X > pt.X {
-			prob.Min.X = pt.X
-		}
-		if prob.Min.Y > pt.Y {
-			prob.Min.Y = pt.Y
-		}
-		if prob.Max.X < pt.X {
-			prob.Max.X = pt.X
-		}
-		if prob.Max.Y < pt.Y {
-			prob.Max.Y = pt.Y
-		}
+		prob.Rectangle = prob.Rectangle.Union(geom.PointRect(pt))
 	}
 
+	// collect interior point ids
+	interior := prob.Rectangle.Inset(1)
 	for i, pt := range prob.points {
-		if pt.X == prob.Min.X {
-			continue
+		if pt.In(interior) {
+			id := i + 1
+			prob.interiors = append(prob.interiors, id)
 		}
-		if pt.Y == prob.Min.Y {
-			continue
-		}
-		if pt.X == prob.Max.X {
-			continue
-		}
-		if pt.Y == prob.Max.Y {
-			continue
-		}
-		id := i + 1
-		prob.interiors = append(prob.interiors, id)
 	}
-
-	prob.Max.X++
-	prob.Max.Y++
 
 	// setup state
 	prob.Origin = prob.Min
