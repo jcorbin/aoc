@@ -40,14 +40,14 @@ type WorldLayer struct {
 func (world *WorldLayer) Play() {
 	world.ticking = true
 	world.playing = true
-	world.needsDraw = 5 * time.Millisecond
+	world.needsDraw = time.Millisecond
 }
 
 // Pause stops playback.
 func (world *WorldLayer) Pause() {
 	world.ticking = false
 	world.playing = false
-	world.needsDraw = 5 * time.Millisecond
+	world.needsDraw = time.Millisecond
 }
 
 // Update advances the world simulation by calling tick one or more times if
@@ -124,7 +124,7 @@ func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 	switch e {
 	// step
 	case ansi.Escape('.'):
-		world.needsDraw = 5 * time.Millisecond
+		world.needsDraw = time.Millisecond
 		world.ticking = true
 		return true, nil
 
@@ -141,7 +141,7 @@ func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 	// speed control
 	case ansi.Escape('+'):
 		world.playRate *= 2
-		world.needsDraw = 5 * time.Millisecond
+		world.needsDraw = time.Millisecond
 		return true, nil
 	case ansi.Escape('-'):
 		rate := world.playRate / 2
@@ -151,7 +151,7 @@ func (world *WorldLayer) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 		if world.playRate != rate {
 			world.playRate = rate
 		}
-		world.needsDraw = 5 * time.Millisecond
+		world.needsDraw = time.Millisecond
 		return true, nil
 
 	default:

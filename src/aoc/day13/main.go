@@ -448,7 +448,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 		world.autoRemove = !world.autoRemove
 		if !world.autoRemove {
 			log.Printf("auto remove off")
-			world.needsDraw = 5 * time.Millisecond
+			world.needsDraw = time.Millisecond
 			return true, nil
 		}
 		log.Printf("auto remove on")
@@ -462,7 +462,7 @@ func (world *cartWorld) HandleInput(e ansi.Escape, a []byte) (bool, error) {
 			world.crash = 0
 			world.ui.Pause()
 			world.clearHighlight()
-			world.needsDraw = 5 * time.Millisecond
+			world.needsDraw = time.Millisecond
 		}
 		return true, nil
 

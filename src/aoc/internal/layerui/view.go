@@ -51,7 +51,7 @@ func (view *ViewLayer) HandleInput(e ansi.Escape, a []byte) (handled bool, err e
 			}
 			if view.focus != p {
 				view.focus = p
-				view.needsDraw = 5 * time.Millisecond
+				view.needsDraw = time.Millisecond
 			}
 		}
 		return true, nil
@@ -95,5 +95,5 @@ func (view *ViewLayer) Offset() image.Point {
 // SetFocus sets the view center point used to determine offset when Draw-ing.
 func (view *ViewLayer) SetFocus(p image.Point) {
 	view.focus = p
-	view.needsDraw = 5 * time.Millisecond
+	view.needsDraw = time.Millisecond
 }

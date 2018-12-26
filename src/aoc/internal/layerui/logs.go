@@ -104,7 +104,7 @@ func (ll *LogLayer) Draw(screen anansi.Screen, now time.Time) {
 // NeedsDraw returns non-zero if more logs have been written since last Draw.
 func (ll LogLayer) NeedsDraw() time.Duration {
 	if Logs.Len() > ll.lastLen {
-		return 5 * time.Millisecond
+		return time.Millisecond
 	}
 	return 0
 }

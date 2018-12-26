@@ -199,7 +199,7 @@ func (world *spaceWorld) HandleInput(e ansi.Escape, a []byte) (handled bool, err
 			world.tick = world.space.back
 		}
 		world.Tick()
-		world.needsDraw = 5 * time.Millisecond
+		world.needsDraw = time.Millisecond
 		return true, nil
 
 	case '>':
@@ -208,14 +208,14 @@ func (world *spaceWorld) HandleInput(e ansi.Escape, a []byte) (handled bool, err
 			world.tick = world.space.step
 		}
 		world.Tick()
-		world.needsDraw = 5 * time.Millisecond
+		world.needsDraw = time.Millisecond
 		return true, nil
 
 	case '*':
 		log.Printf("solving")
 		world.ui.Play()
 		world.post = (*spaceWorld).checkInflection
-		world.needsDraw = 5 * time.Millisecond
+		world.needsDraw = time.Millisecond
 		return true, nil
 
 	}

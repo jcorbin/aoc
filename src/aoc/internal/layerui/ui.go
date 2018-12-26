@@ -17,7 +17,7 @@ type BannerLayer struct {
 // Say sets the message string.
 func (ban *BannerLayer) Say(mess string) {
 	ban.banner = []byte(mess)
-	ban.needsDraw = 5 * time.Millisecond
+	ban.needsDraw = time.Millisecond
 }
 
 // HandleInput is a no-op.
@@ -58,7 +58,7 @@ func (mod *ModalLayer) Display(mess string) {
 		mod.mess = []byte(mess)
 		mod.messSize = MeasureText(mod.mess).Size()
 	}
-	mod.needsDraw = 5 * time.Millisecond
+	mod.needsDraw = time.Millisecond
 }
 
 // HandleInput eats all input if a message string is set, dismissing the

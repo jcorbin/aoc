@@ -101,7 +101,7 @@ func (app *LayerApp) Run(term *anansi.Term) error {
 			if err := app.Screen.SizeToTerm(term); err != nil {
 				return err
 			}
-			app.Timer.Request(5 * time.Millisecond)
+			app.Timer.Request(time.Millisecond)
 
 		case <-app.InputReady.C:
 			_, err := term.ReadAny()
@@ -124,7 +124,11 @@ func (app *LayerApp) Run(term *anansi.Term) error {
 }
 
 func (app *LayerApp) setTimerIfNeeded() {
+	const minTimeout = time.Second / 120
 	if d := app.NeedsDraw(); d > 0 {
+		if d < minTimeout {
+			d = minTimeout
+		}
 		app.Timer.Request(d)
 	}
 }
@@ -154,7 +158,7 @@ func (app *LayerApp) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 		app.Screen.Clear()           // clear virtual contents
 		app.Screen.To(ansi.Pt(1, 1)) // cursor back to top
 		app.Screen.Invalidate()      // force full redraw
-		app.Timer.Request(5 * time.Millisecond)
+		app.Timer.Request(time.Millisecond)
 		return true, nil
 
 	}
