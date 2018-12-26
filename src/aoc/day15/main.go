@@ -16,11 +16,12 @@ import (
 
 	"aoc/internal/geom"
 	"aoc/internal/infernio"
-	"aoc/internal/layerui"
 	"aoc/internal/quadindex"
+	"aoc/internal/worldkit"
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/anansi/anui"
 )
 
 var (
@@ -43,7 +44,7 @@ func main() {
 	}
 	flag.Parse()
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
-	anansi.MustRun(layerui.WithOpenLogFile(*logfile, run))
+	anansi.MustRun(anui.WithOpenLogFile(*logfile, run))
 }
 
 func run() error {
@@ -52,14 +53,14 @@ func run() error {
 		return err
 	}
 
-	world.ui.LogLayer.SubGrid = layerui.BottomNLines(5)
+	world.ui.LogLayer.SubGrid = anui.BottomNLines(5)
 	world.ui.ViewLayer.Client = &world
 	world.ui.WorldLayer.View = &world.ui.ViewLayer
 	world.ui.WorldLayer.World = &world
 
-	return layerui.Run(
+	return anui.Run(
 		&world.ui.LogLayer,
-		layerui.DrawFuncLayer(world.DrawHPOverlay),
+		anui.DrawFuncLayer(world.DrawHPOverlay),
 		&world.ui.WorldLayer,
 	)
 }
@@ -88,9 +89,9 @@ const (
 
 type gameWorld struct {
 	ui struct {
-		layerui.LogLayer
-		layerui.ViewLayer
-		layerui.WorldLayer
+		anui.LogLayer
+		anui.ViewLayer
+		worldkit.WorldLayer
 	}
 
 	sidebar   bytes.Buffer
@@ -221,7 +222,7 @@ func (world *gameWorld) DrawHPOverlay(screen anansi.Screen, now time.Time) {
 		// cur.X += 1 + n
 	}
 
-	layerui.WriteIntoGrid(sidebarGrid, world.sidebar.Bytes())
+	anui.WriteIntoGrid(sidebarGrid, world.sidebar.Bytes())
 }
 
 func mergeBGColors(a, b ansi.SGRAttr) ansi.SGRAttr {
