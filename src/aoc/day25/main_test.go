@@ -81,23 +81,8 @@ var testCases = []struct {
 		r:         3,
 		nclusters: 8,
 	},
-}
 
-func Test_clusterPoints(t *testing.T) {
-	for i, tc := range testCases {
-		t.Run(fmt.Sprint(i+1), func(t *testing.T) {
-			clusterIDs, numClusters := clusterPoints(tc.points, tc.r)
-			if !assert.Equal(t, tc.nclusters, numClusters) {
-				t.Logf("clusterIDs: %v", clusterIDs)
-			}
-		})
-	}
-}
-
-var benchCases = []struct {
-	points []point4
-	r      int
-}{
+	// 5
 	{
 		points: []point4{
 			{2, 5, -4, -7},
@@ -1148,8 +1133,20 @@ var benchCases = []struct {
 			{2, 5, -5, 1},
 			{4, -6, -3, 1},
 		},
-		r: 3,
+		r:         3,
+		nclusters: 1011,
 	},
+}
+
+func Test_clusterPoints(t *testing.T) {
+	for i, tc := range testCases {
+		t.Run(fmt.Sprint(i+1), func(t *testing.T) {
+			clusterIDs, numClusters := clusterPoints(tc.points, tc.r)
+			if !assert.Equal(t, tc.nclusters, numClusters) {
+				t.Logf("clusterIDs: %v", clusterIDs)
+			}
+		})
+	}
 }
 
 func Benchmark_clusterPoints(b *testing.B) {
@@ -1157,13 +1154,6 @@ func Benchmark_clusterPoints(b *testing.B) {
 		b.Run(fmt.Sprintf("test_%v", i+1), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_, _ = clusterPoints(tc.points, tc.r)
-			}
-		})
-	}
-	for i, bc := range benchCases {
-		b.Run(fmt.Sprintf("bench_%v", i+1), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				_, _ = clusterPoints(bc.points, bc.r)
 			}
 		})
 	}
