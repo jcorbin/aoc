@@ -11,33 +11,45 @@ import (
 	"github.com/jcorbin/anansi/ansi"
 )
 
-// LayerApp implements an anansi.Loop around a list of layers.
+// LayerApp supports running a Layer under an anansi.Term, by implementing
+// anansi.Runner. Most users should call the toplevel Run function, rather than
+// building a LayerApp directly.
 type LayerApp struct {
 	Layer
-	now        time.Time
-	halt       anansi.Signal
-	resize     anansi.Signal
-	inputReady anansi.InputSignal
-	screen     anansi.Screen
-	timer      anansi.Timer
+	Halt       anansi.Signal
+	Resize     anansi.Signal
+	InputReady anansi.InputSignal
+	Timer      anansi.Timer
+	Screen     anansi.Screen
 }
 
-// Run runs the given layer under a new anansi terminal attached to
-// os.Stdin/out and setup to process signals. The args may be additional
-// ansi.Modes to set or anansi.Context pieces to attach to the terminal.
+// Run a fresh LayerApp under os.Stdin/os.Stdout, with SIGTERM, SIGINT, and
+// SIGWINCH handling appropriate for a nolmal fullscreen terminal application.
+//
+// See LayerApp.Build for details.
 func Run(args ...interface{}) error {
 	var app LayerApp
-
 	in, out, err := OpenTermFiles(os.Stdin, os.Stdout)
 	if err != nil {
 		return err
 	}
+	app.Halt = anansi.Notify(syscall.SIGTERM, syscall.SIGINT)
+	app.Resize = anansi.Notify(syscall.SIGWINCH)
+	return app.Build(in, out, args...).RunWith(&app)
+}
 
+// Build a new anansi.Term attached to the given files, and the app's loop
+// signaling.
+//
+// Each of the args may be: a Layer to add to the app, using Layers; an
+// ansi.Mode to add to the terminal; or an anansi.Context to run under the
+// term.
+func (app *LayerApp) Build(in, out *os.File, args ...interface{}) *anansi.Term {
 	ctx := anansi.Contexts(
-		&app.halt,
-		&app.resize,
-		&app.inputReady,
-		&app.screen,
+		&app.Halt,
+		&app.Resize,
+		&app.InputReady,
+		&app.Screen,
 	)
 
 	modes := []ansi.Mode{
@@ -57,69 +69,63 @@ func Run(args ...interface{}) error {
 		}
 	}
 
-	app.SetupSignals()
-
 	term := anansi.NewTerm(in, out, ctx)
 	term.SetRaw(true)
 	term.SetEcho(false)
 	term.AddMode(modes...)
 
-	// TODO consider borging anansi.Loop* into here now that it's the
-	// primary/only user.
-	return term.RunWithFunc(func(term *anansi.Term) error {
-		return term.Loop(&app)
-	})
+	return term
 }
 
-// SetupSignals enables halt and resize signal notification.
-func (app *LayerApp) SetupSignals() {
-	app.halt = anansi.Notify(syscall.SIGTERM, syscall.SIGINT)
-	app.resize = anansi.Notify(syscall.SIGWINCH)
-	app.resize.Send("initialize screen size")
-}
-
-// Update waits for a signal, input, or draw timer to fire, dispatching to the
-// layers accordingly:
+// Run the app's event harndling loop.
 //
-// On input, Layer.HandleInput is called in order, stopping on the first one
-// that handles it or returns an error. While dispatching input,
-// Layer.NeedsDraw is polled, retaining any minimal non-zero duration; if
-// non-zero, a draw timer is set.
+// The loop stops on halt signal, and resizes the app's virtual screen to the
+// terminal's size when signaled. After resize the draw timer is set to fire
+// as soon as possible.
 //
-// When the draw timer fires, or when the terminal is resized, the terminal is
-// flushed using the LayerApp.WriteTo.
-func (app *LayerApp) Update(term *anansi.Term) (bool, error) {
-	select {
-	case sig := <-app.halt.C:
-		return false, anansi.SigErr(sig)
+// When input is ready, reads any available input from the terminal
+// (non-blocking mode), and then processes it. After processing some low level
+// input, like Ctrl-C, input is passed to the app Layer.
+//
+// When the draw timer fires, the app's virtual screen is cleared, the Layer
+// Draw()n to it, and then the app is flushed to the terminal.
+func (app *LayerApp) Run(term *anansi.Term) error {
+	app.Resize.Send("initialize screen size")
+	for {
+		select {
 
-	case <-app.resize.C:
-		err := app.screen.SizeToTerm(term)
-		if err == nil {
-			app.timer.Request(5 * time.Millisecond)
+		case sig := <-app.Halt.C:
+			return anansi.SigErr(sig)
+
+		case <-app.Resize.C:
+			if err := app.Screen.SizeToTerm(term); err != nil {
+				return err
+			}
+			app.Timer.Request(5 * time.Millisecond)
+
+		case <-app.InputReady.C:
+			_, err := term.ReadAny()
+			if herr := app.handleInput(term); err == nil {
+				err = herr
+			}
+			if err != nil {
+				return err
+			}
+
+		case now := <-app.Timer.C:
+			app.Screen.Clear()
+			app.Draw(app.Screen, now)
+			if err := term.Flush(app); err != nil {
+				return err
+			}
+
 		}
-		return false, err
-
-	case <-app.inputReady.C:
-		_, err := term.ReadAny()
-		herr := app.handleInput(term)
-		if err == nil {
-			err = herr
-		}
-		return false, err
-
-	case now := <-app.timer.C:
-		app.now = now
-		return true, nil
-
-	default:
-		return false, nil
 	}
 }
 
 func (app *LayerApp) setTimerIfNeeded() {
 	if d := app.NeedsDraw(); d > 0 {
-		app.timer.Request(d)
+		app.Timer.Request(d)
 	}
 }
 
@@ -145,22 +151,20 @@ func (app *LayerApp) handleLowInput(e ansi.Escape, a []byte) (bool, error) {
 		return true, fmt.Errorf("read %v", e)
 
 	case 0x0c: // clear screen on Ctrl-L
-		app.screen.Clear()           // clear virtual contents
-		app.screen.To(ansi.Pt(1, 1)) // cursor back to top
-		app.screen.Invalidate()      // force full redraw
-		app.timer.Request(5 * time.Millisecond)
+		app.Screen.Clear()           // clear virtual contents
+		app.Screen.To(ansi.Pt(1, 1)) // cursor back to top
+		app.Screen.Invalidate()      // force full redraw
+		app.Timer.Request(5 * time.Millisecond)
 		return true, nil
 
 	}
 	return false, nil
 }
 
-// WriteTo draws the layer to a newly cleared virtual screen, then
-// flushes it to the terminal.
+// WriteTo writes the app's virtual screen to the given io.Writer, setting any
+// next needed timer if the write succeeds.
 func (app *LayerApp) WriteTo(w io.Writer) (n int64, err error) {
-	app.screen.Clear()
-	app.Draw(app.screen, app.now)
-	if n, err = app.screen.WriteTo(w); err == nil {
+	if n, err = app.Screen.WriteTo(w); err == nil {
 		app.setTimerIfNeeded()
 	}
 	return n, err

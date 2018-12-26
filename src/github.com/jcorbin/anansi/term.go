@@ -1,7 +1,6 @@
 package anansi
 
 import (
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -144,54 +143,6 @@ func (term *Term) Suspend() error {
 	log.Printf("resumed, signal: %v", sig)
 	return nil
 }
-
-// TermLoopClient is a client ran under Term.Loop.
-type TermLoopClient interface {
-	// Update should block until and handle the next client relevant event,
-	// such as signals, user input, or a timer. The redraw return requests a
-	// term.Flush of the client's WriterTo.
-	Update(term *Term) (redraw bool, _ error)
-
-	// WriterTo is ran under term.Flush, and should build and write any output
-	// to the given io.Writer.
-	io.WriterTo
-}
-
-// Loop calls client.Update in a loop, flushing the client when Update
-// returns redraw=true, and stopping on first error.
-func (term *Term) Loop(client TermLoopClient) (err error) {
-	for err == nil {
-		var redraw bool
-		redraw, err = client.Update(term)
-		if redraw && err == nil {
-			err = term.Flush(client)
-		}
-	}
-	return err
-}
-
-// RunLoop FIXME is an experimental API.
-func (term *Term) RunLoop(client TermLoopClient) (err error) {
-	return term.RunWithFunc(func(term *Term) error {
-		return term.Loop(client)
-	})
-}
-
-type loopClientFuncs struct {
-	u func(term *Term) (redraw bool, _ error)
-	w func(w io.Writer) (n int64, err error)
-}
-
-// LoopClientFuncs FIXME is a conveninec for using Term.RunLoop.
-func LoopClientFuncs(
-	u func(term *Term) (redraw bool, _ error),
-	w func(w io.Writer) (n int64, err error),
-) TermLoopClient {
-	return loopClientFuncs{u, w}
-}
-
-func (lcf loopClientFuncs) Update(term *Term) (redraw bool, _ error) { return lcf.u(term) }
-func (lcf loopClientFuncs) WriteTo(w io.Writer) (n int64, err error) { return lcf.w(w) }
 
 // ExitError may be implemented by an error to customize the exit code under
 // MustRun.
