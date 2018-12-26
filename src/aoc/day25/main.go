@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 
 	"github.com/jcorbin/anansi"
@@ -34,6 +35,9 @@ func run(in, out *os.File) error {
 }
 
 func clusterPoints(pts []point4, r int) (clusterIDs []int, numClusters int) {
+	// order points in z-order; builds a linear quadtree for range queries.
+	sort.Sort(zSort(pts))
+
 	// only goes up to track unique clusters; numClusters can go back down
 	// after coalescing.
 	nextClusterID := 0
@@ -44,13 +48,18 @@ func clusterPoints(pts []point4, r int) (clusterIDs []int, numClusters int) {
 	for j := 0; j < len(pts); j++ {
 		clusterIDs[j] = func(pt point4) int {
 
-			// find a prior cluster
-			for i := 0; i < j; i++ {
+			// combine with an prior assignments within radius (only possible in z-region)
+			i := 0
+			zq := pt.addN(-r) // query for minimum of possible z-region
+			for ; i < j && pts[i].zless(zq); i++ {
+			}
+			zq = pt.addN(r + 1) // query for maximum of possible z-region
+			for ; i < j && pts[i].zless(zq); i++ {
 				if pts[i].sub(pt).abs().sum() <= r {
 					clusterID := clusterIDs[i]
 
 					// coalesce any other clusters...
-					for ; i < j; i++ {
+					for i++; i < j && pts[i].zless(zq); i++ {
 						if pts[i].sub(pt).abs().sum() <= r {
 							if ocid := clusterIDs[i]; ocid != clusterID {
 
@@ -79,6 +88,40 @@ func clusterPoints(pts []point4, r int) (clusterIDs []int, numClusters int) {
 	return clusterIDs, numClusters
 }
 
+type zSort []point4
+
+func (zs zSort) Len() int               { return len(zs) }
+func (zs zSort) Less(i int, j int) bool { return zs[i].zless(zs[j]) }
+func (zs zSort) Swap(i int, j int)      { zs[i], zs[j] = zs[j], zs[i] }
+
+func (p point4) zless(other point4) (r bool) {
+	x := 0
+
+	if y := p.X ^ other.X; lessMSB(x, y) {
+		x = y
+		r = p.X < other.X
+	}
+
+	if y := p.Y ^ other.Y; lessMSB(x, y) {
+		x = y
+		r = p.Y < other.Y
+	}
+
+	if y := p.Z ^ other.Z; lessMSB(x, y) {
+		x = y
+		r = p.Z < other.Z
+	}
+
+	if y := p.W ^ other.W; lessMSB(x, y) {
+		// x = y
+		r = p.W < other.W
+	}
+
+	return r
+}
+
+func lessMSB(x, y int) bool { return x < y && x < (x^y) }
+
 var point4Pattern = regexp.MustCompile(`^(-?\d+),(-?\d+),(-?\d+),(-?\d+)$`)
 
 func readPoints(r io.Reader) (pts []point4, _ error) {
@@ -101,6 +144,14 @@ func readPoints(r io.Reader) (pts []point4, _ error) {
 }
 
 type point4 struct{ X, Y, Z, W int }
+
+func (p point4) addN(n int) point4 {
+	p.X += n
+	p.Y += n
+	p.Z += n
+	p.W += n
+	return p
+}
 
 func (p point4) sub(other point4) point4 {
 	p.X -= other.X
