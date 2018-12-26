@@ -17,6 +17,7 @@ import (
 
 	"aoc/internal/display"
 	"aoc/internal/geom"
+	"aoc/internal/infernio"
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
@@ -35,11 +36,18 @@ func main() {
 	anansi.MustRun(run(os.Stdin))
 }
 
+var builtinInput = infernio.Builtin("" +
+	"1, 1\n" +
+	"1, 6\n" +
+	"8, 3\n" +
+	"3, 4\n" +
+	"5, 5\n" +
+	"8, 9\n")
+
 func run(r io.Reader) (err error) {
 	var prob ui
 
-	prob.points, err = readPoints(r)
-	if err != nil {
+	if err := infernio.LoadInput(builtinInput, prob.load); err != nil {
 		return err
 	}
 
@@ -478,22 +486,20 @@ func (prob *ui) render() {
 
 var pointPattern = regexp.MustCompile(`^(\d+), *(\d+)$`)
 
-func readPoints(r io.Reader) (points []image.Point, _ error) {
+func (prob *problem) load(r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := sc.Text()
 		parts := pointPattern.FindStringSubmatch(line)
 		if len(parts) == 0 {
-			log.Printf("NO MATCH %q", line)
-			continue
+			return fmt.Errorf("bad line %q, expecting %v", line, pointPattern)
 		}
-
 		var pt image.Point
 		pt.X, _ = strconv.Atoi(parts[1])
 		pt.Y, _ = strconv.Atoi(parts[2])
-		points = append(points, pt)
+		prob.points = append(prob.points, pt)
 	}
-	return points, sc.Err()
+	return sc.Err()
 }
 
 const (
