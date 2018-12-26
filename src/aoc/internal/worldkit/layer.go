@@ -1,4 +1,4 @@
-package layerui
+package worldkit
 
 import (
 	"bytes"
@@ -8,25 +8,14 @@ import (
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/anansi/anui"
 )
 
-// World is a discretely timed simulation world driven under a UI.
-type World interface {
-	// Tick should advance the simulation one step, returning false if the tick
-	// wasn't complete/succesful; false return pauses playback.
-	Tick() bool
-
-	NeedsDraw() time.Duration
-	HandleInput(e ansi.Escape, a []byte) (handled bool, err error)
-
-	ViewClient
-}
-
-// WorldLayer implements a layer that controls and displays a World
+// WorldLayer implements an auni.Layer that controls and displays a World
 // simulation.
 type WorldLayer struct {
 	World
-	View Layer
+	View anui.Layer
 
 	last     time.Time
 	ticking  bool
@@ -102,14 +91,14 @@ func (world *WorldLayer) untilNextTick() time.Duration {
 
 func (world *WorldLayer) init() {
 	if world.View == nil {
-		world.View = DrawFuncLayer(world.DrawWorld)
+		world.View = anui.DrawFuncLayer(world.DrawWorld)
 	}
 }
 
 // NeedsDraw returns non-zero if the layer needs to be drawn.
 func (world *WorldLayer) NeedsDraw() time.Duration {
 	world.init()
-	return minNeedsDraw(
+	return anui.MinNeedsDraw(
 		world.needsDraw,
 		world.World.NeedsDraw(),
 		world.View.NeedsDraw(),
@@ -195,7 +184,7 @@ func (world *WorldLayer) DrawPlayOverlay(screen anansi.Screen, now time.Time) {
 	} else {
 		buf.WriteRune('‖')
 	}
-	n := MeasureText(buf.Bytes()).Dx()
+	n := anui.MeasureText(buf.Bytes()).Dx()
 	bnd := screen.Bounds()
 	screen.To(ansi.Pt(bnd.Max.X-n, 1))
 	screen.Write(buf.Bytes())

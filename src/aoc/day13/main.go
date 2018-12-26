@@ -15,11 +15,12 @@ import (
 
 	"aoc/internal/geom"
 	"aoc/internal/infernio"
-	"aoc/internal/layerui"
 	"aoc/internal/quadindex"
+	"aoc/internal/worldkit"
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/anansi/anui"
 )
 
 var logfile = flag.String("logfile", "", "log file")
@@ -43,12 +44,12 @@ func main() {
 
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 
-	anansi.MustRun(layerui.WithOpenLogFile(*logfile, run))
+	anansi.MustRun(anui.WithOpenLogFile(*logfile, run))
 }
 
 func run() error {
 	var world cartWorld
-	world.ui.LogLayer.SubGrid = layerui.BottomNLines(5)
+	world.ui.LogLayer.SubGrid = anui.BottomNLines(5)
 	world.ui.ViewLayer.Client = &world
 	world.ui.WorldLayer.View = &world.ui.ViewLayer
 	world.ui.WorldLayer.World = &world
@@ -57,7 +58,7 @@ func run() error {
 		return err
 	}
 
-	return layerui.Run(
+	return anui.Run(
 		&world.ui.ModalLayer,
 		&world.ui.BannerLayer,
 		&world.ui.LogLayer,
@@ -104,11 +105,11 @@ const (
 
 type cartWorld struct {
 	ui struct {
-		layerui.ModalLayer
-		layerui.BannerLayer
-		layerui.LogLayer
-		layerui.ViewLayer
-		layerui.WorldLayer
+		anui.ModalLayer
+		anui.BannerLayer
+		anui.LogLayer
+		anui.ViewLayer
+		worldkit.WorldLayer
 	}
 
 	quadindex.Index

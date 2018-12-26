@@ -1,7 +1,6 @@
 package main
 
 import (
-	"aoc/internal/layerui"
 	"bufio"
 	"bytes"
 	"image"
@@ -10,13 +9,14 @@ import (
 	"time"
 
 	"github.com/jcorbin/anansi"
+	"github.com/jcorbin/anansi/anui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func init() {
 	log.SetFlags(0)
-	layerui.InitLogs()
+	anui.InitLogs()
 }
 
 type testResult struct {
@@ -39,7 +39,7 @@ type testScenario struct {
 }
 
 func (tc testScenario) run(t *testing.T, verbose bool) {
-	layerui.Logs.Reset()
+	anui.Logs.Reset()
 
 	var buf bytes.Buffer
 	for _, line := range tc.initialGrid {
@@ -85,7 +85,7 @@ func (tc testScenario) run(t *testing.T, verbose bool) {
 			break
 		}
 		if verbose {
-			sc := bufio.NewScanner(&layerui.Logs)
+			sc := bufio.NewScanner(&anui.Logs)
 			for sc.Scan() {
 				t.Logf("%s\n", sc.Bytes())
 			}

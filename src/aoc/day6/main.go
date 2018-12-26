@@ -16,10 +16,11 @@ import (
 	"aoc/internal/display"
 	"aoc/internal/geom"
 	"aoc/internal/infernio"
-	"aoc/internal/layerui"
+	"aoc/internal/worldkit"
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/anansi/anui"
 )
 
 var (
@@ -145,10 +146,10 @@ type problem struct {
 }
 
 type ui struct {
-	layerui.LogLayer
-	layerui.BannerLayer
-	layerui.ViewLayer
-	layerui.WorldLayer
+	anui.LogLayer
+	anui.BannerLayer
+	anui.ViewLayer
+	worldkit.WorldLayer
 
 	problem
 
@@ -346,14 +347,12 @@ func (prob *problem) advance(cur cursor, move image.Point) (_ cursor, ok bool) {
 }
 
 func (prob *ui) interact() error {
-	// TODO re-use layerui.WorldLayer
-
-	prob.LogLayer.SubGrid = layerui.BottomNLines(5)
+	prob.LogLayer.SubGrid = anui.BottomNLines(5)
 	prob.ViewLayer.Client = prob
 	prob.WorldLayer.View = &prob.ViewLayer
 	prob.WorldLayer.World = prob
 
-	return layerui.Run(
+	return anui.Run(
 		&prob.LogLayer,
 		&prob.BannerLayer,
 		&prob.WorldLayer,

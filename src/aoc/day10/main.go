@@ -3,7 +3,7 @@ package main
 import (
 	"aoc/internal/geom"
 	"aoc/internal/infernio"
-	"aoc/internal/layerui"
+	"aoc/internal/worldkit"
 	"bufio"
 	"flag"
 	"fmt"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
+	"github.com/jcorbin/anansi/anui"
 )
 
 var (
@@ -27,7 +28,7 @@ var (
 func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	flag.Parse()
-	anansi.MustRun(layerui.WithOpenLogFile(*logfile, run))
+	anansi.MustRun(anui.WithOpenLogFile(*logfile, run))
 }
 
 var builtinInput = infernio.Builtin("" +
@@ -88,7 +89,7 @@ func run() error {
 
 	var world spaceWorld
 
-	world.ui.LogLayer.SubGrid = layerui.BottomNLines(5)
+	world.ui.LogLayer.SubGrid = anui.BottomNLines(5)
 	world.ui.WorldLayer.World = &world
 	world.ui.ViewLayer.Client = world.ui.WorldLayer.World
 	world.ui.WorldLayer.View = &world.ui.ViewLayer
@@ -98,7 +99,7 @@ func run() error {
 	world.updateBanner()
 	world.ui.Display(helpMess)
 
-	return layerui.Run(
+	return anui.Run(
 		&world.ui.ModalLayer,
 		&world.ui.BannerLayer,
 		&world.ui.LogLayer,
@@ -133,11 +134,11 @@ func solve(sp space, out *os.File) error {
 
 type spaceWorld struct {
 	ui struct {
-		layerui.ModalLayer
-		layerui.BannerLayer
-		layerui.LogLayer
-		layerui.ViewLayer
-		layerui.WorldLayer
+		anui.ModalLayer
+		anui.BannerLayer
+		anui.LogLayer
+		anui.ViewLayer
+		worldkit.WorldLayer
 	}
 
 	*space

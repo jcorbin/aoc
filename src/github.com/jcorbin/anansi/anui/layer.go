@@ -1,4 +1,4 @@
-package layerui
+package anui
 
 import (
 	"time"
@@ -50,12 +50,14 @@ type layers []Layer
 
 func (ls layers) NeedsDraw() (d time.Duration) {
 	for i := 0; i < len(ls); i++ {
-		d = minNeedsDraw(d, ls[i].NeedsDraw())
+		d = MinNeedsDraw(d, ls[i].NeedsDraw())
 	}
 	return d
 }
 
-func minNeedsDraw(ds ...time.Duration) time.Duration {
+// MinNeedsDraw returns the minimum non-zero duration from its arguments, or
+// zero if no arg is non-zero.
+func MinNeedsDraw(ds ...time.Duration) time.Duration {
 	if len(ds) == 0 {
 		return 0
 	}
