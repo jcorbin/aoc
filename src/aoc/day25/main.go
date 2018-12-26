@@ -47,19 +47,20 @@ func clusterPoints(pts []point4, r int) (clusterIDs []int, numClusters int) {
 
 	for j := 0; j < len(pts); j++ {
 		clusterIDs[j] = func(pt point4) int {
+			min, max := pt.addN(-r), pt.addN(r+1) // query for maximum of possible z-region
+			// TODO fix this range query, it only "works" incidentally:
+			// pts[i].zless(min|max) is not monotonic; need to jump ala BIGMAX
 
-			// combine with an prior assignments within radius (only possible in z-region)
+			// combine with any prior assignments within radius (only possible in z-region)
 			i := 0
-			zq := pt.addN(-r) // query for minimum of possible z-region
-			for ; i < j && pts[i].zless(zq); i++ {
+			for ; i < j && pts[i].zless(min); i++ {
 			}
-			zq = pt.addN(r + 1) // query for maximum of possible z-region
-			for ; i < j && pts[i].zless(zq); i++ {
+			for ; i < j && pts[i].zless(max); i++ {
 				if pts[i].sub(pt).abs().sum() <= r {
 					clusterID := clusterIDs[i]
 
 					// coalesce any other clusters...
-					for i++; i < j && pts[i].zless(zq); i++ {
+					for i++; i < j && pts[i].zless(max); i++ {
 						if pts[i].sub(pt).abs().sum() <= r {
 							if ocid := clusterIDs[i]; ocid != clusterID {
 
