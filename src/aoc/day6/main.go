@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -11,13 +10,13 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-	"syscall"
 	"time"
 	"unicode"
 
 	"aoc/internal/display"
 	"aoc/internal/geom"
 	"aoc/internal/infernio"
+	"aoc/internal/layerui"
 
 	"github.com/jcorbin/anansi"
 	"github.com/jcorbin/anansi/ansi"
@@ -28,8 +27,6 @@ var (
 	dump        = flag.Bool("d", false, "dump populated grid")
 	region      = flag.Int("r", 0, "region threshold to sum (part 2)")
 )
-
-var errDone = errors.New("done")
 
 func main() {
 	flag.Parse()
@@ -148,12 +145,12 @@ type problem struct {
 }
 
 type ui struct {
-	problem
+	layerui.LogLayer
+	layerui.BannerLayer
+	layerui.ViewLayer
+	layerui.WorldLayer
 
-	haveInput anansi.InputSignal
-	timer     *time.Timer
-	expanding bool
-	interval  time.Duration
+	problem
 
 	names  []rune
 	colors []ansi.SGRColor
@@ -215,14 +212,13 @@ func (prob *problem) init() {
 	prob.placePoints()
 }
 
-func (prob *problem) populate() (err error) {
-	for len(prob.frontier) > 0 && err == nil {
-		err = prob.expand()
+func (prob *problem) populate() error {
+	for len(prob.frontier) > 0 {
+		if !prob.expand() {
+			break
+		}
 	}
-	if err == errDone {
-		err = nil
-	}
-	return err
+	return nil
 }
 
 func (prob *problem) countArea() map[int]int {
@@ -265,11 +261,12 @@ func (prob *problem) placePoints() {
 	}
 }
 
-// expand the next cursor popped from the frontier in each cardinal direction.
-func (prob *problem) expand() error {
+// expand the next cursor popped from the frontier in each cardinal direction,
+// returning true only if any expansion happened.
+func (prob *problem) expand() bool {
 	cur, ok := prob.pop()
 	if !ok {
-		return errDone
+		return false
 	}
 	for _, move := range []image.Point{
 		image.Pt(1, 0),
@@ -283,7 +280,7 @@ func (prob *problem) expand() error {
 			prob.frontier = append(prob.frontier, next)
 		}
 	}
-	return nil
+	return true
 }
 
 // pop returns the next, still valid, cursor from the frontier and true if one
@@ -349,97 +346,50 @@ func (prob *problem) advance(cur cursor, move image.Point) (_ cursor, ok bool) {
 }
 
 func (prob *ui) interact() error {
-	in, err := os.OpenFile("/dev/tty", syscall.O_RDONLY, 0)
-	if err != nil {
-		return err
-	}
-	return anansi.NewTerm(in, os.Stdout,
-		&prob.haveInput,
-		anansi.RawMode,
-	).RunWith(prob)
+	// TODO re-use layerui.WorldLayer
+
+	prob.LogLayer.SubGrid = layerui.BottomNLines(5)
+	prob.ViewLayer.Client = prob
+	prob.WorldLayer.View = &prob.ViewLayer
+	prob.WorldLayer.World = prob
+
+	return layerui.Run(
+		&prob.LogLayer,
+		&prob.BannerLayer,
+		&prob.WorldLayer,
+	)
 }
 
-func (prob *ui) Run(term *anansi.Term) error {
-	prob.timer = time.NewTimer(0)
-	err := term.Loop(prob)
-	if err == errDone {
-		err = nil
+func (prob *ui) NeedsDraw() time.Duration                          { return 0 }
+func (prob *ui) Bounds() image.Rectangle                           { return prob.Rectangle }
+func (prob *ui) HandleInput(e ansi.Escape, a []byte) (bool, error) { return false, nil }
+func (prob *ui) Tick() bool {
+	r := prob.expand()
+	if len(prob.frontier) > 0 {
+		prob.Say(fmt.Sprintf(
+			"expanding %v cursors",
+			len(prob.frontier),
+		))
+	} else {
+		prob.Say("")
 	}
-	return err
+	return r
 }
-
-func (prob *ui) Update(term *anansi.Term) (redraw bool, _ error) {
-	select {
-	// user input
-	case <-prob.haveInput.C:
-		if _, err := term.ReadAny(); err != nil {
-			return false, err
-		}
-		any := false
-		for e, _, ok := term.Decode(); ok; e, _, ok = term.Decode() {
-			switch e {
-			// Ctrl-C to quit
-			case 0x03:
-				return false, errors.New("goodbye")
-
-			// step with '.' key
-			case ansi.Escape('.'):
-				return true, prob.expand()
-
-			// play/pause with <Space>
-			case ansi.Escape(' '):
-				if prob.expanding = !prob.expanding; !prob.expanding {
-					if !prob.timer.Stop() {
-						select {
-						case <-prob.timer.C:
-						default:
-						}
-					}
-					fmt.Printf("paused.\r\n")
-					return false, nil
-				}
-				fmt.Printf("playing...\r\n")
-				any = true
-
-			// speed control
-			case ansi.Escape('-'):
-				prob.interval *= 2
-				any = true
-			case ansi.Escape('+'):
-				prob.interval /= 2
-				any = true
+func (prob *ui) Render(g anansi.Grid, viewport image.Rectangle) {
+	viewOffset := g.Rect.Min.ToImage().Sub(viewport.Min)
+	for p := viewport.Min; p.Y < viewport.Max.Y; p.Y++ {
+		for p.X = viewport.Min.X; p.X < viewport.Max.X; p.X++ {
+			if gi, ok := g.CellOffset(ansi.PtFromImage(p.Add(viewOffset))); ok {
+				g.Rune[gi], g.Attr[gi] = prob.renderCell(p)
 			}
 		}
-		if !any {
-			return false, nil
-		}
-
-	// timer tick, mostly when playing back; also used to draw initial frame.
-	case <-prob.timer.C:
-
 	}
-
-	// advance the expansion, and (re)set the timer
-	if prob.expanding {
-		if err := prob.expand(); err != nil {
-			return false, err
-		}
-		if prob.interval == 0 {
-			prob.interval = time.Second / 10
-		}
-		prob.timer.Reset(prob.interval)
-	}
-
-	return true, nil
-}
-
-func (prob *ui) WriteTo(w io.Writer) (n int64, err error) {
-	prob.render()
-	return display.WriteGrid(w, prob.g)
 }
 
 func (prob *ui) init() {
 	prob.problem.init()
+
+	prob.SetFocus(prob.Rectangle.Min.Add(prob.Rectangle.Size().Div(2)))
 
 	// assignNames
 	prob.names = make([]rune, len(prob.points)+1)
@@ -456,32 +406,34 @@ func (prob *ui) init() {
 func (prob *ui) render() {
 	prob.g.Resize(prob.Size())
 	for pt := prob.Min; pt.Y < prob.Max.Y; pt.Y++ {
-		pt.X = prob.Min.X
-		i, _ := prob.Index(pt)
-		j, _ := prob.g.CellOffset(ansi.PtFromImage(pt.Sub(prob.Origin)))
-		for ; pt.X < prob.Max.X; pt.X++ {
-			id := prob.pointID[i]
-			dist := prob.pointDist[i]
-			if id < 0 {
-				id = 0
+		for pt.X = prob.Min.X; pt.X < prob.Max.X; pt.X++ {
+			if j, ok := prob.g.CellOffset(ansi.PtFromImage(pt.Sub(prob.Origin))); ok {
+				prob.g.Rune[j], prob.g.Attr[j] = prob.renderCell(pt)
 			}
-			name := prob.names[id]
-			attr := prob.colors[id].FG()
-			if id != 0 {
-				if dist == 0 {
-					attr |= ansi.SGRAttrBold
-				}
-				if dist > 0 {
-					name = unicode.ToLower(name)
-					// attr |= n2color(32, dist).BG()
-				}
-			}
-			prob.g.Rune[j] = name
-			prob.g.Attr[j] = attr
-			i++
-			j++
 		}
 	}
+}
+
+func (prob *ui) renderCell(pt image.Point) (name rune, attr ansi.SGRAttr) {
+	if i, ok := prob.Index(pt); ok {
+		id := prob.pointID[i]
+		dist := prob.pointDist[i]
+		if id < 0 {
+			id = 0
+		}
+		name = prob.names[id]
+		attr = prob.colors[id].FG()
+		if id != 0 {
+			if dist == 0 {
+				attr |= ansi.SGRAttrBold
+			}
+			if dist > 0 {
+				name = unicode.ToLower(name)
+				// attr |= n2color(32, dist).BG()
+			}
+		}
+	}
+	return name, attr
 }
 
 var pointPattern = regexp.MustCompile(`^(\d+), *(\d+)$`)
