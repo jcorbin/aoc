@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 
 	"github.com/jcorbin/anansi"
@@ -35,92 +34,46 @@ func run(in, out *os.File) error {
 }
 
 func clusterPoints(pts []point4, r int) (clusterIDs []int, numClusters int) {
-	// order points in z-order; builds a linear quadtree for range queries.
-	sort.Sort(zSort(pts))
-
-	// only goes up to track unique clusters; numClusters can go back down
-	// after coalescing.
-	nextClusterID := 0
-
-	// assigning one cluster id to every point given
-	clusterIDs = make([]int, len(pts))
-
-	for j := 0; j < len(pts); j++ {
-		clusterIDs[j] = func(pt point4) int {
-
-			// combine with an prior assignments within radius (only possible in z-region)
-			i := 0
-			zq := pt.addN(-r) // query for minimum of possible z-region
-			for ; i < j && pts[i].zless(zq); i++ {
-			}
-			zq = pt.addN(r + 1) // query for maximum of possible z-region
-			for ; i < j && pts[i].zless(zq); i++ {
-				if pts[i].sub(pt).abs().sum() <= r {
-					clusterID := clusterIDs[i]
-
-					// coalesce any other clusters...
-					for i++; i < j && pts[i].zless(zq); i++ {
-						if pts[i].sub(pt).abs().sum() <= r {
-							if ocid := clusterIDs[i]; ocid != clusterID {
-
-								// ...rewriting all their prior assignments
-								clusterIDs[i] = clusterID
-								for k := 0; k < j; k++ {
-									if clusterIDs[k] == ocid {
-										clusterIDs[k] = clusterID
-									}
-								}
-								numClusters--
-							}
-						}
+	dirs := make([]point4, 0, 16*r*r*r*r)
+	for dx := -r; dx <= r; dx++ {
+		for dy := -r; dy <= r; dy++ {
+			for dz := -r; dz <= r; dz++ {
+				for dw := -r; dw <= r; dw++ {
+					dir := point4{dx, dy, dz, dw}
+					if d := dir.abs().sum(); d > 0 && d <= r {
+						dirs = append(dirs, dir)
 					}
-					return clusterID
 				}
 			}
-
-			// assign a new cluster if we didn't find a prior
-			numClusters++
-			nextClusterID++
-			return nextClusterID
-
-		}(pts[j])
+		}
 	}
-	return clusterIDs, numClusters
+
+	// setup point -> id reverse index
+	pt2id := make(map[point4]int, 2*len(pts))
+	for i, pt := range pts {
+		id := i + 1
+		pt2id[pt] = id
+	}
+
+	// perform union-find of each point to any r-neighbor
+	var uf unionFind
+	uf.init(len(pts))
+	for i, pt := range pts {
+		id := i + 1
+		for _, dir := range dirs {
+			if nid := pt2id[pt.add(dir)]; nid != 0 {
+				uf.union(id-1, nid-1)
+			}
+		}
+	}
+
+	return uf.id, uf.count
 }
 
-type zSort []point4
-
-func (zs zSort) Len() int               { return len(zs) }
-func (zs zSort) Less(i int, j int) bool { return zs[i].zless(zs[j]) }
-func (zs zSort) Swap(i int, j int)      { zs[i], zs[j] = zs[j], zs[i] }
-
-func (p point4) zless(other point4) (r bool) {
-	x := 0
-
-	if y := p.X ^ other.X; lessMSB(x, y) {
-		x = y
-		r = p.X < other.X
-	}
-
-	if y := p.Y ^ other.Y; lessMSB(x, y) {
-		x = y
-		r = p.Y < other.Y
-	}
-
-	if y := p.Z ^ other.Z; lessMSB(x, y) {
-		x = y
-		r = p.Z < other.Z
-	}
-
-	if y := p.W ^ other.W; lessMSB(x, y) {
-		// x = y
-		r = p.W < other.W
-	}
-
-	return r
+type pointID struct {
+	point4
+	id int
 }
-
-func lessMSB(x, y int) bool { return x < y && x < (x^y) }
 
 var point4Pattern = regexp.MustCompile(`^(-?\d+),(-?\d+),(-?\d+),(-?\d+)$`)
 
@@ -153,11 +106,11 @@ func (p point4) addN(n int) point4 {
 	return p
 }
 
-func (p point4) sub(other point4) point4 {
-	p.X -= other.X
-	p.Y -= other.Y
-	p.Z -= other.Z
-	p.W -= other.W
+func (p point4) add(other point4) point4 {
+	p.X += other.X
+	p.Y += other.Y
+	p.Z += other.Z
+	p.W += other.W
 	return p
 }
 
@@ -178,3 +131,41 @@ func (p point4) abs() point4 {
 }
 
 func (p point4) sum() int { return p.X + p.Y + p.Z + p.W }
+
+type unionFind struct {
+	id    []int
+	rank  []int
+	count int
+}
+
+func (uf *unionFind) init(n int) {
+	uf.id = make([]int, n)
+	uf.rank = make([]int, n)
+	uf.count = n
+	for i := 0; i < n; i++ {
+		uf.id[i] = i
+	}
+}
+
+func (uf *unionFind) find(p int) int {
+	for p != uf.id[p] {
+		uf.id[p] = uf.id[uf.id[p]] // Path compression using halving.
+		p = uf.id[p]
+	}
+	return p
+}
+
+func (uf *unionFind) union(p, q int) {
+	i, j := uf.find(p), uf.find(q)
+	if i != j {
+		uf.count--
+		if uf.rank[i] < uf.rank[j] {
+			uf.id[i] = j
+		} else if uf.rank[i] > uf.rank[j] {
+			uf.id[j] = i
+		} else {
+			uf.id[j] = i
+			uf.rank[i]++
+		}
+	}
+}

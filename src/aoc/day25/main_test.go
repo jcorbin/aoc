@@ -1134,7 +1134,7 @@ var testCases = []struct {
 			{4, -6, -3, 1},
 		},
 		r:         3,
-		nclusters: 1011,
+		nclusters: 430,
 	},
 }
 
