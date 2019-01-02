@@ -8,13 +8,13 @@ import (
 	"github.com/jcorbin/anansi/ansi"
 )
 
-// Screen combines a cell grid with cursor and screen state, supporting
-// primitive vt100 emulation and differential terminal updating.
+// Screen supports deferred screen updating by tracking desired virtual
+// screen state vs last known actual (Real) screenstate.
 type Screen struct {
 	ScreenState
-	prior Grid
-	buf   Buffer
-	cur   Cursor
+	Real ScreenState
+
+	buf Buffer
 }
 
 // Reset the internal buffer and restore cursor state to last state affected by
@@ -22,7 +22,6 @@ type Screen struct {
 func (sc *Screen) Reset() {
 	sc.ScreenState.Clear()
 	sc.buf.Reset()
-	sc.cur.Reset()
 }
 
 // Resize the current screen state, and invalidate to cause a full redraw.
@@ -30,7 +29,6 @@ func (sc *Screen) Resize(size image.Point) bool {
 	if sc.ScreenState.Resize(size) {
 		sc.Invalidate()
 		sc.buf.Reset()
-		sc.cur.Reset()
 		return true
 	}
 	return false
@@ -38,7 +36,7 @@ func (sc *Screen) Resize(size image.Point) bool {
 
 // Invalidate forces the next WriteTo() to perform a full redraw.
 func (sc *Screen) Invalidate() {
-	sc.prior.Resize(image.ZP)
+	sc.Real.Resize(image.ZP)
 }
 
 // WriteTo builds and writes output based on the current ScreenState, doing a
@@ -52,11 +50,11 @@ func (sc *Screen) WriteTo(w io.Writer) (n int64, err error) {
 	// then flush to the given io.Writer
 	if !haveAW {
 		defer func() {
-			n, err = sc.cur.WriteTo(w)
+			n, err = sc.buf.WriteTo(w)
 			if err == nil {
-				sc.prior.Resize(sc.ScreenState.Grid.Bounds().Size())
-				copy(sc.prior.Rune, sc.ScreenState.Grid.Rune)
-				copy(sc.prior.Attr, sc.ScreenState.Grid.Attr)
+				sc.Real.Resize(sc.ScreenState.Grid.Bounds().Size())
+				copy(sc.Real.Grid.Rune, sc.Grid.Rune)
+				copy(sc.Real.Grid.Attr, sc.Grid.Attr)
 			} else if unwrapOSError(err) != syscall.EWOULDBLOCK {
 				sc.Reset()
 				sc.Invalidate()
@@ -64,16 +62,16 @@ func (sc *Screen) WriteTo(w io.Writer) (n int64, err error) {
 		}()
 
 		// continue prior write (e.g. after isEWouldBlock(err) above)
-		if sc.cur.buf.Len() > 0 {
+		if sc.buf.Len() > 0 {
 			return
 		}
 
-		aw = &sc.cur.buf
+		aw = &sc.buf
 	}
 
 	// perform (full or differential) update
 	var m int
-	m, sc.cur.CursorState = sc.ScreenState.update(aw, sc.cur.CursorState, sc.prior)
+	m, sc.Real = sc.ScreenState.update(aw, sc.Real)
 	return int64(m), err
 }
 
@@ -131,7 +129,7 @@ func (sc *Screen) WriteSeq(seqs ...ansi.Seq) int {
 // returning the number of bytes written; updates Attr cursor state.
 func (sc *Screen) WriteSGR(attrs ...ansi.SGRAttr) (n int) {
 	for i := range attrs {
-		if attr := sc.ScreenState.MergeSGR(attrs[i]); attr != 0 {
+		if attr := sc.Cursor.MergeSGR(attrs[i]); attr != 0 {
 			n += sc.buf.WriteSGR(attr)
 		}
 	}
@@ -156,8 +154,8 @@ func (sc *Screen) Exit(term *Term) error {
 	// discard all virtual state...
 	sc.Reset()
 	// ...and restore real cursor state
-	n := sc.buf.WriteSGR(sc.cur.Real.MergeSGR(0))
-	n += sc.buf.WriteSeq(sc.cur.Real.Show())
+	n := sc.buf.WriteSGR(sc.Real.Cursor.MergeSGR(0))
+	n += sc.buf.WriteSeq(sc.Real.Cursor.Show())
 	if n > 0 {
 		return term.Flush(&sc.buf)
 	}
