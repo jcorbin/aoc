@@ -29,12 +29,12 @@ type LayerApp struct {
 // See LayerApp.Build for details.
 func Run(args ...interface{}) error {
 	var app LayerApp
-	in, out, err := OpenTermFiles(os.Stdin, os.Stdout)
+	in, out, err := OpenTermFiles(os.Stdin, os.Stdout) // TODO option-ize... or just promote to Run(in, out, args...)
 	if err != nil {
 		return err
 	}
-	app.Halt = anansi.Notify(syscall.SIGTERM, syscall.SIGINT)
-	app.Resize = anansi.Notify(syscall.SIGWINCH)
+	app.Halt = anansi.Notify(syscall.SIGTERM, syscall.SIGINT) // TODO option-ize
+	app.Resize = anansi.Notify(syscall.SIGWINCH)              // TODO option-ize
 	term, err := app.Build(in, out, args...)
 	if err == nil {
 		err = term.RunWith(&app)
