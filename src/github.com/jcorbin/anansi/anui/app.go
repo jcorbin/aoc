@@ -35,7 +35,11 @@ func Run(args ...interface{}) error {
 	}
 	app.Halt = anansi.Notify(syscall.SIGTERM, syscall.SIGINT)
 	app.Resize = anansi.Notify(syscall.SIGWINCH)
-	return app.Build(in, out, args...).RunWith(&app)
+	term, err := app.Build(in, out, args...)
+	if err == nil {
+		err = term.RunWith(&app)
+	}
+	return err
 }
 
 // Build a new anansi.Term attached to the given files, and the app's loop
@@ -45,7 +49,7 @@ func Run(args ...interface{}) error {
 //     - a Layer to add to the app, using Layers
 //     - an ansi.Mode to add to the terminal
 //     - or an anansi.Context to run under the term.
-func (app *LayerApp) Build(in, out *os.File, args ...interface{}) *anansi.Term {
+func (app *LayerApp) Build(in, out *os.File, args ...interface{}) (*anansi.Term, error) {
 	ctx := anansi.Contexts(
 		&app.Halt,
 		&app.Resize,
@@ -75,7 +79,7 @@ func (app *LayerApp) Build(in, out *os.File, args ...interface{}) *anansi.Term {
 	term.SetEcho(false)
 	term.AddMode(modes...)
 
-	return term
+	return term, nil
 }
 
 // Run the app's event harndling loop.
