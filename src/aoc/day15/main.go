@@ -174,10 +174,14 @@ func (world *gameWorld) DrawHPOverlay(screen anansi.Screen, now time.Time) {
 	viewport := world.bounds.Intersect(screen.Bounds().ToImage().Sub(viewOffset))
 
 	// TODO switch to left side if more space
-	sidebarGrid := screen.Grid.SubAt(ansi.PtFromImage(image.Pt(
+	sidebarAt := image.Pt(
 		viewOffset.X+world.bounds.Max.X+1,
 		viewOffset.Y+world.bounds.Min.Y,
-	)))
+	)
+	if sidebarAt.X < 0 || sidebarAt.Y < 0 {
+		return
+	}
+	sidebarGrid := screen.Grid.SubAt(ansi.PtFromImage(sidebarAt))
 	if sidebarGrid.Rect.Empty() {
 		return
 	}
