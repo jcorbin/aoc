@@ -41,9 +41,10 @@ func Run(args ...interface{}) error {
 // Build a new anansi.Term attached to the given files, and the app's loop
 // signaling.
 //
-// Each of the args may be: a Layer to add to the app, using Layers; an
-// ansi.Mode to add to the terminal; or an anansi.Context to run under the
-// term.
+// Each of the args may be:
+//     - a Layer to add to the app, using Layers
+//     - an ansi.Mode to add to the terminal
+//     - or an anansi.Context to run under the term.
 func (app *LayerApp) Build(in, out *os.File, args ...interface{}) *anansi.Term {
 	ctx := anansi.Contexts(
 		&app.Halt,
