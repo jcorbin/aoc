@@ -44,7 +44,7 @@ func (b *Buffer) Reset() {
 // WriteTo writes all bytes from the internal buffer to the given io.Writer.
 func (b *Buffer) WriteTo(w io.Writer) (n int64, err error) {
 	n, err = b.buf.WriteTo(w)
-	b.off -= int(n)
+	b.off = 0
 	return n, err
 }
 
