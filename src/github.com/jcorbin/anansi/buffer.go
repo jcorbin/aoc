@@ -141,24 +141,34 @@ func (b *Buffer) Discard() {
 // Process bytes written to the internal buffer, decoding runes and escape
 // sequences, and passing them to the given processor.
 func (b *Buffer) Process(proc Processor) {
-	for p := b.buf.Bytes(); b.off < len(p); {
-		e, a, n := ansi.DecodeEscape(p[b.off:])
-		b.off += n
+	// TODO defer Discard? why is that a separate method anyhow?
+	b.off += ProcessBytes(proc, b.buf.Bytes())
+}
+
+// ProcessBytes decodes all possibles runes and escape sequences in the given
+// byte slice, calling the processor. Stops either when all bytes have been
+// processed, or when a partial escape sequence is encountered. Returns the
+// number of bytes processed.
+func ProcessBytes(proc Processor, p []byte) int {
+	for i := 0; i < len(p); i++ {
+		e, a, n := ansi.DecodeEscape(p[i:])
+		i += n
 		if e == 0 {
-			switch r, n := utf8.DecodeRune(p[b.off:]); r {
+			switch r, n := utf8.DecodeRune(p[i:]); r {
 			case '\x1b':
-				return
+				return i
 			default:
-				b.off += n
+				i += n
 				e = ansi.Escape(r)
 			}
 		}
 		proc.ProcessANSI(e, a)
 	}
+	return len(p)
 }
 
-// Processor receives decoded ANSI escape sequences and Unicode runes from
-// Buffer.Process.
+// Processor processes decoded ANSI escape sequences and Unicode runes, e.g.
+// cursor or screen-oriented vt100 emulation.
 type Processor interface {
 	ProcessANSI(e ansi.Escape, a []byte)
 }
