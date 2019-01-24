@@ -10,6 +10,8 @@ import (
 
 // Screen supports deferred screen updating by tracking desired virtual
 // screen state vs last known actual (Real) screenstate.
+//
+// TODO rename to ScreenWriter; rename ScreenState => Screen
 type Screen struct {
 	ScreenState
 	Real ScreenState

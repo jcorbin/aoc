@@ -11,6 +11,8 @@ import (
 // Buffered output can be flushed with WriteTo(), or discarded with Reset().
 // Real cursor state is only affected after a WriteTo(), and is restored after
 // a Reset().
+//
+// TODO refactor into CursorWriter; free up "Cursor"
 type Cursor struct {
 	CursorState
 	Real CursorState

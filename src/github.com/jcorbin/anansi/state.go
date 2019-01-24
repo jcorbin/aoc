@@ -18,6 +18,8 @@ var cursorMoves = [4]image.Point{
 
 // CursorState represents cursor state, allowing consumers to reason virtually
 // about it (e.g. to affect relative movement and SGR changes).
+//
+// TODO rename Cursor
 type CursorState struct {
 	ansi.Point
 	Attr    ansi.SGRAttr
@@ -31,6 +33,8 @@ type CursorState struct {
 // ScreenState adds a Grid and UserCusor to CursorState, allowing consumers to
 // reason about the virtual state of the terminal screen. It's primary purpose
 // is differential draw update, see the Update() method.
+//
+// TODO rename Screen
 type ScreenState struct {
 	Cursor CursorState
 	Grid
