@@ -10,5 +10,7 @@
 
 ## WIP: Day 1
 
-- TODO: what will be the layout this year?
-  - sub-directory per-day with `prompt.md` and `main.zig` minimal reqs?
+- each day should have a sub-directory with:
+  - `prompt.md` -- a minimally reformatted copy-paste from the website
+  - `main.zig` -- a program solving the day's problem
+  - TODO: can we get away with named code fences in `prompt.md`, or do ewe need to carve inputs out?
