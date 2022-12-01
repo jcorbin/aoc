@@ -5,4 +5,4 @@ See dev log in [stream.md](stream.md) for now
 ## Days
 | Day                              | Description                                   |
 |----------------------------------|-----------------------------------------------|
-| [day1](day1/prompt.md)           | TODO                                          |
+| [day1](day1/prompt.md)           | Grouped number sum / max / top-n              |
