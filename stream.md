@@ -2,6 +2,13 @@
 
 ## Day 2
 
+- TIL that zig uses `and` / `or` instead of `&&` / `||`
+- hanging methods off enums (for move and outcome modeling) feels good, even
+  better than it did in go
+- curious to investigate more how the unfamiliar integer bit widths work (like
+  the `u2` used to back our enums today)
+- TODO: if/capture staircases don't vibe
+
 # 2022-12-01
 
 - got zig hello world program working:
