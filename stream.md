@@ -1,3 +1,7 @@
+# 2022-12-02
+
+## Day 2
+
 # 2022-12-01
 
 - got zig hello world program working:

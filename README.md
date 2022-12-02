@@ -6,3 +6,4 @@ See dev log in [stream.md](stream.md) for now
 | Day                              | Description                                   |
 |----------------------------------|-----------------------------------------------|
 | [day1](day1/prompt.md)           | Grouped number sum / max / top-n              |
+| [day2](day2/prompt.md)           | WIP                                           |
