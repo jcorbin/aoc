@@ -39,17 +39,11 @@ pub fn main() !void {
     var buf = [_]u8{0} ** 4096;
     while (try input.readUntilDelimiterOrEof(buf[0..buf.len], '\n')) |line| {
         var tokens = std.mem.tokenize(u8, line, " ");
-        if (tokens.next()) |theirs| {
-            if (parseMove(theirs, 'A')) |them| {
-                if (tokens.next()) |ours| {
-                    if (parseMove(ours, 'X')) |us| {
-                        const round = us.score(them);
-                        score += round;
-                        try output.print("??? {any} (worth: {any} win: {any} lose: {any}) <- {any} vs {any} <- {s}\n", .{ round, us.worth(), us.beats(them), them.beats(us), us, them, line });
-                    }
-                }
-            }
-        }
+        const them = parseMove(tokens.next() orelse continue, 'A') orelse continue;
+        const us = parseMove(tokens.next() orelse continue, 'X') orelse continue;
+        const round = us.score(them);
+        score += round;
+        try output.print("??? {any} (worth: {any} win: {any} lose: {any}) <- {any} vs {any} <- {s}\n", .{ round, us.worth(), us.beats(them), them.beats(us), us, them, line });
     }
 
     try output.print("> {any}\n", .{score});

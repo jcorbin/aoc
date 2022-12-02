@@ -81,22 +81,13 @@ pub fn main() !void {
     var buf = [_]u8{0} ** 4096;
     while (try input.readUntilDelimiterOrEof(buf[0..buf.len], '\n')) |line| {
         var tokens = std.mem.tokenize(u8, line, " ");
-
-        // TODO: how can we de-nest this 4-level if/capture staircase?
-        if (tokens.next()) |theirs| {
-            if (parseMove(theirs, 'A')) |them| {
-                if (tokens.next()) |outcomeStr| {
-                    if (parseOutcome(outcomeStr, 'X')) |outcome| {
-                        const us = outcome.ensure(them);
-                        const round = us.score(them);
-                        score += round;
-
-                        try output.print("??? {any} (worth: {any} {any} ) <- {any} vs {any} <- {s}\n", .{ round, us.worth(), outcome, us, them, line });
-                        std.debug.assert(us.vs(them) == outcome);
-                    }
-                }
-            }
-        }
+        const them = parseMove(tokens.next() orelse continue, 'A') orelse continue;
+        const outcome = parseOutcome(tokens.next() orelse continue, 'X') orelse continue;
+        const us = outcome.ensure(them);
+        const round = us.score(them);
+        score += round;
+        try output.print("??? {any} (worth: {any} {any} ) <- {any} vs {any} <- {s}\n", .{ round, us.worth(), outcome, us, them, line });
+        std.debug.assert(us.vs(them) == outcome);
     }
 
     try output.print("> {any}\n", .{score});

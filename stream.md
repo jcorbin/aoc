@@ -7,7 +7,7 @@
   better than it did in go
 - curious to investigate more how the unfamiliar integer bit widths work (like
   the `u2` used to back our enums today)
-- TODO: if/capture staircases don't vibe
+- learned about the `orelse` way to unwrap nulls
 
 # 2022-12-01
 
