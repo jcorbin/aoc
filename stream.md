@@ -1,6 +1,8 @@
-# 2022-12-03
+# 2022-12-04: Day 4
 
-## Day 3
+...
+
+# 2022-12-03: Day 3
 
 - took the oppurtunity to learn zig testing today; 10/10 would recommend
   - tests alongside their actual code as tighly as possible feels good
@@ -24,9 +26,7 @@
   problematic data? any prior conflicting data?); currently the only thing I've
   done is just print such data...
 
-# 2022-12-02
-
-## Day 2
+# 2022-12-02: Day 2
 
 - TIL that zig uses `and` / `or` instead of `&&` / `||`
 - hanging methods off enums (for move and outcome modeling) feels good, even
