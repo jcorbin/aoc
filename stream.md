@@ -2,7 +2,27 @@
 
 ## Day 3
 
-...
+- took the oppurtunity to learn zig testing today; 10/10 would recommend
+  - tests alongside their actual code as tighly as possible feels good
+- but using `anytype` to build a function that can take any reader / writer
+  doesn't; zig seesm to lack any way to abstract an interface
+  - the only real drawback of this currently seems to be developer
+    experience, since tooling can't know anything beyond "🤷 it's anytype"
+  - so no code completion for "wait, what's that long-af method called to scan
+    a line? Right, right, `readUntilDelimiterOrEof`, how silly of me, there we
+    go..."
+- for this problem, a better solution may have been to abstract around an input
+  "line iterator" function, and an output "line consumer" function
+- while I had fun golfing down the bit representations of each rucksack piece
+  by using a code-indexed `u2` (part 1) and `u3` (part 2)...
+  - ... I'm now wondering if zig's vector types would've done better; not sure,
+    haven't tried to use that aspect of the language yet
+- I tried again, and failed again, to write an iterable function (function that
+  returns an iterator, iterator being a struct with a next method) for part 1
+- defined my first error set, which feels good; however I'd like to see if
+  there are any better way to provide context with an error (what was the
+  problematic data? any prior conflicting data?); currently the only thing I've
+  done is just print such data...
 
 # 2022-12-02
 
