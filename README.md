@@ -8,4 +8,4 @@ See dev log in [stream.md](stream.md) for now
 | [day1](day1/prompt.md)           | Grouped number sum / max / top-n              |
 | [day2](day2/prompt.md)           | Rock Paper Scissors Move/Countermove          |
 | [day3](day3/prompt.md)           | Rucksack item inventory                       |
-| [day4](day4/prompt.md)           | WIP                                           |
+| [day4](day4/prompt.md)           | Range pair smash-or-pass                      |

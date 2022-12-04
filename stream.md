@@ -1,6 +1,11 @@
 # 2022-12-04: Day 4
 
-...
+- light day, no surprises, just the subtlety of implementing range overlap
+- still ruminating on how to abstract my approach to advent problem harnessing
+- no big zig learnings today, just minor ones:
+  - getting used to implementing structs with methods using `@This()`
+  - spent a bit of time figuring out how struct literals work, kept trying to
+    write `.{ a, b }` positionally rather than nominal `.{ .A = a, .B = b }`
 
 # 2022-12-03: Day 3
 
