@@ -1,3 +1,7 @@
+# 2022-12-05: Day 5
+
+WIP
+
 # 2022-12-04: Day 4
 
 - light day, no surprises, just the subtlety of implementing range overlap
