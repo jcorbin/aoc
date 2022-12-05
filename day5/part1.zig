@@ -1,8 +1,7 @@
 const std = @import("std");
-
+const Allocator = std.mem.Allocator;
 test "example" {
     const example =
-        \\such data
         \\    [D]    
         \\[N] [C]    
         \\[Z] [M] [P]
@@ -24,34 +23,365 @@ test "example" {
         \\
     ;
 
+    const allocator = std.testing.allocator;
+
     var input = std.io.fixedBufferStream(example);
-    var output = std.ArrayList(u8).init(std.testing.allocator);
+    var output = std.ArrayList(u8).init(allocator);
     defer output.deinit();
 
-    try run(&input, &output);
+    run(allocator, &input, &output) catch |err| {
+        std.debug.print("```pre-error output:\n{s}\n```", .{output.items});
+        return err;
+    };
     try std.testing.expectEqualStrings(expected, output.items);
 }
 
-// TODO: better "any .reader()-able / any .writer()-able" interfacing
-fn run(input: anytype, output: anytype) !void {
+const ParseCursor = struct {
+    buf: []const u8,
+    i: usize,
+
+    pub fn make(buf: []const u8) @This() {
+        return .{ .buf = buf, .i = 0 };
+    }
+
+    pub fn live(self: @This()) bool {
+        return self.i < self.buf.len;
+    }
+
+    pub fn rem(self: @This()) ?[]const u8 {
+        return if (self.i < self.buf.len) self.buf[self.i..] else null;
+    }
+
+    pub fn peek(self: @This()) ?u8 {
+        return if (self.i < self.buf.len) self.buf[self.i] else null;
+    }
+
+    pub fn consume(self: *@This()) ?u8 {
+        if (self.peek()) |c| {
+            self.i += 1;
+            return c;
+        }
+        return null;
+    }
+
+    pub fn have(self: *@This(), wanted: u8) bool {
+        const c = self.peek() orelse return false;
+        if (c == wanted) {
+            self.i += 1;
+            return true;
+        }
+        return false;
+    }
+
+    pub fn expectOrEnd(self: *@This(), wanted: u8, err: anyerror) !void {
+        if (!self.have(wanted) and self.live()) return err;
+    }
+
+    pub fn expectEnd(self: *@This(), err: anyerror) !void {
+        if (self.live()) return err;
+    }
+
+    pub fn expect(self: *@This(), wanted: u8, err: anyerror) !void {
+        if (!self.have(wanted)) return err;
+    }
+
+    pub fn expectn(self: *@This(), wanted: u8, count: usize, err: anyerror) !void {
+        var n: usize = 0;
+        while (n < count) : (n += 1)
+            try self.expect(wanted, err);
+    }
+
+    pub fn expectStr(self: *@This(), wanted: []const u8, err: anyerror) !void {
+        for (wanted) |c|
+            try self.expect(c, err);
+    }
+
+    pub fn readInt(self: *@This(), comptime T: type) ?T {
+        const base = 10; // TODO parameterize?
+        var n: T = 0;
+        var any = false;
+        while (self.peek()) |c| {
+            if (!std.ascii.isDigit(c)) break;
+            any = true;
+            n = n * base + @intCast(T, c - '0');
+            self.i += 1;
+        }
+        return if (any) n else null;
+    }
+
+    pub fn expectInt(self: *@This(), comptime T: type, err: anyerror) !T {
+        return self.readInt(T) orelse err;
+    }
+};
+
+const Stack = std.TailQueue(u8);
+
+const SceneParseError = error{
+    UnexpectedLeader,
+    UnexpectedEnd,
+    UnexpectedBlankLine,
+    UnexpectedInputAfterCheck,
+    MissingDelim,
+    MalformedCrate,
+    BadColumnCount,
+    BadColumnDigit,
+    BadEmptyColumn,
+    ColumnCountOutOfOrder,
+    ColumnCountMismatch,
+};
+
+/// Allocates n-chunks of T elements, which are then kept in an internal singly
+/// linked list to be mass destroyed after all such elements are no longer needed.
+/// - caller is responsible for any element reuse
+/// - only aggregate destruction is supported; no per-element destruction
+/// - usage pattern is similar to an arena, but type specific:
+///
+///     const Nodes = SlabChain(struct {
+///         next: ?*@This() = null,
+///         // node data fields to taste
+///     }, 32).init(yourAllocator);
+///     defer Nodes.deinit();
+///
+///     // build some graph of nodes or whatever
+///     var nodeA = Nodes.create();
+///     var nodeB = Nodes.create();
+///     nodeA.next = nodeB;
+fn SlabChain(comptime T: type, comptime n: usize) type {
+    const Chunk = struct {
+        free: usize = 0,
+        chunk: [n]T = undefined,
+        prior: ?*@This() = null,
+
+        pub fn create(self: *@This()) ?*T {
+            if (self.free >= self.chunk.len) return null;
+            const node = &self.chunk[self.free];
+            self.free += 1;
+            return node;
+        }
+    };
+
+    return struct {
+        allocator: Allocator,
+        last: ?*Chunk = null,
+
+        pub fn init(allocator: Allocator) @This() {
+            return .{ .allocator = allocator };
+        }
+
+        pub fn deinit(self: *@This()) void {
+            var last = self.last;
+            self.last = null;
+            while (last) |slab| {
+                last = slab.prior;
+                self.allocator.destroy(slab);
+            }
+        }
+
+        pub fn create(self: *@This()) !*T {
+            while (true) {
+                if (self.last) |last|
+                    if (last.create()) |item|
+                        return item;
+                var new = try self.allocator.create(Chunk);
+                new.* = .{ .prior = self.last };
+                self.last = new;
+            }
+        }
+    };
+}
+
+const Scene = struct {
+    const NodeSlab = SlabChain(Stack.Node, 32);
+
+    nodes: NodeSlab,
+    stacks: [9]Stack = [_]Stack{.{}} ** 9,
+    used: usize = 0,
+
+    pub fn deinit(self: *@This()) void {
+        self.nodes.deinit();
+    }
+
+    pub fn Parse(allocator: Allocator, str: []const u8) !@This() {
+        var col_count: usize = 0;
+        var col_counted: usize = 0;
+
+        var self = @This(){
+            .nodes = NodeSlab.init(allocator),
+        };
+
+        var lines = std.mem.split(u8, str, "\n");
+        while (lines.next()) |line| {
+            if (line.len == 0) {
+                if (col_counted == 0) return SceneParseError.UnexpectedBlankLine;
+                self.used = col_counted;
+                return self;
+            } else if (col_counted > 0) {
+                return SceneParseError.UnexpectedInputAfterCheck;
+            }
+
+            var cur = ParseCursor.make(line);
+
+            var col: usize = 0;
+            while (true) {
+                const leader = cur.consume() orelse break;
+                switch (leader) {
+                    '[' => {
+                        const crate = cur.consume() orelse return SceneParseError.UnexpectedEnd;
+                        try self.prepend(col, crate);
+                        try cur.expect(']', SceneParseError.MalformedCrate);
+                    },
+
+                    ' ' => {
+                        const colno = cur.consume() orelse return SceneParseError.UnexpectedEnd;
+
+                        switch (colno) {
+                            '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
+                                try cur.expect(' ', SceneParseError.BadColumnCount);
+                                const check = colno - '1';
+                                if (check != col) return SceneParseError.ColumnCountOutOfOrder;
+                                col_counted = col + 1;
+                            },
+                            ' ' => {
+                                try cur.expect(' ', SceneParseError.BadEmptyColumn);
+                            },
+                            else => return SceneParseError.BadColumnDigit,
+                        }
+                    },
+
+                    else => return SceneParseError.UnexpectedLeader,
+                }
+
+                col += 1;
+
+                try cur.expectOrEnd(' ', SceneParseError.MissingDelim);
+            }
+
+            if (col_counted > 0) {
+                if (col_count != col_counted)
+                    return SceneParseError.ColumnCountMismatch;
+            } else if (col > col_count) col_count = col;
+        }
+
+        return self;
+    }
+
+    pub fn top(self: @This(), col: usize) ?u8 {
+        if (col < self.used) {
+            if (self.stacks[col].last) |node|
+                return node.data;
+        }
+        return null;
+    }
+
+    pub fn collectTops(self: @This(), into: []u8) []u8 {
+        var col: usize = 0;
+        while (col < self.used and col < into.len) : (col += 1) {
+            into[col] = if (self.stacks[col].last) |node| node.data else ' ';
+        }
+        return into[0..col];
+    }
+
+    pub fn prepend(self: *@This(), col: usize, crate: u8) !void {
+        std.debug.assert(col < 9);
+        std.debug.assert(self.used == 0 or col < self.used);
+        var node = try self.nodes.create();
+        node.data = crate;
+        self.stacks[col].prepend(node);
+    }
+
+    const MoveError = error{
+        InvalidFrom,
+        InvalidTo,
+        StackEmpty,
+    };
+
+    pub fn move(self: *@This(), n: usize, from: usize, to: usize) !void {
+        if (from >= 9) return MoveError.InvalidFrom;
+        if (to >= 9) return MoveError.InvalidTo;
+        const fromStack = &self.stacks[from];
+        const toStack = &self.stacks[to];
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const node = fromStack.pop() orelse return MoveError.StackEmpty;
+            toStack.append(node);
+        }
+    }
+};
+
+const MoveParseError = error{
+    ExpectedMove,
+    ExpectedCount,
+    ExpectedFrom,
+    ExpectedFromID,
+    ExpectedTo,
+    ExpectedToID,
+    UnexpectedTrailer,
+};
+
+fn run(
+    allocator: Allocator,
+
+    // TODO: better "any .reader()-able / any .writer()-able" interfacing
+    input: anytype,
+    output: anytype,
+) !void {
+    var buf = [_]u8{0} ** 4096;
     var in = input.reader();
     var out = output.writer();
 
-    // TODO: parse scene, build stack
-    // TODO: interpret moves, change stacks
-    _ = in;
+    var tmp = std.ArrayList(u8).init(allocator);
+    defer tmp.deinit();
 
-    try out.print("> 42\n", .{}); // TODO: stack tops
+    // buffer scene lines, then parse
+    while (try in.readUntilDelimiterOrEof(buf[0..], '\n')) |line| {
+        if (line.len > 0) {
+            try tmp.appendSlice(line);
+            try tmp.append('\n');
+        } else {
+            break;
+        }
+    }
+    var scene = try Scene.Parse(allocator, tmp.items);
+    defer scene.deinit();
+
+    var tops: [9]u8 = undefined;
+
+    // interpret moves, change stacks
+    while (try in.readUntilDelimiterOrEof(buf[0..], '\n')) |line| {
+        try out.print("- {s}\n", .{scene.collectTops(tops[0..])});
+
+        var cur = ParseCursor.make(line);
+
+        try cur.expectStr("move ", MoveParseError.ExpectedMove);
+        const n = try cur.expectInt(usize, MoveParseError.ExpectedCount);
+
+        try cur.expectStr(" from ", MoveParseError.ExpectedFrom);
+        const from = try cur.expectInt(usize, MoveParseError.ExpectedFromID);
+
+        try cur.expectStr(" to ", MoveParseError.ExpectedTo);
+        const to = try cur.expectInt(usize, MoveParseError.ExpectedToID);
+
+        try cur.expectEnd(MoveParseError.UnexpectedTrailer);
+
+        try scene.move(n, from - 1, to - 1);
+    }
+
+    try out.print("> {s}\n", .{scene.collectTops(tops[0..])});
 }
 
 pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
 
     var bufin = std.io.bufferedReader(input.reader());
     var bufout = std.io.bufferedWriter(output.writer());
 
-    try run(&bufin, &bufout);
+    try run(allocator, &bufin, &bufout);
     try bufout.flush();
 
     // TODO: argument parsing to steer input selection
