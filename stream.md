@@ -1,6 +1,15 @@
 # 2022-12-05: Day 5
 
-WIP
+- dug in on allocation and parsing games today
+  - for whatever reason, I wasn't able to use an arena without leaking in the
+    test, so I implemented a simpler slab (of list nodes) deal
+  - the unified line parser feels great actually; needs more work before being
+    really ergonomic, but works well enough to already be more coherent than a
+    network of `split`/`tokenize` and `parseInt`
+- started building an inter-day template based on day 4
+  - TODO update template based on day 5 progress
+- TODO factor out the `ParseCursor` deal into a module
+- TODO factor out the `SlabChain` deal into a module
 
 # 2022-12-04: Day 4
 

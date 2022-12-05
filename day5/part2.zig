@@ -18,9 +18,9 @@ test "example" {
     const expected =
         \\- NDP
         \\- DCP
-        \\-  CZ
-        \\- M Z
-        \\> CMZ
+        \\-  CD
+        \\- C D
+        \\> MCD
         \\
     ;
 
@@ -301,9 +301,21 @@ const Scene = struct {
         if (to >= 9) return MoveError.InvalidTo;
         const fromStack = &self.stacks[from];
         const toStack = &self.stacks[to];
+        if (n == 0) return;
+
+        var subStack = fromStack.last;
         var i: usize = 0;
-        while (i < n) : (i += 1) {
-            const node = fromStack.pop() orelse return MoveError.StackEmpty;
+        while (i < n) {
+            if (subStack) |node| {
+                i += 1;
+                if (i < n) subStack = node.prev;
+            } else return MoveError.StackEmpty;
+        }
+
+        // TODO: would be nicer to just graft the subStack span directly
+        while (subStack) |node| {
+            subStack = node.next;
+            fromStack.remove(node);
             toStack.append(node);
         }
     }

@@ -9,4 +9,4 @@ See dev log in [stream.md](stream.md) for now
 | [day2](day2/prompt.md)           | Rock Paper Scissors Move/Countermove          |
 | [day3](day3/prompt.md)           | Rucksack item inventory                       |
 | [day4](day4/prompt.md)           | Range pair smash-or-pass                      |
-| [day5](day5/prompt.md)           | WIP                                           |
+| [day5](day5/prompt.md)           | Lists vs Crane operations                     |
