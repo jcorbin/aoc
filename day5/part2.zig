@@ -117,7 +117,7 @@ const ParseCursor = struct {
 
 const Stack = std.TailQueue(u8);
 
-const SceneParseError = error{
+const ScenParseError = error{
     UnexpectedLeader,
     UnexpectedEnd,
     UnexpectedBlankLine,
@@ -213,11 +213,11 @@ const Scene = struct {
         var lines = std.mem.split(u8, str, "\n");
         while (lines.next()) |line| {
             if (line.len == 0) {
-                if (col_counted == 0) return SceneParseError.UnexpectedBlankLine;
+                if (col_counted == 0) return ScenParseError.UnexpectedBlankLine;
                 self.used = col_counted;
                 return self;
             } else if (col_counted > 0) {
-                return SceneParseError.UnexpectedInputAfterCheck;
+                return ScenParseError.UnexpectedInputAfterCheck;
             }
 
             var cur = ParseCursor.make(line);
@@ -227,39 +227,39 @@ const Scene = struct {
                 const leader = cur.consume() orelse break;
                 switch (leader) {
                     '[' => {
-                        const crate = cur.consume() orelse return SceneParseError.UnexpectedEnd;
+                        const crate = cur.consume() orelse return ScenParseError.UnexpectedEnd;
                         try self.prepend(col, crate);
-                        try cur.expect(']', SceneParseError.MalformedCrate);
+                        try cur.expect(']', ScenParseError.MalformedCrate);
                     },
 
                     ' ' => {
-                        const colno = cur.consume() orelse return SceneParseError.UnexpectedEnd;
+                        const colno = cur.consume() orelse return ScenParseError.UnexpectedEnd;
 
                         switch (colno) {
                             '1', '2', '3', '4', '5', '6', '7', '8', '9' => {
-                                try cur.expect(' ', SceneParseError.BadColumnCount);
+                                try cur.expect(' ', ScenParseError.BadColumnCount);
                                 const check = colno - '1';
-                                if (check != col) return SceneParseError.ColumnCountOutOfOrder;
+                                if (check != col) return ScenParseError.ColumnCountOutOfOrder;
                                 col_counted = col + 1;
                             },
                             ' ' => {
-                                try cur.expect(' ', SceneParseError.BadEmptyColumn);
+                                try cur.expect(' ', ScenParseError.BadEmptyColumn);
                             },
-                            else => return SceneParseError.BadColumnDigit,
+                            else => return ScenParseError.BadColumnDigit,
                         }
                     },
 
-                    else => return SceneParseError.UnexpectedLeader,
+                    else => return ScenParseError.UnexpectedLeader,
                 }
 
                 col += 1;
 
-                try cur.expectOrEnd(' ', SceneParseError.MissingDelim);
+                try cur.expectOrEnd(' ', ScenParseError.MissingDelim);
             }
 
             if (col_counted > 0) {
                 if (col_count != col_counted)
-                    return SceneParseError.ColumnCountMismatch;
+                    return ScenParseError.ColumnCountMismatch;
             } else if (col > col_count) col_count = col;
         }
 
