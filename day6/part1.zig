@@ -2,27 +2,51 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 test "example" {
-    const example =
-        \\such data
-        \\
-    ;
-
-    const expected =
-        \\> 42
-        \\
-    ;
+    const test_cases = [_]struct {
+        data: []const u8,
+        begin: usize,
+    }{
+        .{
+            .data = "mjqjpqmgbljsphdztnvjfqwrcgsmlb",
+            .begin = 7,
+        },
+        .{
+            .data = "bvwbjplbgvbhsrlpgdmjqwftvncz",
+            .begin = 5,
+        },
+        .{
+            .data = "nppdvjthqldpwncqszvftbrmjlhg",
+            .begin = 6,
+        },
+        .{
+            .data = "nznrnfrfntjfmvfwmzdfjlvtqnbhcprsg",
+            .begin = 10,
+        },
+        .{
+            .data = "zcfzfwzzqfrljwzlrfnpqdbhtmscgvjw",
+            .begin = 11,
+        },
+    };
 
     const allocator = std.testing.allocator;
 
-    var input = std.io.fixedBufferStream(example);
-    var output = std.ArrayList(u8).init(allocator);
-    defer output.deinit();
+    for (test_cases) |tc| {
+        var buf = [_]u8{0} ** 1024;
+        const expected = try std.fmt.bufPrint(buf[0..],
+            \\> {d}
+            \\
+        , .{tc.begin});
 
-    run(allocator, &input, &output) catch |err| {
-        std.debug.print("```pre-error output:\n{s}\n```\n", .{output.items});
-        return err;
-    };
-    try std.testing.expectEqualStrings(expected, output.items);
+        var input = std.io.fixedBufferStream(tc.data);
+        var output = std.ArrayList(u8).init(allocator);
+        defer output.deinit();
+
+        run(allocator, &input, &output) catch |err| {
+            std.debug.print("```pre-error output:\n{s}\n```\n", .{output.items});
+            return err;
+        };
+        try std.testing.expectEqualStrings(expected, output.items);
+    }
 }
 
 fn run(
