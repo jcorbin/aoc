@@ -2,7 +2,7 @@
 
 ## Day 6
 
-TODO
+WIP
 
 ## Day 5
 
