@@ -2,7 +2,11 @@
 
 ## Day 6
 
-WIP
+- all that setup, and then today needed neither allocation nor line based
+  reading; this only stands to reason
+- directly coded comparisons in part 1, hoped that I could use a inlined loop
+  for part 2, but wasn't able to
+- also found out that sub tests don't seem to be possible
 
 ## Day 5
 
