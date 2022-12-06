@@ -1,3 +1,19 @@
+# 2022-12-06
+
+## Day 6
+
+TODO
+
+## Day 5
+
+- factored out parse and slab modules within the day for potential copy into
+  future days (want to avoid direct inter-day code sharing to avoid needing to
+  update any prior days as things evolve)
+- updated template
+  - debug print run output on test failure
+  - provide an allocator to run, and setup an arena within
+  - provide a stub line reading loop
+
 # 2022-12-05: Day 5
 
 - dug in on allocation and parsing games today
