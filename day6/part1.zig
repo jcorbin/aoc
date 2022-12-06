@@ -1,5 +1,4 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 
 test "example" {
     const test_cases = [_]struct {
@@ -31,6 +30,7 @@ test "example" {
     const allocator = std.testing.allocator;
 
     for (test_cases) |tc| {
+        // TODO: can has sub-test?
         var buf = [_]u8{0} ** 1024;
         const expected = try std.fmt.bufPrint(buf[0..],
             \\> {d}
@@ -41,7 +41,7 @@ test "example" {
         var output = std.ArrayList(u8).init(allocator);
         defer output.deinit();
 
-        run(allocator, &input, &output) catch |err| {
+        run(&input, &output) catch |err| {
             std.debug.print("```pre-error output:\n{s}\n```\n", .{output.items});
             return err;
         };
@@ -50,34 +50,38 @@ test "example" {
 }
 
 fn run(
-    under_allocator: Allocator,
-
     // TODO: better "any .reader()-able / any .writer()-able" interfacing
     input: anytype,
     output: anytype,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(under_allocator);
-    defer arena.deinit();
-
-    // FIXME: maybe use this
-    // const allocator = arena.allocator();
-
-    var buf = [_]u8{0} ** 4096;
     var in = input.reader();
     var out = output.writer();
 
-    // FIXME: such computer
-    while (try in.readUntilDelimiterOrEof(buf[0..], '\n')) |line| {
-        // FIXME: much line
-        _ = line;
-    }
+    var offset: usize = 0;
+    var buf = [_]u8{0} ** 4;
+    const eobegin = while (true) : (offset += 1) {
+        const next = in.readByte() catch |err| {
+            if (err != error.EndOfStream) return err;
+            break null;
+        };
+        buf[offset % 4] = next;
+        if (offset < 3) continue;
 
-    // FIXME: very answer
-    try out.print("> {}\n", .{42});
+        if (buf[0] == buf[1]) continue;
+        if (buf[0] == buf[2]) continue;
+        if (buf[0] == buf[3]) continue;
+        if (buf[1] == buf[2]) continue;
+        if (buf[1] == buf[3]) continue;
+        if (buf[2] == buf[3]) continue;
+
+        break offset + 1;
+    } else null;
+
+    try out.print("> {}\n", .{eobegin});
 }
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+    // const allocator = std.heap.page_allocator;
 
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
@@ -85,7 +89,7 @@ pub fn main() !void {
     var bufin = std.io.bufferedReader(input.reader());
     var bufout = std.io.bufferedWriter(output.writer());
 
-    try run(allocator, &bufin, &bufout);
+    try run(&bufin, &bufout);
     try bufout.flush();
 
     // TODO: argument parsing to steer input selection
