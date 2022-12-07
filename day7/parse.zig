@@ -37,6 +37,10 @@ pub const Cursor = struct {
 
     const Self = @This();
 
+    pub fn reset(self: *Self) void {
+        self.i = 0;
+    }
+
     pub fn live(self: Self) bool {
         return self.i < self.buf.len;
     }
@@ -102,7 +106,7 @@ pub const Cursor = struct {
             try self.expect(c, err);
     }
 
-    pub fn consumeToken(self: *Self) ?[]const u8 {
+    fn peekToken(self: *Self) ?[]const u8 {
         var i = self.i;
         var j = i;
         next: while (j < self.buf.len) : (j += 1) {
@@ -112,11 +116,20 @@ pub const Cursor = struct {
                 else => continue,
             }
         }
-        if (j > i) {
-            self.i = j;
-            return self.buf[i..j];
-        }
-        return null;
+        return if (j > i) self.buf[i..j] else null;
+    }
+
+    pub fn haveToken(self: *Self, expected: []const u8) bool {
+        const token = self.peekToken() orelse return false;
+        if (!std.mem.eql(u8, token, expected)) return false;
+        self.i += token.len;
+        return true;
+    }
+
+    pub fn consumeToken(self: *Self) ?[]const u8 {
+        const token = self.peekToken() orelse return null;
+        self.i += token.len;
+        return token;
     }
 
     pub fn expectToken(self: *Self, err: anyerror) ![]const u8 {
