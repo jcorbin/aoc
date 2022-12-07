@@ -54,13 +54,13 @@ const Entry = union(enum) {
     dir: Dir,
 
     const File = struct {
-        name: []u8,
+        name: []const u8,
         size: usize,
     };
 
     const Dir = struct {
-        name: []u8,
-        first: ?*List,
+        name: []const u8,
+        first: ?*List = null,
 
         // fn getent(self: Dir, name: []u8) ?Entry {}
         // fn mkdir(self: *Dir, name: []u8, allocator: Allocator) !Dir {}
@@ -72,6 +72,32 @@ const Entry = union(enum) {
         ent: Entry,
         next: ?*List,
     };
+};
+
+const Device = struct {
+    const Self = @This();
+
+    root: Entry.Dir = .{ .name = "" },
+    cwd: ?*Entry.Dir = null,
+
+    fn eval(self: *Self, cur: *Parse.Cursor) !void {
+        _ = self; // TODO
+        if (cur.have('$')) {
+            cur.expectStar(' ');
+
+            var cmd = try cur.expectToken(error.MissingCommandToken);
+            cur.expectStar(' ');
+
+            if (std.mem.eql(u8, cmd, "cd")) {
+                return error.UnimplementedCD;
+                // try out.print("* TODO cd `{s}`\n", .{cur.rem()});
+            } else if (std.mem.eql(u8, cmd, "ls")) {
+                try cur.expectEnd(error.UnexpectedArgument);
+                return error.UnimplementedLs;
+                // try out.print("* TODO ls\n", .{});
+            } else return error.NoSuchCommand;
+        } else return error.UnexpectedOutput;
+    }
 };
 
 const Parse = @import("./parse.zig");
@@ -92,11 +118,12 @@ fn run(
     var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
 
+    var dev: Device = .{};
+
     while (try lines.next()) |*cur| {
-        if (cur.have('$')) {
-            cur.expectStar(' ');
-            try out.print("* TODO parse command `{s}`\n", .{cur.rem()});
-        } else try out.print("! unexpected line `{s}`\n", .{cur.rem()});
+        dev.eval(cur) catch |err| {
+            return out.print("! {}\n- on line #{}: `{s}`\n", .{ err, cur.count, cur.buf });
+        };
     }
 
     // FIXME: very answer

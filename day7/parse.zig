@@ -35,19 +35,21 @@ pub const Cursor = struct {
     i: usize = 0,
     count: usize = 0,
 
-    pub fn live(self: @This()) bool {
+    const Self = @This();
+
+    pub fn live(self: Self) bool {
         return self.i < self.buf.len;
     }
 
-    pub fn rem(self: @This()) ?[]const u8 {
+    pub fn rem(self: Self) ?[]const u8 {
         return if (self.i < self.buf.len) self.buf[self.i..] else null;
     }
 
-    pub fn peek(self: @This()) ?u8 {
+    pub fn peek(self: Self) ?u8 {
         return if (self.i < self.buf.len) self.buf[self.i] else null;
     }
 
-    pub fn consume(self: *@This()) ?u8 {
+    pub fn consume(self: *Self) ?u8 {
         if (self.peek()) |c| {
             self.i += 1;
             return c;
@@ -55,7 +57,7 @@ pub const Cursor = struct {
         return null;
     }
 
-    pub fn have(self: *@This(), wanted: u8) bool {
+    pub fn have(self: *Self, wanted: u8) bool {
         const c = self.peek() orelse return false;
         if (c == wanted) {
             self.i += 1;
@@ -64,43 +66,64 @@ pub const Cursor = struct {
         return false;
     }
 
-    pub fn expectOrEnd(self: *@This(), wanted: u8, err: anyerror) !void {
+    pub fn expectOrEnd(self: *Self, wanted: u8, err: anyerror) !void {
         if (!self.have(wanted) and self.live()) return err;
     }
 
-    pub fn expectEnd(self: *@This(), err: anyerror) !void {
+    pub fn expectEnd(self: *Self, err: anyerror) !void {
         if (self.live()) return err;
     }
 
-    pub fn expect(self: *@This(), wanted: u8, err: anyerror) !void {
+    pub fn expect(self: *Self, wanted: u8, err: anyerror) !void {
         if (!self.have(wanted)) return err;
     }
 
-    pub fn expectNM(self: *@This(), wanted: u8, atleast: usize, upto: usize, err: anyerror) !void {
+    pub fn expectNM(self: *Self, wanted: u8, atleast: usize, upto: usize, err: anyerror) !void {
         var got: usize = 0;
         while (got < upto) : (got += 1)
             if (!self.have(wanted))
                 if (got < atleast) return err else return;
     }
 
-    pub fn expectN(self: *@This(), wanted: u8, n: usize, err: anyerror) !void {
+    pub fn expectN(self: *Self, wanted: u8, n: usize, err: anyerror) !void {
         return self.expectNM(wanted, n, n, err);
     }
 
-    pub fn expectStar(self: *@This(), wanted: u8) void {
+    pub fn expectStar(self: *Self, wanted: u8) void {
         self.expectNM(wanted, 0, 2 + self.buf.len - self.i, error.Nope) catch unreachable;
     }
 
-    pub fn expectPlus(self: *@This(), wanted: u8, err: anyerror) !void {
+    pub fn expectPlus(self: *Self, wanted: u8, err: anyerror) !void {
         return self.expectNM(wanted, 1, 2 + self.buf.len - self.i, err);
     }
 
-    pub fn expectStr(self: *@This(), wanted: []const u8, err: anyerror) !void {
+    pub fn expectStr(self: *Self, wanted: []const u8, err: anyerror) !void {
         for (wanted) |c|
             try self.expect(c, err);
     }
 
-    pub fn readInt(self: *@This(), comptime T: type) ?T {
+    pub fn consumeToken(self: *Self) ?[]const u8 {
+        var i = self.i;
+        var j = i;
+        next: while (j < self.buf.len) : (j += 1) {
+            switch (self.buf[j]) {
+                // TODO user provided include/exclude sets
+                ' ', '\t' => break :next,
+                else => continue,
+            }
+        }
+        if (j > i) {
+            self.i = j;
+            return self.buf[i..j];
+        }
+        return null;
+    }
+
+    pub fn expectToken(self: *Self, err: anyerror) ![]const u8 {
+        return self.consumeToken() orelse err;
+    }
+
+    pub fn consumeInt(self: *Self, comptime T: type) ?T {
         const base = 10; // TODO parameterize?
         var n: T = 0;
         var any = false;
@@ -113,7 +136,7 @@ pub const Cursor = struct {
         return if (any) n else null;
     }
 
-    pub fn expectInt(self: *@This(), comptime T: type, err: anyerror) !T {
-        return self.readInt(T) orelse err;
+    pub fn expectInt(self: *Self, comptime T: type, err: anyerror) !T {
+        return self.consumeInt(T) orelse err;
     }
 };
