@@ -49,6 +49,33 @@ test "example" {
     try std.testing.expectEqualStrings(expected, output.items);
 }
 
+const Entry = union(enum) {
+    file: File,
+    dir: Dir,
+
+    const File = struct {
+        name: []u8,
+        size: usize,
+    };
+
+    const Dir = struct {
+        name: []u8,
+        first: ?*List,
+
+        // fn getent(self: Dir, name: []u8) ?Entry {}
+        // fn mkdir(self: *Dir, name: []u8, allocator: Allocator) !Dir {}
+        // fn touch(self: *Dir, name: []u8, allocator: Allocator) !File {}
+
+    };
+
+    const List = struct {
+        ent: Entry,
+        next: ?*List,
+    };
+};
+
+const Parse = @import("./parse.zig");
+
 fn run(
     under_allocator: Allocator,
 
@@ -62,14 +89,14 @@ fn run(
     // FIXME: maybe use this
     // const allocator = arena.allocator();
 
-    var buf = [_]u8{0} ** 4096;
-    var in = input.reader();
+    var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
 
-    // FIXME: such computer
-    while (try in.readUntilDelimiterOrEof(buf[0..], '\n')) |line| {
-        // FIXME: much line
-        _ = line;
+    while (try lines.next()) |*cur| {
+        if (cur.have('$')) {
+            cur.expectStar(' ');
+            try out.print("* TODO parse command `{s}`\n", .{cur.rem()});
+        } else try out.print("! unexpected line `{s}`\n", .{cur.rem()});
     }
 
     // FIXME: very answer
