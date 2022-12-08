@@ -11,4 +11,4 @@ See dev log in [stream.md](stream.md) for now
 | [day4](day4/prompt.md)           | Range pair smash-or-pass                      |
 | [day5](day5/prompt.md)           | Lists vs Crane operations                     |
 | [day6](day6/prompt.md)           | Message byte scanning                         |
-| [day7](day7/prompt.md)           | WIP                                           |
+| [day7](day7/prompt.md)           | Minor shell emulation, and fs pruning         |

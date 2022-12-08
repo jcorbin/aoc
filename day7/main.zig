@@ -29,27 +29,19 @@ test "example" {
         \\
     ;
 
-    // - The total size of directory `e` is *`584`*
-    //   because it contains a single file `i` f size `584` and no other directories.
-    // - The directory `a` has total size *`94853`* because it contains files
-    //   `f (`size `29116`),
-    //   `g` (size `2557`), and
-    //   `h.lst` (size `62596`), plus file
-    //   `i` indirectly (a contains `e` which contains i).
-    // - Directory `d` has total size *`24933642`*.
-    // - As the outermost directory, `/` contains every file.
-    //   Its total size is *`48381165`*, the sum of the size of every file.
-    //
-    // To begin, find all of the directories with a total size of *at most 100000`,
-    // then calculate the sum of their total sizes.
-    // In the example above, these directories are `a` and `e`;
-    // the sum of their total sizes is *`95437*` (94853 + 584).
-    // (As in this example, this process can count files more than once!)
-
     const expected =
+        \\# Part 1
         \\+ 94853 /a
         \\+ 584 /a/e
         \\> 95437
+        \\
+        \\# Part 2
+        \\- total used: 48381165
+        \\- total free: 21618835
+        \\- need: 8381165
+        \\* could delete 48381165 from /
+        \\* could delete 24933642 from /d
+        \\> 24933642
         \\
     ;
 
@@ -333,8 +325,6 @@ fn run(
 
     try walk.enqueueDir(&dev.root);
     while (try walk.next()) |path| {
-        if (path.len <= 1) continue;
-
         var tail = path[path.len - 1];
         var totalSize: usize = 0;
         tail.totalSize = 0;
@@ -348,11 +338,11 @@ fn run(
             list = item.next;
         }
 
-        for (path[1..]) |dir| dir.totalSize += totalSize;
+        for (path) |dir| dir.totalSize += totalSize;
     }
 
     // Find all of the directories with a total size of at most 100000.
-    // What is the sum of the total sizes of those directories?
+    try out.print("# Part 1\n", .{});
     var totalSize: usize = 0;
     try walk.enqueueDir(&dev.root);
     while (try walk.next()) |path| {
@@ -367,8 +357,44 @@ fn run(
         try out.print("+ {} {s}\n", .{ tail.totalSize, tmp.items });
         totalSize += tail.totalSize;
     }
-
+    // What is the sum of the total sizes of those directories?
     try out.print("> {}\n", .{totalSize});
+
+    // Find the smallest directory that, if deleted, would free up enough space on the
+    // filesystem to run the update.
+    try out.print("\n# Part 2\n", .{});
+    const totalUsed = dev.root.totalSize;
+    const totalAvail: usize = 70000000;
+    const totalNeed: usize = 30000000;
+    std.debug.assert(totalUsed <= totalAvail);
+
+    try out.print("- total used: {}\n", .{totalUsed});
+
+    const totalFree = totalAvail - totalUsed;
+    try out.print("- total free: {}\n", .{totalFree});
+
+    const need = if (totalFree < totalNeed) totalNeed - totalFree else 0;
+    try out.print("- need: {}\n", .{need});
+
+    try walk.enqueueDir(&dev.root);
+    var least: usize = 0;
+    while (try walk.next()) |path| {
+        const size = path[path.len - 1].totalSize;
+        if (size < need) continue;
+
+        tmp.clearRetainingCapacity();
+        var buf = tmp.writer();
+        if (path.len == 1)
+            try buf.print("/", .{})
+        else for (path[1..]) |dir|
+            try buf.print("/{s}", .{dir.name});
+        try out.print("* could delete {} from {s}\n", .{ size, tmp.items });
+
+        if (least == 0 or least > size) least = size;
+    }
+
+    // What is the total size of that directory?
+    try out.print("> {}\n", .{least});
 }
 
 pub fn main() !void {

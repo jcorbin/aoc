@@ -1,6 +1,26 @@
 # 2022-12-07: Day 7
 
-WIP
+- today took longer than expected
+  - invested in evolving the parser module from day 5
+    - spent too long chasing my own tail trying to be too general, but not
+      having enough zig experience to really pull that off yet
+  - this was the first time I've really had to copy/retain input data in
+    meaningful ways
+    - so I spent too long futzing around with my own Pool notions
+    - before just using an arena allocator
+    - but I hit some early segfaults when doing so:
+      - turns out that `Allocator.init()`
+      - which is called via `ArenaAllocator.allocator()` must be called on a
+        stable copy of the arena
+      - not too far down the stack, since arenas are stored / passed by value usually
+      - say in `MyType.init(allocator)` trying to create a retained arena
+- however I did succeed in doing some tree-walk iteration, so my comfort level
+  with zig seems to be coming along nicely
+- TODO would like to evaluate optimizations likes:
+  - slab/pool allocating things, even under the arenas we have now
+  - this might be even more of a win for `DirWalker`, since we do 3 traversals
+    in the end, with no node reuse between them
+  - generally learn how to profile zig code, and see where's the beef
 
 # 2022-12-06
 
