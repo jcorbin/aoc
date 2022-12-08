@@ -297,6 +297,7 @@ const Device = struct {
 };
 
 const Parse = @import("./parse.zig");
+const Timing = @import("./perf.zig").Timing;
 
 fn run(
     allocator: Allocator,
@@ -305,17 +306,33 @@ fn run(
     input: anytype,
     output: anytype,
 ) !void {
+    var timing = Timing(enum {
+        parseLine,
+        parseAll,
+        computeTotals,
+        findPart1,
+        findPart2,
+        overall,
+    }).init(allocator);
+    defer timing.deinit();
+
+    var runTime = try std.time.Timer.start();
+    var phaseTime = runTime;
+
     var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
 
     var dev = Device.init(allocator);
     defer dev.deinit();
 
+    var lineTime = try std.time.Timer.start();
     while (try lines.next()) |*cur| {
         dev.eval(cur) catch |err| {
             return out.print("! {}\n- on line #{}: `{s}`\n", .{ err, cur.count, cur.buf });
         };
+        try timing.collect(.parseLine, lineTime.lap());
     }
+    try timing.collect(.parseAll, phaseTime.lap());
 
     // Compute Dir.totalSize
     var walk = DirWalker.init(allocator);
@@ -340,6 +357,7 @@ fn run(
 
         for (path) |dir| dir.totalSize += totalSize;
     }
+    try timing.collect(.computeTotals, phaseTime.lap());
 
     // Find all of the directories with a total size of at most 100000.
     try out.print("# Part 1\n", .{});
@@ -359,6 +377,7 @@ fn run(
     }
     // What is the sum of the total sizes of those directories?
     try out.print("> {}\n", .{totalSize});
+    try timing.collect(.findPart1, phaseTime.lap());
 
     // Find the smallest directory that, if deleted, would free up enough space on the
     // filesystem to run the update.
@@ -395,6 +414,18 @@ fn run(
 
     // What is the total size of that directory?
     try out.print("> {}\n", .{least});
+    try timing.collect(.findPart2, phaseTime.lap());
+
+    try timing.collect(.overall, runTime.lap());
+
+    std.debug.print("# Timing\n\n", .{});
+    for (timing.data.items) |item| {
+        if (item.tag != .parseLine) {
+            std.debug.print("- {} {}\n", .{ item.time, item.tag });
+        }
+    }
+
+    std.debug.print("\n", .{});
 }
 
 pub fn main() !void {
@@ -409,9 +440,7 @@ pub fn main() !void {
     try run(allocator, &bufin, &bufout);
     try bufout.flush();
 
-    // TODO: argument parsing to steer input selection
-
-    // TODO: sentinel-buffered output writer to flush lines progressively
+    // TODO: argument parsing to steer input selection TODO: sentinel-buffered output writer to flush lines progressively
 
     // TODO: input, output, and run-time metrics
 }
