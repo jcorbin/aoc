@@ -34,16 +34,19 @@ test "example" {
     // interior, a total of 21 trees are visible in this arrangement.
 
     const expected =
-        \\```visibility
-        \\+ + + + +
-        \\+ + + - +
-        \\+ + - + +
-        \\+ - + - +
-        \\+ + + + +
-        \\```
-        \\
+        // \\```visibility
+        // \\+ + + + +
+        // \\+ + + - +
+        // \\+ + - + +
+        // \\+ - + - +
+        // \\+ + + + +
+        // \\```
+        // \\
         \\# Part 1
         \\> 21
+        \\
+        \\# Part 2
+        \\> 8
         \\
     ;
 
@@ -63,6 +66,36 @@ test "example" {
 const Parse = @import("./parse.zig");
 const Timing = @import("./perf.zig").Timing;
 
+const Point = struct {
+    const Self = @This();
+
+    x: i32 = 0,
+    y: i32 = 0,
+
+    pub fn make(x: i32, y: i32) Self {
+        return .{ .x = x, .y = y };
+    }
+
+    pub fn fromIndex(i: usize, stride: usize) Self {
+        return .{
+            .x = @intCast(i32, i % stride),
+            .y = @intCast(i32, @divTrunc(i, stride)),
+        };
+    }
+
+    pub fn index(self: Self, stride: usize) usize {
+        return @intCast(usize, self.y) * stride + @intCast(usize, self.x);
+    }
+
+    pub fn move(self: Self, dx: i32, dy: i32) Self {
+        return .{ .x = self.x + dx, .y = self.y + dy };
+    }
+
+    pub fn within(self: Self, lox: i32, loy: i32, hix: i32, hiy: i32) bool {
+        return self.x >= lox and self.y >= loy and self.x < hix and self.y < hiy;
+    }
+};
+
 fn run(
     allocator: Allocator,
 
@@ -73,8 +106,6 @@ fn run(
     var timing = try Timing(enum {
         parse,
         parseLine,
-        computeVisibility,
-        displayVisibility,
         part1,
         part2,
         overall,
@@ -117,69 +148,30 @@ fn run(
     std.mem.set(bool, visible, false);
 
     {
-        var n: usize = 1;
-        while (n < size - 1) : (n += 1) {
+        const bound: i32 = @intCast(i32, size);
+        const boundLess: i32 = bound - 1;
 
-            // march right
-            {
-                var x: usize = 0;
-                var y: usize = n;
-                visible[y * size + x] = true;
-                var max = height[y * size + x];
-                x += 1;
-                while (x < size - 1) : (x += 1) {
-                    const i = y * size + x;
-                    const h = height[i];
-                    if (h > max) {
-                        max = h;
-                        visible[i] = true;
-                    }
-                }
-            }
+        var n: i32 = 1;
+        while (n < boundLess) : (n += 1) {
+            for ([_]struct {
+                from: Point,
+                dx: i32 = 0,
+                dy: i32 = 0,
+            }{
+                .{ .from = Point.make(0, n), .dx = 1 }, // right
+                .{ .from = Point.make(boundLess, n), .dx = -1 }, // left
+                .{ .from = Point.make(n, 0), .dy = 1 }, // down
+                .{ .from = Point.make(n, boundLess), .dy = -1 }, // up
+            }) |march| {
+                var p = march.from;
+                const dx = march.dx;
+                const dy = march.dy;
 
-            // march right
-            {
-                var x: usize = size - 1;
-                var y: usize = n;
-                visible[y * size + x] = true;
-                var max = height[y * size + x];
-                x -= 1;
-                while (x > 0) : (x -= 1) {
-                    const i = y * size + x;
-                    const h = height[i];
-                    if (h > max) {
-                        max = h;
-                        visible[i] = true;
-                    }
-                }
-            }
-
-            // march down
-            {
-                var x: usize = n;
-                var y: usize = 0;
-                visible[y * size + x] = true;
-                var max = height[y * size + x];
-                y += 1;
-                while (y < size - 1) : (y += 1) {
-                    const i = y * size + x;
-                    const h = height[i];
-                    if (h > max) {
-                        max = h;
-                        visible[i] = true;
-                    }
-                }
-            }
-
-            // march up
-            {
-                var x: usize = n;
-                var y: usize = size - 1;
-                visible[y * size + x] = true;
-                var max = height[y * size + x];
-                y -= 1;
-                while (y > 0) : (y -= 1) {
-                    const i = y * size + x;
+                visible[p.index(size)] = true;
+                var max = height[p.index(size)];
+                p = p.move(dx, dy);
+                while (p.within(0, 0, bound, bound)) : (p = p.move(dx, dy)) {
+                    const i = p.index(size);
                     const h = height[i];
                     if (h > max) {
                         max = h;
@@ -190,28 +182,26 @@ fn run(
 
             // corners are vacuous
             {
-                const last = size - 1;
-                const lastOff = last * size;
+                const i = size - 1;
+                const j = i * size;
                 visible[0] = true;
-                visible[last] = true;
-                visible[lastOff] = true;
-                visible[lastOff + last] = true;
+                visible[i] = true;
+                visible[j] = true;
+                visible[j + i] = true;
             }
         }
     }
-    try timing.markPhase(.computeVisibility);
 
-    {
-        try out.print("```visibility", .{});
-        for (visible) |v, i| {
-            const x = i % size;
-            const sep = if (x == 0) "\n" else " ";
-            const glyph = if (v) "+" else "-";
-            try out.print("{s}{s}", .{ sep, glyph });
-        }
-        try out.print("\n```\n", .{});
-    }
-    try timing.markPhase(.displayVisibility);
+    // {
+    //     try out.print("```visibility", .{});
+    //     for (visible) |v, i| {
+    //         const x = i % size;
+    //         const sep = if (x == 0) "\n" else " ";
+    //         const glyph = if (v) "+" else "-";
+    //         try out.print("{s}{s}", .{ sep, glyph });
+    //     }
+    //     try out.print("\n```\n", .{});
+    // }
 
     // how many trees are visible from outside the grid?
     {
@@ -219,16 +209,41 @@ fn run(
         for (visible) |v| {
             if (v) sum += 1;
         }
-        try out.print("\n# Part 1\n> {}\n", .{sum});
+        try out.print("# Part 1\n> {}\n", .{sum});
     }
     try timing.markPhase(.part1);
 
-    // // FIXME part 2
-    // {
-    //     try out.print("\n# Part 2\n", .{});
-    //     try out.print("> {}\n", .{42});
-    //     try timing.markPhase(.part2);
-    // }
+    // What is the highest scenic score possible for any tree?
+    {
+        const bound: i32 = @intCast(i32, size);
+
+        var bestScore: usize = 0;
+        for (height) |fromHeight, i| {
+            const from = Point.fromIndex(i, size);
+            var score: usize = 1;
+            for ([_]struct { dx: i32 = 0, dy: i32 = 0 }{
+                .{ .dx = 1 }, // right
+                .{ .dx = -1 }, // left
+                .{ .dy = 1 }, // down
+                .{ .dy = -1 }, // up
+            }) |march| {
+                const dx = march.dx;
+                const dy = march.dy;
+                var p = from.move(dx, dy);
+                var canSee: usize = 0;
+                while (p.within(0, 0, bound, bound)) : (p = p.move(dx, dy)) {
+                    canSee += 1;
+                    const h = height[p.index(size)];
+                    if (h >= fromHeight) break;
+                }
+                score *= canSee;
+            }
+            if (bestScore < score) bestScore = score;
+        }
+        try out.print("\n# Part 2\n", .{});
+        try out.print("> {}\n", .{bestScore});
+    }
+    try timing.markPhase(.part2);
 
     try timing.finish(.overall);
 }

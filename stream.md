@@ -1,6 +1,20 @@
-# 2022-12-08: Day 8
+# 2022-12-08
 
-WIP
+## Day 8
+
+- evolved day 7 perf module
+- wrote part 1 straight ahead, then factored out a Point utility for part 2
+- TODO: would like to learn how to parse argv/flags, since printing the
+  visibility field is almost the most expensive phase
+- TODO: would like to evaluate alternate array layout like z-order
+- TODO: maybe try an alternate algorithm for part 2
+  - consider marching a `[9]usize` tier-count array thru the same pattern as
+    part 1 (from each edge)
+  - multiply into a `score` dimension
+
+## Day 7
+
+- exported progress to template, including perf module
 
 # 2022-12-07: Day 7
 
