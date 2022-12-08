@@ -29,6 +29,23 @@ test "example" {
         \\
     ;
 
+    // - The total size of directory `e` is *`584`*
+    //   because it contains a single file `i` f size `584` and no other directories.
+    // - The directory `a` has total size *`94853`* because it contains files
+    //   `f (`size `29116`),
+    //   `g` (size `2557`), and
+    //   `h.lst` (size `62596`), plus file
+    //   `i` indirectly (a contains `e` which contains i).
+    // - Directory `d` has total size *`24933642`*.
+    // - As the outermost directory, `/` contains every file.
+    //   Its total size is *`48381165`*, the sum of the size of every file.
+    //
+    // To begin, find all of the directories with a total size of *at most 100000`,
+    // then calculate the sum of their total sizes.
+    // In the example above, these directories are `a` and `e`;
+    // the sum of their total sizes is *`95437*` (94853 + 584).
+    // (As in this example, this process can count files more than once!)
+
     const expected =
         \\+ 94853 /a
         \\+ 584 /a/e
@@ -75,6 +92,8 @@ const Dir = struct {
     parent: ?*Dir = null,
     first: ?*ListNode = null,
 
+    totalSize: usize = 0,
+
     const ListNode = struct {
         ent: Entry,
         next: ?*ListNode = null,
@@ -106,6 +125,62 @@ const Dir = struct {
 
         item.next = next;
         if (prior) |prev| prev.next = item else self.first = item;
+    }
+};
+
+const DirWalker = struct {
+    const Self = @This();
+
+    const Path = []*Dir;
+    const Queue = std.TailQueue(Path);
+
+    arena: std.heap.ArenaAllocator,
+    q: Queue = .{},
+
+    pub fn init(allocator: Allocator) Self {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        return .{ .arena = arena };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.arena.deinit();
+    }
+
+    pub fn enqueuePath(self: *Self, path: Path) !void {
+        std.debug.assert(path.len > 0);
+        var node = try self.arena.allocator().create(Queue.Node);
+        node.data = path;
+        self.q.append(node);
+    }
+
+    pub fn enqueueDir(self: *Self, dir: *Dir) !void {
+        var path = try self.arena.allocator().alloc(*Dir, 1);
+        path[0] = dir;
+        return self.enqueuePath(path);
+    }
+
+    pub fn enqueueSubDir(self: *Self, under: Path, dir: *Dir) !void {
+        var path = try self.arena.allocator().alloc(*Dir, under.len + 1);
+        std.mem.copy(*Dir, path, under);
+        path[under.len] = dir;
+        return self.enqueuePath(path);
+    }
+
+    pub fn next(self: *Self) !?Path {
+        if (self.q.popFirst()) |node| {
+            var path = node.data;
+            var tail = path[path.len - 1];
+            var list = tail.first;
+            while (list) |item| {
+                switch (item.ent) {
+                    .dir => |*dir| try self.enqueueSubDir(path, dir),
+                    else => {},
+                }
+                list = item.next;
+            }
+            return path;
+        }
+        return null;
     }
 };
 
@@ -250,8 +325,50 @@ fn run(
         };
     }
 
-    // FIXME: very answer
-    try out.print("> {}\n", .{42});
+    // Compute Dir.totalSize
+    var walk = DirWalker.init(allocator);
+    defer walk.deinit();
+
+    var tmp = std.ArrayList(u8).init(walk.arena.allocator());
+
+    try walk.enqueueDir(&dev.root);
+    while (try walk.next()) |path| {
+        if (path.len <= 1) continue;
+
+        var tail = path[path.len - 1];
+        var totalSize: usize = 0;
+        tail.totalSize = 0;
+
+        var list = tail.first;
+        while (list) |item| {
+            switch (item.ent) {
+                .file => |file| totalSize += file.size,
+                else => {},
+            }
+            list = item.next;
+        }
+
+        for (path[1..]) |dir| dir.totalSize += totalSize;
+    }
+
+    // Find all of the directories with a total size of at most 100000.
+    // What is the sum of the total sizes of those directories?
+    var totalSize: usize = 0;
+    try walk.enqueueDir(&dev.root);
+    while (try walk.next()) |path| {
+        if (path.len <= 1) continue;
+
+        var tail = path[path.len - 1];
+        if (tail.totalSize > 100000) continue;
+
+        tmp.clearRetainingCapacity();
+        var buf = tmp.writer();
+        for (path[1..]) |dir| try buf.print("/{s}", .{dir.name});
+        try out.print("+ {} {s}\n", .{ tail.totalSize, tmp.items });
+        totalSize += tail.totalSize;
+    }
+
+    try out.print("> {}\n", .{totalSize});
 }
 
 pub fn main() !void {
