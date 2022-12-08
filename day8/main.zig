@@ -3,7 +3,6 @@ const Allocator = std.mem.Allocator;
 
 test "example" {
     const example =
-        \\such data
         \\30373
         \\25512
         \\65332
@@ -17,12 +16,6 @@ test "example" {
     // 6 5 3 3 2
     // 3 3 5 4 9
     // 3 5 3 9 0
-
-    // * * * * *
-    // * + + - *
-    // * + - + *
-    // * - + - *
-    // * * * * *
 
     // In this example, that only leaves the interior nine trees to consider:
     //
@@ -42,12 +35,14 @@ test "example" {
 
     const expected =
         \\```visibility
-        \\* * * * *
-        \\* + + - *
-        \\* + - + *
-        \\* - + - *
-        \\* * * * *
+        \\+ + + + +
+        \\+ + + - +
+        \\+ + - + +
+        \\+ - + - +
+        \\+ + + + +
         \\```
+        \\
+        \\# Part 1
         \\> 21
         \\
     ;
@@ -78,6 +73,8 @@ fn run(
     var timing = try Timing(enum {
         parse,
         parseLine,
+        computeVisibility,
+        displayVisibility,
         part1,
         part2,
         overall,
@@ -85,28 +82,153 @@ fn run(
     defer timing.deinit();
     defer timing.printDebugReport();
 
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
     var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
 
-    // FIXME: such computer
+    // parse height field input
     var lineTime = try std.time.Timer.start();
+    var size: usize = 0;
+    var height: []u4 = undefined;
     while (try lines.next()) |*cur| {
-        std.debug.print("??? `{s}`\n", .{cur.buf});
+        if (size == 0) {
+            size = cur.buf.len;
+            height = try arena.allocator().alloc(u4, size * size);
+        } else if (cur.buf.len != size) {
+            return error.InvalidRowLength;
+        }
+
+        const y = cur.count - 1;
+        for (cur.buf) |c, x| {
+            if (c < '0' or c > '9') return error.InvalidDigit;
+            const d = @intCast(u4, c - '0');
+            height[size * y + x] = d;
+        }
+
         try timing.collect(.parseLine, lineTime.lap());
     }
+    if (size == 0) return error.NoInput;
     try timing.markPhase(.parse);
 
-    // FIXME: measure any other distinct computation phases before part1/part2 particulars
+    // compute visibility
+    var visible = try arena.allocator().alloc(bool, height.len);
+    std.mem.set(bool, visible, false);
 
-    try out.print("# Part 1\n", .{});
-    // FIXME solve
+    {
+        var n: usize = 1;
+        while (n < size - 1) : (n += 1) {
+
+            // march right
+            {
+                var x: usize = 0;
+                var y: usize = n;
+                visible[y * size + x] = true;
+                var max = height[y * size + x];
+                x += 1;
+                while (x < size - 1) : (x += 1) {
+                    const i = y * size + x;
+                    const h = height[i];
+                    if (h > max) {
+                        max = h;
+                        visible[i] = true;
+                    }
+                }
+            }
+
+            // march right
+            {
+                var x: usize = size - 1;
+                var y: usize = n;
+                visible[y * size + x] = true;
+                var max = height[y * size + x];
+                x -= 1;
+                while (x > 0) : (x -= 1) {
+                    const i = y * size + x;
+                    const h = height[i];
+                    if (h > max) {
+                        max = h;
+                        visible[i] = true;
+                    }
+                }
+            }
+
+            // march down
+            {
+                var x: usize = n;
+                var y: usize = 0;
+                visible[y * size + x] = true;
+                var max = height[y * size + x];
+                y += 1;
+                while (y < size - 1) : (y += 1) {
+                    const i = y * size + x;
+                    const h = height[i];
+                    if (h > max) {
+                        max = h;
+                        visible[i] = true;
+                    }
+                }
+            }
+
+            // march up
+            {
+                var x: usize = n;
+                var y: usize = size - 1;
+                visible[y * size + x] = true;
+                var max = height[y * size + x];
+                y -= 1;
+                while (y > 0) : (y -= 1) {
+                    const i = y * size + x;
+                    const h = height[i];
+                    if (h > max) {
+                        max = h;
+                        visible[i] = true;
+                    }
+                }
+            }
+
+            // corners are vacuous
+            {
+                const last = size - 1;
+                const lastOff = last * size;
+                visible[0] = true;
+                visible[last] = true;
+                visible[lastOff] = true;
+                visible[lastOff + last] = true;
+            }
+        }
+    }
+    try timing.markPhase(.computeVisibility);
+
+    {
+        try out.print("```visibility", .{});
+        for (visible) |v, i| {
+            const x = i % size;
+            const sep = if (x == 0) "\n" else " ";
+            const glyph = if (v) "+" else "-";
+            try out.print("{s}{s}", .{ sep, glyph });
+        }
+        try out.print("\n```\n", .{});
+    }
+    try timing.markPhase(.displayVisibility);
+
+    // how many trees are visible from outside the grid?
+    {
+        var sum: usize = 0;
+        for (visible) |v| {
+            if (v) sum += 1;
+        }
+        try out.print("\n# Part 1\n> {}\n", .{sum});
+    }
     try timing.markPhase(.part1);
-    try out.print("> {}\n", .{42});
 
-    try out.print("\n# Part 2\n", .{});
-    // FIXME solve, then:
-    try timing.markPhase(.part2);
-    try out.print("> {}\n", .{42});
+    // // FIXME part 2
+    // {
+    //     try out.print("\n# Part 2\n", .{});
+    //     try out.print("> {}\n", .{42});
+    //     try timing.markPhase(.part2);
+    // }
 
     try timing.finish(.overall);
 }
