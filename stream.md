@@ -1,3 +1,7 @@
+# 2022-12-08: Day 8
+
+WIP
+
 # 2022-12-07: Day 7
 
 - today took longer than expected
@@ -21,6 +25,8 @@
   - this might be even more of a win for `DirWalker`, since we do 3 traversals
     in the end, with no node reuse between them
   - generally learn how to profile zig code, and see where's the beef
+- wrote some perf timing code afterwards, looks works in <1uSec with most time
+  spent parsing/buliding the device filesystem
 
 # 2022-12-06
 

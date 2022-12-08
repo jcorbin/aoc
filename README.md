@@ -12,3 +12,4 @@ See dev log in [stream.md](stream.md) for now
 | [day5](day5/prompt.md)           | Lists vs Crane operations                     |
 | [day6](day6/prompt.md)           | Message byte scanning                         |
 | [day7](day7/prompt.md)           | Minor shell emulation, and fs pruning         |
+| [day8](day8/prompt.md)           | WIP                                           |
