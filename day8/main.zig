@@ -46,31 +46,59 @@ test "example" {
     try std.testing.expectEqualStrings(expected, output.items);
 }
 
+const Parse = @import("./parse.zig");
+const Timing = @import("./perf.zig").Timing;
+
 fn run(
-    under_allocator: Allocator,
+    allocator: Allocator,
 
     // TODO: better "any .reader()-able / any .writer()-able" interfacing
     input: anytype,
     output: anytype,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(under_allocator);
-    defer arena.deinit();
+    var timing = Timing(enum {
+        parse,
+        parseLine,
+        part1,
+        part2,
+        overall,
+    }).init(allocator);
+    defer timing.deinit();
+    var runTime = try std.time.Timer.start();
+    var phaseTime = runTime;
 
-    // FIXME: maybe use this
-    // const allocator = arena.allocator();
-
-    var buf = [_]u8{0} ** 4096;
-    var in = input.reader();
+    var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
 
     // FIXME: such computer
-    while (try in.readUntilDelimiterOrEof(buf[0..], '\n')) |line| {
-        // FIXME: much line
-        _ = line;
+    var lineTime = try std.time.Timer.start();
+    while (try lines.next()) |*cur| {
+        _ = cur; // FIXME: much line
+        try timing.collect(.parseLine, lineTime.lap());
     }
+    try timing.collect(.parseAll, phaseTime.lap());
 
-    // FIXME: very answer
+    // FIXME: measure any other distinct computation phases before part1/part2 particulars
+
+    try out.print("# Part 1\n", .{});
+    // FIXME solve
+    try timing.collect(.part1, phaseTime.lap());
     try out.print("> {}\n", .{42});
+
+    try out.print("\n# Part 2\n", .{});
+    // FIXME solve, then:
+    try timing.collect(.part2, phaseTime.lap());
+    try out.print("> {}\n", .{42});
+
+    try timing.collect(.overall, runTime.lap());
+
+    std.debug.print("# Timing\n\n", .{});
+    for (timing.data.items) |item| {
+        if (item.tag != .parseLine) {
+            std.debug.print("- {} {}\n", .{ item.time, item.tag });
+        }
+    }
+    std.debug.print("\n", .{});
 }
 
 pub fn main() !void {
