@@ -12,6 +12,18 @@ test "example" {
         \\
     ;
 
+    // 3 0 3 7 3
+    // 2 5 5 1 2
+    // 6 5 3 3 2
+    // 3 3 5 4 9
+    // 3 5 3 9 0
+
+    // * * * * *
+    // * + + - *
+    // * + - + *
+    // * - + - *
+    // * * * * *
+
     // In this example, that only leaves the interior nine trees to consider:
     //
     // - The top-left 5 is visible from the left and top.
@@ -29,6 +41,13 @@ test "example" {
     // interior, a total of 21 trees are visible in this arrangement.
 
     const expected =
+        \\```visibility
+        \\* * * * *
+        \\* + + - *
+        \\* + - + *
+        \\* - + - *
+        \\* * * * *
+        \\```
         \\> 21
         \\
     ;
@@ -56,16 +75,15 @@ fn run(
     input: anytype,
     output: anytype,
 ) !void {
-    var timing = Timing(enum {
+    var timing = try Timing(enum {
         parse,
         parseLine,
         part1,
         part2,
         overall,
-    }).init(allocator);
+    }).start(allocator);
     defer timing.deinit();
-    var runTime = try std.time.Timer.start();
-    var phaseTime = runTime;
+    defer timing.printDebugReport();
 
     var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
@@ -73,32 +91,24 @@ fn run(
     // FIXME: such computer
     var lineTime = try std.time.Timer.start();
     while (try lines.next()) |*cur| {
-        _ = cur; // FIXME: much line
+        std.debug.print("??? `{s}`\n", .{cur.buf});
         try timing.collect(.parseLine, lineTime.lap());
     }
-    try timing.collect(.parseAll, phaseTime.lap());
+    try timing.markPhase(.parse);
 
     // FIXME: measure any other distinct computation phases before part1/part2 particulars
 
     try out.print("# Part 1\n", .{});
     // FIXME solve
-    try timing.collect(.part1, phaseTime.lap());
+    try timing.markPhase(.part1);
     try out.print("> {}\n", .{42});
 
     try out.print("\n# Part 2\n", .{});
     // FIXME solve, then:
-    try timing.collect(.part2, phaseTime.lap());
+    try timing.markPhase(.part2);
     try out.print("> {}\n", .{42});
 
-    try timing.collect(.overall, runTime.lap());
-
-    std.debug.print("# Timing\n\n", .{});
-    for (timing.data.items) |item| {
-        if (item.tag != .parseLine) {
-            std.debug.print("- {} {}\n", .{ item.time, item.tag });
-        }
-    }
-    std.debug.print("\n", .{});
+    try timing.finish(.overall);
 }
 
 pub fn main() !void {
