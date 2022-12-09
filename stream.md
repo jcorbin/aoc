@@ -1,4 +1,10 @@
+# 2022-12-09
+
+## Day 8
+
 # 2022-12-08
+
+- exported progress to template, updating perf module
 
 ## Day 8
 

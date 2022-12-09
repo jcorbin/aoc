@@ -35,16 +35,19 @@ fn run(
     input: anytype,
     output: anytype,
 ) !void {
-    var timing = Timing(enum {
+    var timing = try Timing(enum {
         parse,
         parseLine,
         part1,
         part2,
         overall,
-    }).init(allocator);
+    }).start(allocator);
     defer timing.deinit();
-    var runTime = try std.time.Timer.start();
-    var phaseTime = runTime;
+    defer timing.printDebugReport();
+
+    // FIXME: uncomment this if solutions need heap memory below
+    // var arena = std.heap.ArenaAllocator.init(allocator);
+    // defer arena.deinit();
 
     var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
@@ -55,29 +58,25 @@ fn run(
         _ = cur; // FIXME: much line
         try timing.collect(.parseLine, lineTime.lap());
     }
-    try timing.collect(.parseAll, phaseTime.lap());
+    try timing.markPhase(.parse);
 
     // FIXME: measure any other distinct computation phases before part1/part2 particulars
 
-    try out.print("# Part 1\n", .{});
-    // FIXME solve
-    try timing.collect(.part1, phaseTime.lap());
-    try out.print("> {}\n", .{42});
-
-    try out.print("\n# Part 2\n", .{});
-    // FIXME solve, then:
-    try timing.collect(.part2, phaseTime.lap());
-    try out.print("> {}\n", .{42});
-
-    try timing.collect(.overall, runTime.lap());
-
-    std.debug.print("# Timing\n\n", .{});
-    for (timing.data.items) |item| {
-        if (item.tag != .parseLine) {
-            std.debug.print("- {} {}\n", .{ item.time, item.tag });
-        }
+    // FIXME: solve part 1
+    {
+        try out.print("# Part 1\n", .{});
+        try out.print("> {}\n", .{42});
     }
-    std.debug.print("\n", .{});
+    try timing.markPhase(.part1);
+
+    // FIXME: solve part 2
+    {
+        try out.print("\n# Part 2\n", .{});
+        try out.print("> {}\n", .{42});
+    }
+    try timing.markPhase(.part2);
+
+    try timing.finish(.overall);
 }
 
 pub fn main() !void {
