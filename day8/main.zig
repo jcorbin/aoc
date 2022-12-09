@@ -84,7 +84,9 @@ const Point = struct {
     }
 
     pub fn index(self: Self, stride: usize) usize {
-        return @intCast(usize, self.y) * stride + @intCast(usize, self.x);
+        const x = @intCast(usize, self.x);
+        const y = @intCast(usize, self.y);
+        return y * stride + x;
     }
 
     pub fn move(self: Self, dx: i32, dy: i32) Self {
@@ -126,16 +128,18 @@ fn run(
     while (try lines.next()) |*cur| {
         if (size == 0) {
             size = cur.buf.len;
-            height = try arena.allocator().alloc(u4, size * size);
+            const memSize = size * size;
+            height = try arena.allocator().alloc(u4, memSize);
         } else if (cur.buf.len != size) {
             return error.InvalidRowLength;
         }
 
-        const y = cur.count - 1;
-        for (cur.buf) |c, x| {
+        var p = Point.make(0, @intCast(i32, cur.count) - 1);
+        for (cur.buf) |c| {
             if (c < '0' or c > '9') return error.InvalidDigit;
             const d = @intCast(u4, c - '0');
-            height[size * y + x] = d;
+            height[p.index(size)] = d;
+            p.x += 1;
         }
 
         try timing.collect(.parseLine, lineTime.lap());
