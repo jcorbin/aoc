@@ -10,7 +10,7 @@ test "example" {
         // Part 1 example
         .{
             .config = .{
-                .showEvals = true,
+                .verbose = true,
                 .bounds = .{
                     .from = .{ .x = 0, .y = -4 },
                     .to = .{ .x = 6, .y = 1 },
@@ -99,7 +99,7 @@ test "example" {
         // Part 2 large example
         .{
             .config = .{
-                .showEvals = true,
+                .verbose = true,
                 .tailKnots = 9,
                 .bounds = .{
                     .from = .{ .x = -11, .y = -15 },
@@ -740,7 +740,7 @@ const Config = struct {
         .from = .{ .x = 0, .y = 0 },
         .to = .{ .x = 0, .y = 0 },
     },
-    showEvals: bool = false,
+    verbose: bool = false,
     tailKnots: u4 = 1,
 };
 
@@ -780,7 +780,7 @@ fn run(
         };
         try timing.collect(.evalLine, lineTime.lap());
 
-        if (config.showEvals) {
+        if (config.verbose) {
             try out.print(
                 \\# Eval {}. {s}
                 \\{s}
@@ -833,30 +833,44 @@ fn run(
     try timing.finish(.overall);
 }
 
+const ArgParser = @import("./args.zig").Parser;
+
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
 
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
-    var config = Config{
-        .showEvals = false,
-        .tailKnots = 1,
-    };
+    var config = Config{};
 
-    // TODO more generic arg parsing; including input selection
-    var args = try std.process.argsWithAllocator(arena.allocator());
-    while (args.next(arena.allocator())) |arg| {
-        const flag = try arg;
-        if (std.mem.eql(u8, flag, "--show-evals")) {
-            config.showEvals = true;
-        } else if (std.mem.eql(u8, flag, "--tail-knots")) {
-            const nextArg = args.next(arena.allocator()) orelse return error.MissingFlagValue;
-            const value = try nextArg;
-            config.tailKnots = try std.fmt.parseInt(u4, value, 10);
-        } else if (std.mem.startsWith(u8, flag, "-")) {
-            return error.InvalidFlag;
+    {
+        var args = try ArgParser.init(allocator);
+        defer args.deinit();
+
+        // TODO: input filename arg
+
+        while (try args.next()) |arg| {
+            if (arg.is(.{ "-h", "--help" })) {
+                std.debug.print(
+                    \\Usage: {s} [-v] [-k NUMBER]
+                    \\
+                    \\Options:
+                    \\  -v or
+                    \\  --verbose
+                    \\    print world state after evaluating each input line
+                    \\
+                    \\  -k NUMBER or
+                    \\  --tail-knots NUMBER
+                    \\    how many knots follow the main rope head knot
+                    \\    defaults to 1
+                    \\
+                , .{args.progName()});
+                std.process.exit(0);
+            } else if (arg.is(.{ "-v", "--verbose" })) {
+                config.verbose = true;
+            } else if (arg.is(.{ "-k", "--tail-knots" })) {
+                var valueArg = (try args.next()) orelse return error.MissingKnotsValue;
+                config.tailKnots = try valueArg.parseInt(u4, 10);
+            } else return error.InvalidArgument;
         }
     }
 

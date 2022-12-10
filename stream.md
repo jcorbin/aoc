@@ -8,6 +8,7 @@
   - added app `Config` struct, part of test case definition, and now filled in
     by arg parsing in `main()`
     - template provides post per-line parse verbosity support using this
+- further developed arg parsing module thru template
 
 # 2022-12-09
 

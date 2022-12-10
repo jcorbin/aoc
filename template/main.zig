@@ -105,6 +105,8 @@ fn run(
     try timing.finish(.overall);
 }
 
+const ArgParser = @import("./args.zig").Parser;
+
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
@@ -112,32 +114,27 @@ pub fn main() !void {
     var output = std.io.getStdOut();
     var config = Config{};
 
-    // TODO more generic arg parsing; including input selection
     {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
+        var args = try ArgParser.init(allocator);
+        defer args.deinit();
 
-        var args = try std.process.argsWithAllocator(arena.allocator());
+        // TODO: input filename arg
 
-        // TODO: make note of the program name for forming help strings?
-        if (!args.skip()) return error.MissingArg0;
-
-        while (args.next(arena.allocator())) |arg| {
-            const flag = try arg;
-
-            if (std.mem.eql(u8, flag, "-v") or
-                std.mem.eql(u8, flag, "--verbose"))
-            {
+        while (try args.next()) |arg| {
+            if (arg.is(.{ "-h", "--help" })) {
+                std.debug.print(
+                    \\Usage: {s} [-v]
+                    \\
+                    \\Options:
+                    \\  -v or
+                    \\  --verbose
+                    \\    print world state after evaluating each input line
+                    \\
+                , .{args.progName()});
+                std.process.exit(0);
+            } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.verbose = true;
             } else return error.InvalidArgument;
-
-            // TODO code fragments towards else:
-            // if (std.mem.startsWith(u8, flag, "-"))
-            // if (std.mem.eql(u8, flag, "--foo")) {
-            //     const nextArg = args.next(arena.allocator()) orelse return error.MissingFlagValue;
-            //     const value = try nextArg;
-            //     config.foo = try std.fmt.parseInt(u4, value, 10);
-            // }
         }
     }
 
