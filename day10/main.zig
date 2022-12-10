@@ -32,6 +32,208 @@ test "example" {
             \\
             ,
         },
+
+        // Part 1 large example
+        .{
+            .config = .{
+                .signalFrom = 20,
+                .signalEvery = 40,
+            },
+            .input = 
+            \\addx 15
+            \\addx -11
+            \\addx 6
+            \\addx -3
+            \\addx 5
+            \\addx -1
+            \\addx -8
+            \\addx 13
+            \\addx 4
+            \\noop
+            \\addx -1
+            \\addx 5
+            \\addx -1
+            \\addx 5
+            \\addx -1
+            \\addx 5
+            \\addx -1
+            \\addx 5
+            \\addx -1
+            \\addx -35
+            \\addx 1
+            \\addx 24
+            \\addx -19
+            \\addx 1
+            \\addx 16
+            \\addx -11
+            \\noop
+            \\noop
+            \\addx 21
+            \\addx -15
+            \\noop
+            \\noop
+            \\addx -3
+            \\addx 9
+            \\addx 1
+            \\addx -3
+            \\addx 8
+            \\addx 1
+            \\addx 5
+            \\noop
+            \\noop
+            \\noop
+            \\noop
+            \\noop
+            \\addx -36
+            \\noop
+            \\addx 1
+            \\addx 7
+            \\noop
+            \\noop
+            \\noop
+            \\addx 2
+            \\addx 6
+            \\noop
+            \\noop
+            \\noop
+            \\noop
+            \\noop
+            \\addx 1
+            \\noop
+            \\noop
+            \\addx 7
+            \\addx 1
+            \\noop
+            \\addx -13
+            \\addx 13
+            \\addx 7
+            \\noop
+            \\addx 1
+            \\addx -33
+            \\noop
+            \\noop
+            \\noop
+            \\addx 2
+            \\noop
+            \\noop
+            \\noop
+            \\addx 8
+            \\noop
+            \\addx -1
+            \\addx 2
+            \\addx 1
+            \\noop
+            \\addx 17
+            \\addx -9
+            \\addx 1
+            \\addx 1
+            \\addx -3
+            \\addx 11
+            \\noop
+            \\noop
+            \\addx 1
+            \\noop
+            \\addx 1
+            \\noop
+            \\noop
+            \\addx -13
+            \\addx -19
+            \\addx 1
+            \\addx 3
+            \\addx 26
+            \\addx -30
+            \\addx 12
+            \\addx -1
+            \\addx 3
+            \\addx 1
+            \\noop
+            \\noop
+            \\noop
+            \\addx -9
+            \\addx 18
+            \\addx 1
+            \\addx 2
+            \\noop
+            \\noop
+            \\addx 9
+            \\noop
+            \\noop
+            \\noop
+            \\addx -1
+            \\addx 2
+            \\addx -37
+            \\addx 1
+            \\addx 3
+            \\noop
+            \\addx 15
+            \\addx -21
+            \\addx 22
+            \\addx -6
+            \\addx 1
+            \\noop
+            \\addx 2
+            \\addx 1
+            \\noop
+            \\addx -10
+            \\noop
+            \\noop
+            \\addx 20
+            \\addx 1
+            \\addx 2
+            \\addx 2
+            \\addx -6
+            \\addx -11
+            \\noop
+            \\noop
+            \\noop
+            \\
+            ,
+            // The interesting signal strengths can be determined as follows:
+            //
+            // - During the 20th cycle, register X has the value 21, so the signal strength is 20 * 21 = *`420`*.
+            //   (The 20th cycle occurs in the middle of the second `addx -1`, so the value of
+            //   register X is the starting value, 1, plus all of the other `addx` values up to
+            //   that point: 1 + 15 - 11 + 6 - 3 + 5 - 1 - 8 + 13 + 4 = 21.)
+            // - During the 60th cycle, register X has the value 19, so the signal strength is 60 * 19 = *`1140`*.
+            // - During the 100th cycle, register X has the value 18, so the signal strength is 100 * 18 = *`1800`*.
+            // - During the 140th cycle, register X has the value 21, so the signal strength is 140 * 21 = *`2940`*.
+            // - During the 180th cycle, register X has the value 16, so the signal strength is 180 * 16 = *`2880`*.
+            // - During the 220th cycle, register X has the value 18, so the signal strength is 220 * 18 = *`3960`*.
+            //
+            // The sum of these signal strengths is *`13140`*.
+            .expected = 
+            \\# cycle 20
+            \\   x: 21
+            \\   signal: 420
+            \\> 420
+            \\
+            \\# cycle 60
+            \\   x: 19
+            \\   signal: 1140
+            \\> 1560
+            \\
+            \\# cycle 100
+            \\   x: 18
+            \\   signal: 1800
+            \\> 3360
+            \\
+            \\# cycle 140
+            \\   x: 21
+            \\   signal: 2940
+            \\> 6300
+            \\
+            \\# cycle 180
+            \\   x: 16
+            \\   signal: 2880
+            \\> 9180
+            \\
+            \\# cycle 220
+            \\   x: 18
+            \\   signal: 3960
+            \\> 13140
+            \\
+            ,
+        },
     };
 
     const allocator = std.testing.allocator;
@@ -66,39 +268,58 @@ const CPU = struct {
         }
     };
 
-    const Iterator = struct {
-        from: CPU,
-        to: CPU,
-
-        pub fn next(it: *@This()) ?CPU {
-            if (it.from.cycle < it.to.cycle) {
-                const prior = it.from;
-                it.from.cycle += 1;
-                return prior;
-            }
-            return null;
-        }
-    };
-
     const Self = @This();
-
-    pub fn tick(self: Self, op: Op) Iterator {
-        return .{ .from = self, .to = self.exec(op) };
-    }
 
     pub fn exec(self: Self, op: Op) Self {
         switch (op) {
-            .noop => return .{ .cycle = self.cycle + 1 },
+            .noop => return .{ .cycle = self.cycle + 1, .x = self.x },
             .addx => |n| return .{ .cycle = self.cycle + 2, .x = self.x + n },
         }
     }
 };
+
+fn Signal(comptime Writer: type) type {
+    return struct {
+        writer: Writer,
+        from: usize,
+        every: usize,
+        total: i64 = 0,
+
+        const Self = @This();
+
+        pub fn collect(self: *Self, cpu: CPU) void {
+            // std.debug.print("? collect {}\n", .{cpu});
+            if (cpu.cycle < self.from) return;
+            if ((cpu.cycle - self.from) % self.every == 0) {
+                const signal = @intCast(i64, cpu.cycle) * cpu.x;
+                self.total += signal;
+
+                if (cpu.cycle > self.from)
+                    self.writer.writeByte('\n') catch return;
+                self.writer.print(
+                    \\# cycle {}
+                    \\   x: {}
+                    \\   signal: {}
+                    \\> {}
+                    \\
+                , .{
+                    cpu.cycle,
+                    cpu.x,
+                    signal,
+                    self.total,
+                }) catch return;
+            }
+        }
+    };
+}
 
 const Parse = @import("./parse.zig");
 const Timing = @import("./perf.zig").Timing;
 
 const Config = struct {
     verbose: bool = false,
+    signalFrom: usize = 0,
+    signalEvery: usize = 0,
 };
 
 fn run(
@@ -113,20 +334,21 @@ fn run(
         eval,
         evalLine,
         evalLineVerbose,
-        report,
         overall,
     }).start(allocator);
     defer timing.deinit();
     defer timing.printDebugReport();
 
-    // FIXME: uncomment this if solutions need heap memory below
-    // var arena = std.heap.ArenaAllocator.init(allocator);
-    // defer arena.deinit();
-
     var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
 
     var cpu = CPU{};
+
+    var signal = if (config.signalEvery > 0) Signal(@TypeOf(out)){
+        .writer = out,
+        .from = config.signalFrom,
+        .every = config.signalEvery,
+    } else null;
 
     // evaluate input
     while (try lines.next()) |*cur| {
@@ -138,28 +360,27 @@ fn run(
             \\
         , .{ cur.count, cur.buf });
 
-        var ticks = cpu.tick(op);
-        while (ticks.next()) |state| {
+        const next = cpu.exec(op);
+        while (cpu.cycle < next.cycle) : (cpu.cycle += 1) {
             if (config.verbose) try out.print(
                 \\    cycle: {} x: {}
                 \\
-            , .{ state.cycle, state.x });
-            // TODO collect signal strength
+            , .{ cpu.cycle, cpu.x });
+            if (signal) |*sig| sig.collect(cpu);
         }
-        cpu = ticks.to;
+        cpu = next;
 
         try timing.collect(.evalLine, lineTime.lap());
     }
-    try timing.markPhase(.eval);
 
-    // report
-    // TODO signal strength sum
-    try out.print(
+    if (config.verbose) try out.print(
         \\# Halt
         \\    cycle: {} x: {}
         \\
     , .{ cpu.cycle, cpu.x });
-    try timing.markPhase(.report);
+    if (signal) |*sig| sig.collect(cpu);
+
+    try timing.markPhase(.eval);
 
     try timing.finish(.overall);
 }
@@ -189,8 +410,17 @@ pub fn main() !void {
                     \\  --verbose
                     \\    print world state after evaluating each input line
                     \\
+                    \\  -s FROM EVERY or
+                    \\  --signal FROM EVERY
+                    \\    collect signal after FROM cycles and then EVERY cycles thereafter
+                    \\
                 , .{args.progName()});
                 std.process.exit(0);
+            } else if (arg.is(.{ "-s", "--signal" })) {
+                var fromArg = (try args.next()) orelse return error.MissingFromValue;
+                var everyArg = (try args.next()) orelse return error.MissingEveryValue;
+                config.signalFrom = try fromArg.parseInt(usize, 10);
+                config.signalEvery = try everyArg.parseInt(usize, 10);
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.verbose = true;
             } else return error.InvalidArgument;
