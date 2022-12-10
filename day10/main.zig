@@ -7,19 +7,28 @@ test "example" {
         expected: []const u8,
         config: Config,
     }{
-        // Part 1 example
+        // Part 1 small example
         .{
             .config = .{
                 .verbose = true,
             },
             .input = 
-            \\such data
+            \\noop
+            \\addx 3
+            \\addx -5
             \\
             ,
             .expected = 
-            \\# Parse 1. `such data`
-            \\# Solution
-            \\> 42
+            \\# Eval 1. `noop`
+            \\    cycle: 1 x: 1
+            \\# Eval 2. `addx 3`
+            \\    cycle: 2 x: 1
+            \\    cycle: 3 x: 1
+            \\# Eval 3. `addx -5`
+            \\    cycle: 4 x: 4
+            \\    cycle: 5 x: 4
+            \\# Halt
+            \\    cycle: 6 x: -1
             \\
             ,
         },
@@ -39,6 +48,52 @@ test "example" {
     }
 }
 
+const CPU = struct {
+    cycle: usize = 1,
+    x: i64 = 1,
+
+    const Op = union(enum) {
+        noop: void,
+        addx: i64,
+
+        pub fn parse(buf: []const u8) !Op {
+            return if (std.mem.eql(u8, buf, "noop"))
+                Op{ .noop = {} }
+            else if (std.mem.startsWith(u8, buf, "addx "))
+                Op{ .addx = try std.fmt.parseInt(i64, buf[5..], 10) }
+            else
+                error.UnrecognizedOp;
+        }
+    };
+
+    const Iterator = struct {
+        from: CPU,
+        to: CPU,
+
+        pub fn next(it: *@This()) ?CPU {
+            if (it.from.cycle < it.to.cycle) {
+                const prior = it.from;
+                it.from.cycle += 1;
+                return prior;
+            }
+            return null;
+        }
+    };
+
+    const Self = @This();
+
+    pub fn tick(self: Self, op: Op) Iterator {
+        return .{ .from = self, .to = self.exec(op) };
+    }
+
+    pub fn exec(self: Self, op: Op) Self {
+        switch (op) {
+            .noop => return .{ .cycle = self.cycle + 1 },
+            .addx => |n| return .{ .cycle = self.cycle + 2, .x = self.x + n },
+        }
+    }
+};
+
 const Parse = @import("./parse.zig");
 const Timing = @import("./perf.zig").Timing;
 
@@ -55,10 +110,10 @@ fn run(
     config: Config,
 ) !void {
     var timing = try Timing(enum {
-        parse,
-        parseLine,
-        parseLineVerbose,
-        solve,
+        eval,
+        evalLine,
+        evalLineVerbose,
+        report,
         overall,
     }).start(allocator);
     defer timing.deinit();
@@ -71,36 +126,40 @@ fn run(
     var lines = Parse.lineScanner(input.reader());
     var out = output.writer();
 
-    // FIXME: parse input (store intermediate form, or evaluate)
+    var cpu = CPU{};
+
+    // evaluate input
     while (try lines.next()) |*cur| {
         var lineTime = try std.time.Timer.start();
-        _ = cur; // FIXME: much line
-        try timing.collect(.parseLine, lineTime.lap());
+        const op = try CPU.Op.parse(cur.buf);
 
-        if (config.verbose) {
-            try out.print(
-                \\# Parse {}. `{s}`
-                \\
-            , .{
-                cur.count,
-                cur.buf,
-            });
-            try timing.collect(.parseLineVerbose, lineTime.lap());
-        }
-    }
-    try timing.markPhase(.parse);
-
-    // FIXME: solve...
-    {
-        try out.print(
-            \\# Solution
-            \\> {}
+        if (config.verbose) try out.print(
+            \\# Eval {}. `{s}`
             \\
-        , .{
-            42,
-        });
+        , .{ cur.count, cur.buf });
+
+        var ticks = cpu.tick(op);
+        while (ticks.next()) |state| {
+            if (config.verbose) try out.print(
+                \\    cycle: {} x: {}
+                \\
+            , .{ state.cycle, state.x });
+            // TODO collect signal strength
+        }
+        cpu = ticks.to;
+
+        try timing.collect(.evalLine, lineTime.lap());
     }
-    try timing.markPhase(.solve);
+    try timing.markPhase(.eval);
+
+    // report
+    // TODO signal strength sum
+    try out.print(
+        \\# Halt
+        \\    cycle: {} x: {}
+        \\
+    , .{ cpu.cycle, cpu.x });
+    try timing.markPhase(.report);
 
     try timing.finish(.overall);
 }
