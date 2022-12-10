@@ -2,13 +2,22 @@
 
 ## Day 9
 
-WIP
+- finally busted out the big guns today and used a HashMap for the first time
+  to index spatial data
+  - TODO: now I'm really itching to write a linear quadtree in zig... sooon
+- finally broke down and threaded an application config struct thru, allowing
+  part 1 vs 2 differences to be parameterized today
+  - used by test case enumeration
+  - used by hacky process argument parsing
+- really appreciated step-by-step testing today
+- furthest I've gone towards implementing a game style simulation world this
+  year
 
 ## Day 8
 
-# 2022-12-08
-
 - exported progress to template, updating perf module
+
+# 2022-12-08
 
 ## Day 8
 
