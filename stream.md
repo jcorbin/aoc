@@ -1,3 +1,14 @@
+# 2022-12-10
+
+## Day 9
+
+- exported progress to template, updating perf module
+  - table oriented test block, eases multiple rounds of testing (e.g. if part 2
+    is modally different from part 1, rather than an extension)
+  - added app `Config` struct, part of test case definition, and now filled in
+    by arg parsing in `main()`
+    - template provides post per-line parse verbosity support using this
+
 # 2022-12-09
 
 ## Day 9
