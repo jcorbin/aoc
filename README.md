@@ -14,4 +14,4 @@ See dev log in [stream.md](stream.md) for now
 | [day7](day7/prompt.md)           | Minor shell emulation, and fs pruning         |
 | [day8](day8/prompt.md)           | Tree height cardinal filling                  |
 | [day9](day9/prompt.md)           | Rope Snake Chase                              |
-| [day10](day10/prompt.md)         | WIP                                           |
+| [day10](day10/prompt.md)         | CPU : CRT timing simulation                   |

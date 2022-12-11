@@ -2,6 +2,155 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 test "example" {
+    const large_sample =
+        \\addx 15
+        \\addx -11
+        \\addx 6
+        \\addx -3
+        \\addx 5
+        \\addx -1
+        \\addx -8
+        \\addx 13
+        \\addx 4
+        \\noop
+        \\addx -1
+        \\addx 5
+        \\addx -1
+        \\addx 5
+        \\addx -1
+        \\addx 5
+        \\addx -1
+        \\addx 5
+        \\addx -1
+        \\addx -35
+        \\addx 1
+        \\addx 24
+        \\addx -19
+        \\addx 1
+        \\addx 16
+        \\addx -11
+        \\noop
+        \\noop
+        \\addx 21
+        \\addx -15
+        \\noop
+        \\noop
+        \\addx -3
+        \\addx 9
+        \\addx 1
+        \\addx -3
+        \\addx 8
+        \\addx 1
+        \\addx 5
+        \\noop
+        \\noop
+        \\noop
+        \\noop
+        \\noop
+        \\addx -36
+        \\noop
+        \\addx 1
+        \\addx 7
+        \\noop
+        \\noop
+        \\noop
+        \\addx 2
+        \\addx 6
+        \\noop
+        \\noop
+        \\noop
+        \\noop
+        \\noop
+        \\addx 1
+        \\noop
+        \\noop
+        \\addx 7
+        \\addx 1
+        \\noop
+        \\addx -13
+        \\addx 13
+        \\addx 7
+        \\noop
+        \\addx 1
+        \\addx -33
+        \\noop
+        \\noop
+        \\noop
+        \\addx 2
+        \\noop
+        \\noop
+        \\noop
+        \\addx 8
+        \\noop
+        \\addx -1
+        \\addx 2
+        \\addx 1
+        \\noop
+        \\addx 17
+        \\addx -9
+        \\addx 1
+        \\addx 1
+        \\addx -3
+        \\addx 11
+        \\noop
+        \\noop
+        \\addx 1
+        \\noop
+        \\addx 1
+        \\noop
+        \\noop
+        \\addx -13
+        \\addx -19
+        \\addx 1
+        \\addx 3
+        \\addx 26
+        \\addx -30
+        \\addx 12
+        \\addx -1
+        \\addx 3
+        \\addx 1
+        \\noop
+        \\noop
+        \\noop
+        \\addx -9
+        \\addx 18
+        \\addx 1
+        \\addx 2
+        \\noop
+        \\noop
+        \\addx 9
+        \\noop
+        \\noop
+        \\noop
+        \\addx -1
+        \\addx 2
+        \\addx -37
+        \\addx 1
+        \\addx 3
+        \\noop
+        \\addx 15
+        \\addx -21
+        \\addx 22
+        \\addx -6
+        \\addx 1
+        \\noop
+        \\addx 2
+        \\addx 1
+        \\noop
+        \\addx -10
+        \\noop
+        \\noop
+        \\addx 20
+        \\addx 1
+        \\addx 2
+        \\addx 2
+        \\addx -6
+        \\addx -11
+        \\noop
+        \\noop
+        \\noop
+        \\
+    ;
     const test_cases = [_]struct {
         input: []const u8,
         expected: []const u8,
@@ -39,155 +188,7 @@ test "example" {
                 .signalFrom = 20,
                 .signalEvery = 40,
             },
-            .input = 
-            \\addx 15
-            \\addx -11
-            \\addx 6
-            \\addx -3
-            \\addx 5
-            \\addx -1
-            \\addx -8
-            \\addx 13
-            \\addx 4
-            \\noop
-            \\addx -1
-            \\addx 5
-            \\addx -1
-            \\addx 5
-            \\addx -1
-            \\addx 5
-            \\addx -1
-            \\addx 5
-            \\addx -1
-            \\addx -35
-            \\addx 1
-            \\addx 24
-            \\addx -19
-            \\addx 1
-            \\addx 16
-            \\addx -11
-            \\noop
-            \\noop
-            \\addx 21
-            \\addx -15
-            \\noop
-            \\noop
-            \\addx -3
-            \\addx 9
-            \\addx 1
-            \\addx -3
-            \\addx 8
-            \\addx 1
-            \\addx 5
-            \\noop
-            \\noop
-            \\noop
-            \\noop
-            \\noop
-            \\addx -36
-            \\noop
-            \\addx 1
-            \\addx 7
-            \\noop
-            \\noop
-            \\noop
-            \\addx 2
-            \\addx 6
-            \\noop
-            \\noop
-            \\noop
-            \\noop
-            \\noop
-            \\addx 1
-            \\noop
-            \\noop
-            \\addx 7
-            \\addx 1
-            \\noop
-            \\addx -13
-            \\addx 13
-            \\addx 7
-            \\noop
-            \\addx 1
-            \\addx -33
-            \\noop
-            \\noop
-            \\noop
-            \\addx 2
-            \\noop
-            \\noop
-            \\noop
-            \\addx 8
-            \\noop
-            \\addx -1
-            \\addx 2
-            \\addx 1
-            \\noop
-            \\addx 17
-            \\addx -9
-            \\addx 1
-            \\addx 1
-            \\addx -3
-            \\addx 11
-            \\noop
-            \\noop
-            \\addx 1
-            \\noop
-            \\addx 1
-            \\noop
-            \\noop
-            \\addx -13
-            \\addx -19
-            \\addx 1
-            \\addx 3
-            \\addx 26
-            \\addx -30
-            \\addx 12
-            \\addx -1
-            \\addx 3
-            \\addx 1
-            \\noop
-            \\noop
-            \\noop
-            \\addx -9
-            \\addx 18
-            \\addx 1
-            \\addx 2
-            \\noop
-            \\noop
-            \\addx 9
-            \\noop
-            \\noop
-            \\noop
-            \\addx -1
-            \\addx 2
-            \\addx -37
-            \\addx 1
-            \\addx 3
-            \\noop
-            \\addx 15
-            \\addx -21
-            \\addx 22
-            \\addx -6
-            \\addx 1
-            \\noop
-            \\addx 2
-            \\addx 1
-            \\noop
-            \\addx -10
-            \\noop
-            \\noop
-            \\addx 20
-            \\addx 1
-            \\addx 2
-            \\addx 2
-            \\addx -6
-            \\addx -11
-            \\noop
-            \\noop
-            \\noop
-            \\
-            ,
+            .input = large_sample,
             // The interesting signal strengths can be determined as follows:
             //
             // - During the 20th cycle, register X has the value 21, so the signal strength is 20 * 21 = *`420`*.
@@ -231,6 +232,24 @@ test "example" {
             \\   x: 18
             \\   signal: 3960
             \\> 13140
+            \\
+            ,
+        },
+
+        // Part 2 large example
+        .{
+            .config = .{
+                .crt = .{ .on = .{ .width = 40, .height = 6 } },
+            },
+            .input = large_sample,
+            .expected = 
+            \\# Frame 1
+            \\    ##..##..##..##..##..##..##..##..##..##..
+            \\    ###...###...###...###...###...###...###.
+            \\    ####....####....####....####....####....
+            \\    #####.....#####.....#####.....#####.....
+            \\    ######......######......######......####
+            \\    #######.......#######.......#######.....
             \\
             ,
         },
@@ -278,6 +297,121 @@ const CPU = struct {
     }
 };
 
+const CRT = struct {
+    allocator: Allocator,
+
+    width: usize,
+    height: usize,
+
+    frame: []u8,
+    frameCount: usize = 0,
+
+    lineOffset: usize,
+    lineStride: usize,
+
+    rayX: usize = 0,
+    rayY: usize = 0,
+
+    dark: u8 = '.',
+    sprite: []const u8 = "###",
+    spriteX: i64 = 1,
+
+    const Self = @This();
+
+    pub fn init(
+        allocator: Allocator,
+        width: usize,
+        height: usize,
+        lineStart: []const u8,
+        lineEnd: []const u8,
+    ) !Self {
+        const stride = lineStart.len + width + lineEnd.len;
+        var self = Self{
+            .allocator = allocator,
+            .width = width,
+            .height = height,
+            .frame = try allocator.alloc(u8, stride * height),
+            .lineOffset = lineStart.len,
+            .lineStride = stride,
+        };
+
+        std.mem.set(u8, self.frame, '_');
+
+        var i: usize = 0;
+        while (i < self.frame.len) : (i += self.lineStride)
+            std.mem.copy(u8, self.frame[i..], lineStart);
+
+        i = self.lineOffset + self.width;
+        while (i < self.frame.len) : (i += self.lineStride)
+            std.mem.copy(u8, self.frame[i..], lineEnd);
+
+        return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.allocator.free(self.frame);
+    }
+
+    pub fn spriteAt(self: *Self) i64 {
+        return self.spriteX - @intCast(i64, @divTrunc(self.sprite.len, 2));
+    }
+
+    pub fn copySpriteInto(self: *Self, buf: []u8) void {
+        var at = self.spriteAt();
+        const w = std.math.min(
+            self.sprite.len,
+            @intCast(i64, buf.len) - at,
+        );
+
+        var o: usize = 0;
+        if (at < 0) {
+            o += @intCast(usize, -at);
+            at = 0;
+            if (o >= w) return;
+        }
+
+        if (w > 0)
+            std.mem.copy(u8, buf[@intCast(usize, at)..], self.sprite[o..w]);
+    }
+
+    pub fn pixel(self: *Self) u8 {
+        const i = @intCast(i64, self.rayX) - self.spriteAt();
+        return if (0 <= i and i < @intCast(i64, self.sprite.len))
+            self.sprite[@intCast(usize, i)]
+        else
+            self.dark;
+    }
+
+    const Frame = struct {
+        count: usize,
+        buf: []const u8,
+    };
+
+    pub fn advance(self: *Self) ?Frame {
+        self.frame[
+            self.lineOffset + self.rayY * self.lineStride + self.rayX
+        ] = self.pixel();
+
+        self.rayX += 1;
+        if (self.rayX < self.width) return null;
+        self.rayX -= self.width;
+
+        self.rayY += 1;
+        if (self.rayY < self.height) return null;
+        self.rayY -= self.height;
+
+        self.frameCount += 1;
+        return Frame{
+            .count = self.frameCount,
+            .buf = self.trimFrame(),
+        };
+    }
+
+    pub fn trimFrame(self: *Self) []const u8 {
+        return std.mem.trimRight(u8, self.frame, "\n");
+    }
+};
+
 fn Signal(comptime Writer: type) type {
     return struct {
         writer: Writer,
@@ -288,7 +422,6 @@ fn Signal(comptime Writer: type) type {
         const Self = @This();
 
         pub fn collect(self: *Self, cpu: CPU) void {
-            // std.debug.print("? collect {}\n", .{cpu});
             if (cpu.cycle < self.from) return;
             if ((cpu.cycle - self.from) % self.every == 0) {
                 const signal = @intCast(i64, cpu.cycle) * cpu.x;
@@ -318,8 +451,16 @@ const Timing = @import("./perf.zig").Timing;
 
 const Config = struct {
     verbose: bool = false,
+    debug: bool = false,
     signalFrom: usize = 0,
     signalEvery: usize = 0,
+    crt: union(enum) {
+        off: void,
+        on: struct {
+            width: usize,
+            height: usize,
+        },
+    } = .{ .off = {} },
 };
 
 fn run(
@@ -350,7 +491,26 @@ fn run(
         .every = config.signalEvery,
     } else null;
 
+    var crt = switch (config.crt) {
+        .off => null,
+        .on => |cfg| try CRT.init(allocator, cfg.width, cfg.height, "    ", "\n"),
+    };
+    defer if (crt) |*c| c.deinit();
+
     // evaluate input
+
+    if (config.debug) {
+        if (crt) |*c| {
+            var tmp = [_]u8{'.'} ** 40;
+            c.copySpriteInto(tmp[0..]);
+            std.debug.print(
+                \\Sprite position: {s}
+                \\
+                \\
+            , .{tmp});
+        }
+    }
+
     while (try lines.next()) |*cur| {
         var lineTime = try std.time.Timer.start();
         const op = try CPU.Op.parse(cur.buf);
@@ -361,14 +521,55 @@ fn run(
         , .{ cur.count, cur.buf });
 
         const next = cpu.exec(op);
+
+        if (config.debug)
+            std.debug.print(
+                \\Start cycle  {}: begin executing {} (X: {})
+                \\
+            , .{ cpu.cycle, op, cpu.x });
+
         while (cpu.cycle < next.cycle) : (cpu.cycle += 1) {
             if (config.verbose) try out.print(
                 \\    cycle: {} x: {}
                 \\
             , .{ cpu.cycle, cpu.x });
+
             if (signal) |*sig| sig.collect(cpu);
+            if (crt) |*c| {
+                if (config.debug)
+                    std.debug.print(
+                        \\During cycle {}: CRT at {}, {}
+                        \\
+                    , .{ cpu.cycle, c.rayX, c.rayY });
+
+                if (c.advance()) |frame| try out.print(
+                    \\# Frame {}
+                    \\{s}
+                    \\
+                , .{ frame.count, frame.buf });
+            }
         }
         cpu = next;
+
+        if (config.debug)
+            std.debug.print(
+                \\End of cycle {}: finish executing {} (X: {})
+                \\
+            , .{ cpu.cycle - 1, op, cpu.x });
+
+        if (crt) |*c| {
+            c.spriteX = cpu.x;
+
+            if (config.debug) {
+                var tmp = [_]u8{'.'} ** 40;
+                c.copySpriteInto(tmp[0..]);
+                std.debug.print(
+                    \\Sprite position: {s}
+                    \\
+                    \\
+                , .{tmp});
+            }
+        }
 
         try timing.collect(.evalLine, lineTime.lap());
     }
@@ -378,6 +579,7 @@ fn run(
         \\    cycle: {} x: {}
         \\
     , .{ cpu.cycle, cpu.x });
+
     if (signal) |*sig| sig.collect(cpu);
 
     try timing.markPhase(.eval);
@@ -414,6 +616,10 @@ pub fn main() !void {
                     \\  --signal FROM EVERY
                     \\    collect signal after FROM cycles and then EVERY cycles thereafter
                     \\
+                    \\  -c WIDTH HEIGHT or
+                    \\  --crt WIDTH HEIGHT 
+                    \\    collect signal after FROM cycles and then EVERY cycles thereafter
+                    \\
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-s", "--signal" })) {
@@ -421,8 +627,19 @@ pub fn main() !void {
                 var everyArg = (try args.next()) orelse return error.MissingEveryValue;
                 config.signalFrom = try fromArg.parseInt(usize, 10);
                 config.signalEvery = try everyArg.parseInt(usize, 10);
+            } else if (arg.is(.{ "-c", "--crt" })) {
+                var widthArg = (try args.next()) orelse return error.MissingWidthValue;
+                var heightArg = (try args.next()) orelse return error.MissingHeightValue;
+                config.crt = .{ .on = .{
+                    .width = try widthArg.parseInt(usize, 10),
+                    .height = try heightArg.parseInt(usize, 10),
+                } };
             } else if (arg.is(.{ "-v", "--verbose" })) {
-                config.verbose = true;
+                if (!config.verbose) {
+                    config.verbose = true;
+                } else {
+                    config.debug = true;
+                }
             } else return error.InvalidArgument;
         }
     }

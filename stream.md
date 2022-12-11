@@ -2,7 +2,14 @@
 
 ## Day 10
 
-WIP
+- arg parser paid off today, as I ended up adding double verbosity, and several
+  tiers of modal functionality
+- the before / during / after cycle semantics were the part that tripped me up
+  most
+- not happy with how janky the `CPU` / `CRT` struct integration is, and also wrt
+  `Signal` for part 1
+  - ... but I'm very happy with around 40ns typical per-line evaluation time
+  - ... and total runtime around 30us
 
 ## Day 9
 
