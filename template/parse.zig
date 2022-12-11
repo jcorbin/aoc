@@ -136,20 +136,13 @@ pub const Cursor = struct {
         return self.consumeToken() orelse err;
     }
 
-    pub fn consumeInt(self: *Self, comptime T: type) ?T {
-        const base = 10; // TODO parameterize?
-        var n: T = 0;
-        var any = false;
-        while (self.peek()) |c| {
-            if (!isDigit(c)) break;
-            any = true;
-            n = n * base + @intCast(T, c - '0');
-            self.i += 1;
-        }
-        return if (any) n else null;
+    pub fn consumeInt(self: *Self, comptime T: type, radix: u8) ?T {
+        const token = self.consumeToken() orelse return null;
+        const n = std.fmt.parseInt(T, token, radix) catch return null;
+        return n;
     }
 
-    pub fn expectInt(self: *Self, comptime T: type, err: anyerror) !T {
-        return self.consumeInt(T) orelse err;
+    pub fn expectInt(self: *Self, comptime T: type, radix: u8, err: anyerror) !T {
+        return self.consumeInt(T, radix) orelse err;
     }
 };
