@@ -41,7 +41,6 @@ test "example" {
         // Part 1 example: round 1 trace
         .{
             .config = .{
-                .verbose = true,
                 .trace = true,
                 .rounds = 1,
                 .reportRounds = &[_]usize{1},
@@ -136,7 +135,6 @@ test "example" {
         // Part 1 example: round state for 1-10,15,20
         .{
             .config = .{
-                .verbose = true,
                 .rounds = 20,
                 .reportRounds = &[_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20 },
             },
@@ -218,6 +216,29 @@ test "example" {
             ,
         },
 
+        // Part 1 example: monkey business metric
+        .{
+            .config = .{
+                .rounds = 20,
+                .metrics = .{
+                    .show = true,
+                    .topPerformers = 2,
+                },
+            },
+            .input = example_input,
+            .expected = 
+            \\# Monkey Business Metrics
+            \\    Monkey 0 inspected items 101 times.
+            \\    Monkey 1 inspected items 95 times.
+            \\    Monkey 2 inspected items 7 times.
+            \\    Monkey 3 inspected items 105 times.
+            \\
+            \\## Top 2 Performers
+            \\> 101 * 105 = 10605
+            \\
+            ,
+        },
+
         // TODO Part 1 example: outcome
         // In this example, the two most active monkeys inspected items 101 and 105 times.
         // The level of *monkey business* in this situation can be found by multiplying
@@ -245,19 +266,19 @@ test "example" {
 }
 
 const Item = struct {
-    worry: u32,
+    worry: u64,
 };
 
 /// A simple math expression on a single variable X
 const Op = union(enum) {
     x: void,
-    value: u32,
+    value: u64,
     add: [2]*@This(),
     mul: [2]*@This(),
 
     const Self = @This();
 
-    pub fn eval(self: Self, x: u32) u32 {
+    pub fn eval(self: Self, x: u64) u64 {
         return switch (self) {
             .x => x,
             .value => |n| n,
@@ -268,7 +289,7 @@ const Op = union(enum) {
 
     const TraceWriter = std.ArrayList(u8).Writer;
 
-    pub fn trace(self: Self, x: u32, tw: TraceWriter) u32 {
+    pub fn trace(self: Self, x: u64, tw: TraceWriter) u64 {
         switch (self) {
             .x => {
                 tw.print("Worry level", .{}) catch {};
@@ -293,7 +314,7 @@ const Op = union(enum) {
         }
     }
 
-    pub fn retrace(self: Self, x: u32, tw: TraceWriter) u32 {
+    pub fn retrace(self: Self, x: u64, tw: TraceWriter) u64 {
         switch (self) {
             .x => {
                 tw.print("itself", .{}) catch {};
@@ -326,7 +347,7 @@ const ProtoMonkey = struct {
     worldID: usize = 0,
     items: Items = .{},
     op: Op = .{ .x = {} },
-    testDiv: u32 = 0,
+    testDiv: u64 = 0,
     throwToID: [2]?usize = .{ null, null },
 };
 
@@ -334,18 +355,26 @@ const Monkey = struct {
     id: usize,
     items: Items,
     op: Op,
-    testDiv: u32,
+    testDiv: u64,
     throwTo: [2]*Monkey,
+    businessMetric: usize = 0,
+
+    pub fn compareMetric(_: void, a: *const Monkey, b: *const Monkey) std.math.Order {
+        return std.math.order(a.businessMetric, b.businessMetric);
+    }
 };
 
 const Parse = @import("./parse.zig");
 const Timing = @import("./perf.zig").Timing;
 
 const Config = struct {
-    verbose: bool = false,
     trace: bool = false,
     rounds: usize = 0,
     reportRounds: []const usize = &[_]usize{},
+    metrics: struct {
+        show: bool = false,
+        topPerformers: usize = 0,
+    } = .{},
 };
 
 const MonkeyBuilder = struct {
@@ -421,7 +450,7 @@ const MonkeyBuilder = struct {
                     var item = try allocator.create(Items.Node);
                     item.* = .{
                         .data = .{
-                            .worry = try cur.expectInt(u32, 10, error.MonkeyItemExpected),
+                            .worry = try cur.expectInt(u64, 10, error.MonkeyItemExpected),
                         },
                     };
                     monkey.items.append(item);
@@ -444,7 +473,7 @@ const MonkeyBuilder = struct {
                 cur.expectStar(' ');
                 try cur.expectLiteral("divisible by", error.MonkeyInvalidTest);
                 cur.expectStar(' ');
-                monkey.testDiv = try cur.expectInt(u32, 10, error.MonkeyExpectedTestDivisor);
+                monkey.testDiv = try cur.expectInt(u64, 10, error.MonkeyExpectedTestDivisor);
                 try cur.expectEnd(error.MonkeyUnexpectedTrailer);
 
                 self.inTest = true;
@@ -500,7 +529,7 @@ const MonkeyBuilder = struct {
         cur.expectStar(' ');
         return if (cur.haveLiteral("old"))
             self.parseOpExpr(cur, .{ .x = {} }, prio)
-        else if (cur.consumeInt(u32, 10)) |n|
+        else if (cur.consumeInt(u64, 10)) |n|
             self.parseOpExpr(cur, .{ .value = n }, prio)
         else
             error.UnexpectedOpToken;
@@ -582,6 +611,8 @@ fn World(
                 while (monkey.items.popFirst()) |node| {
                     var worry = node.data.worry;
 
+                    monkey.businessMetric += 1;
+
                     if (self.traceEnabled) {
                         self.trace("  Monkey inspects an item with a worry level of {}.\n", .{worry});
 
@@ -640,7 +671,7 @@ fn run(
         parseLineVerbose,
         run,
         runRound,
-        solve,
+        report,
         overall,
     }).start(allocator);
     defer timing.deinit();
@@ -716,17 +747,46 @@ fn run(
         try timing.markPhase(.run);
     }
 
-    // // TODO: count monkey business
-    // {
-    //     try out.print(
-    //         \\# Solution
-    //         \\> {}
-    //         \\
-    //     , .{
-    //         42,
-    //     });
-    // }
-    // try timing.markPhase(.solve);
+    if (config.metrics.show) {
+        try out.print(
+            \\# Monkey Business Metrics
+            \\
+        , .{});
+        for (world.monkeys) |*monkey| {
+            try out.print("    Monkey {} inspected items {} times.\n", .{ monkey.id, monkey.businessMetric });
+        }
+
+        const topn = config.metrics.topPerformers;
+        if (topn > 0) {
+            var top = std.PriorityQueue(*Monkey, void, Monkey.compareMetric).init(allocator, {});
+            defer top.deinit();
+
+            for (world.monkeys) |*monkey| {
+                try top.add(monkey);
+                while (top.len > topn) _ = top.remove();
+            }
+
+            try out.print(
+                \\
+                \\## Top 2 Performers
+                \\> 
+            , .{});
+
+            var prod: usize = 1;
+            var first = true;
+            while (top.removeOrNull()) |t| : (first = false) {
+                const value = t.businessMetric;
+                prod *= value;
+                if (first)
+                    try out.print("{d} ", .{value})
+                else
+                    try out.print("* {d} ", .{value});
+            }
+            try out.print("= {d}\n", .{prod});
+        }
+
+        try timing.markPhase(.report);
+    }
 
     try timing.finish(.overall);
 }
@@ -753,7 +813,14 @@ pub fn main() !void {
 
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
-    var config = Config{};
+    var config = Config{
+        .rounds = 20,
+        .metrics = .{
+            .show = true,
+            .topPerformers = 2,
+        },
+    };
+    var bufferOutput = true;
 
     {
         var args = try ArgParser.init(allocator);
@@ -767,23 +834,32 @@ pub fn main() !void {
                     \\Usage: {s} [-v]
                     \\
                     \\Options:
+                    \\
                     \\  -v or
                     \\  --verbose
                     \\    print world state after evaluating each input line
                     \\
+                    \\  --raw-output
+                    \\    don't buffer stdout writes
+                    \\
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-v", "--verbose" })) {
-                config.verbose = true;
+                config.trace = true;
+            } else if (arg.is(.{"--raw-output"})) {
+                bufferOutput = false;
             } else return error.InvalidArgument;
         }
     }
 
     var bufin = std.io.bufferedReader(input.reader());
-    var bufout = std.io.bufferedWriter(output.writer());
 
+    if (!bufferOutput)
+        return run(allocator, &bufin, output, config);
+
+    var bufout = std.io.bufferedWriter(output.writer());
     try run(allocator, &bufin, &bufout, config);
     try bufout.flush();
-
     // TODO: sentinel-buffered output writer to flush lines progressively
+    // ... may obviate the desire for raw / non-buffered output else
 }
