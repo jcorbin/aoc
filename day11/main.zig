@@ -239,10 +239,108 @@ test "example" {
             ,
         },
 
-        // TODO Part 1 example: outcome
-        // In this example, the two most active monkeys inspected items 101 and 105 times.
-        // The level of *monkey business* in this situation can be found by multiplying
-        // these together: *`10605`*.
+        // Part 2 example: metrics to the moon
+        .{
+            .config = .{
+                .boring = false,
+                .rounds = 10000,
+                .metrics = .{
+                    .showRounds = &[_]usize{
+                        1,
+                        20,
+                        1000,
+                        2000,
+                        3000,
+                        4000,
+                        5000,
+                        6000,
+                        7000,
+                        8000,
+                        9000,
+                        10000,
+                    },
+                    .topPerformers = 2,
+                },
+            },
+            .input = example_input,
+            .expected = 
+            \\# Round 1
+            \\    Monkey 0 inspected items 2 times.
+            \\    Monkey 1 inspected items 4 times.
+            \\    Monkey 2 inspected items 3 times.
+            \\    Monkey 3 inspected items 6 times.
+            \\
+            \\# Round 20
+            \\    Monkey 0 inspected items 99 times.
+            \\    Monkey 1 inspected items 97 times.
+            \\    Monkey 2 inspected items 8 times.
+            \\    Monkey 3 inspected items 103 times.
+            \\
+            \\# Round 1000
+            \\    Monkey 0 inspected items 5204 times.
+            \\    Monkey 1 inspected items 4792 times.
+            \\    Monkey 2 inspected items 199 times.
+            \\    Monkey 3 inspected items 5192 times.
+            \\
+            \\# Round 2000
+            \\    Monkey 0 inspected items 10419 times.
+            \\    Monkey 1 inspected items 9577 times.
+            \\    Monkey 2 inspected items 392 times.
+            \\    Monkey 3 inspected items 10391 times.
+            \\
+            \\# Round 3000
+            \\    Monkey 0 inspected items 15638 times.
+            \\    Monkey 1 inspected items 14358 times.
+            \\    Monkey 2 inspected items 587 times.
+            \\    Monkey 3 inspected items 15593 times.
+            \\
+            \\# Round 4000
+            \\    Monkey 0 inspected items 20858 times.
+            \\    Monkey 1 inspected items 19138 times.
+            \\    Monkey 2 inspected items 780 times.
+            \\    Monkey 3 inspected items 20797 times.
+            \\
+            \\# Round 5000
+            \\    Monkey 0 inspected items 26075 times.
+            \\    Monkey 1 inspected items 23921 times.
+            \\    Monkey 2 inspected items 974 times.
+            \\    Monkey 3 inspected items 26000 times.
+            \\
+            \\# Round 6000
+            \\    Monkey 0 inspected items 31294 times.
+            \\    Monkey 1 inspected items 28702 times.
+            \\    Monkey 2 inspected items 1165 times.
+            \\    Monkey 3 inspected items 31204 times.
+            \\
+            \\# Round 7000
+            \\    Monkey 0 inspected items 36508 times.
+            \\    Monkey 1 inspected items 33488 times.
+            \\    Monkey 2 inspected items 1360 times.
+            \\    Monkey 3 inspected items 36400 times.
+            \\
+            \\# Round 8000
+            \\    Monkey 0 inspected items 41728 times.
+            \\    Monkey 1 inspected items 38268 times.
+            \\    Monkey 2 inspected items 1553 times.
+            \\    Monkey 3 inspected items 41606 times.
+            \\
+            \\# Round 9000
+            \\    Monkey 0 inspected items 46945 times.
+            \\    Monkey 1 inspected items 43051 times.
+            \\    Monkey 2 inspected items 1746 times.
+            \\    Monkey 3 inspected items 46807 times.
+            \\
+            \\# Round 10000
+            \\    Monkey 0 inspected items 52166 times.
+            \\    Monkey 1 inspected items 47830 times.
+            \\    Monkey 2 inspected items 1938 times.
+            \\    Monkey 3 inspected items 52013 times.
+            \\
+            \\## Top 2 Performers
+            \\> 52013 * 52166 = 2713310158
+            \\
+            ,
+        },
     };
 
     const allocator = std.testing.allocator;
@@ -370,9 +468,11 @@ const Timing = @import("./perf.zig").Timing;
 const Config = struct {
     trace: bool = false,
     rounds: usize = 0,
+    boring: bool = true,
     reportRounds: []const usize = &[_]usize{},
     metrics: struct {
         show: bool = false,
+        showRounds: []const usize = &[_]usize{},
         topPerformers: usize = 0,
     } = .{},
 };
@@ -570,6 +670,7 @@ fn World(
 
         traceEnabled: bool = false,
         traceOpen: bool = false,
+        boring: bool = true,
 
         arena: std.heap.ArenaAllocator,
         monkeys: []Monkey = &[_]Monkey{},
@@ -617,11 +718,9 @@ fn World(
                         self.trace("  Monkey inspects an item with a worry level of {}.\n", .{worry});
 
                         self.tmp.clearRetainingCapacity();
-                        // try self.tmp.ensureTotalCapacity(1024);
                         var tmpW = self.tmp.writer();
 
                         worry = monkey.op.trace(worry, tmpW);
-                        // worry = monkey.op.eval(worry);
                         tmpW.print(" to {}.", .{worry}) catch {};
 
                         self.trace("    {s}\n", .{self.tmp.items});
@@ -629,9 +728,11 @@ fn World(
                         worry = monkey.op.eval(worry);
                     }
 
-                    worry = @divTrunc(worry, 3);
-                    if (self.traceEnabled)
-                        self.trace("    Monkey gets bored with item. Worry level is divided by 3 to {}.\n", .{worry});
+                    if (self.boring) {
+                        worry = @divTrunc(worry, 3);
+                        if (self.traceEnabled)
+                            self.trace("    Monkey gets bored with item. Worry level is divided by 3 to {}.\n", .{worry});
+                    }
 
                     node.data.worry = worry;
 
@@ -714,6 +815,7 @@ fn run(
 
     { // run rounds
         var reportRounds = config.reportRounds;
+        var metricRounds = config.metrics.showRounds;
         var round: usize = 0;
         while (round < config.rounds) {
             var roundTime = try std.time.Timer.start();
@@ -728,8 +830,8 @@ fn run(
                     \\# Round {}
                     \\
                 , .{round});
-                for (world.monkeys) |*monkey, i| {
-                    try out.print("    Monkey {}:", .{i});
+                for (world.monkeys) |*monkey| {
+                    try out.print("    Monkey {}:", .{monkey.id});
                     var item = monkey.items.first;
                     while (item) |it| : (item = it.next) {
                         if (item == monkey.items.first) {
@@ -740,6 +842,17 @@ fn run(
                     }
                     try out.print("\n", .{});
                 }
+            }
+
+            if (metricRounds.len > 0 and round == metricRounds[0]) {
+                metricRounds = metricRounds[1..];
+                try out.print(
+                    \\
+                    \\# Round {}
+                    \\
+                , .{round});
+                for (world.monkeys) |*monkey|
+                    try out.print("    Monkey {} inspected {} times.\n", .{ monkey.id, monkey.businessMetric });
             }
 
             try timing.collect(.runRound, roundTime.lap());
@@ -755,38 +868,38 @@ fn run(
         for (world.monkeys) |*monkey| {
             try out.print("    Monkey {} inspected items {} times.\n", .{ monkey.id, monkey.businessMetric });
         }
+    }
 
-        const topn = config.metrics.topPerformers;
-        if (topn > 0) {
-            var top = std.PriorityQueue(*Monkey, void, Monkey.compareMetric).init(allocator, {});
-            defer top.deinit();
+    const topn = config.metrics.topPerformers;
+    if (topn > 0) {
+        var top = std.PriorityQueue(*Monkey, void, Monkey.compareMetric).init(allocator, {});
+        defer top.deinit();
 
-            for (world.monkeys) |*monkey| {
-                try top.add(monkey);
-                while (top.len > topn) _ = top.remove();
-            }
-
-            try out.print(
-                \\
-                \\## Top 2 Performers
-                \\> 
-            , .{});
-
-            var prod: usize = 1;
-            var first = true;
-            while (top.removeOrNull()) |t| : (first = false) {
-                const value = t.businessMetric;
-                prod *= value;
-                if (first)
-                    try out.print("{d} ", .{value})
-                else
-                    try out.print("* {d} ", .{value});
-            }
-            try out.print("= {d}\n", .{prod});
+        for (world.monkeys) |*monkey| {
+            try top.add(monkey);
+            while (top.len > topn) _ = top.remove();
         }
 
-        try timing.markPhase(.report);
+        try out.print(
+            \\
+            \\## Top 2 Performers
+            \\> 
+        , .{});
+
+        var prod: usize = 1;
+        var first = true;
+        while (top.removeOrNull()) |t| : (first = false) {
+            const value = t.businessMetric;
+            prod *= value;
+            if (first)
+                try out.print("{d} ", .{value})
+            else
+                try out.print("* {d} ", .{value});
+        }
+        try out.print("= {d}\n", .{prod});
     }
+
+    try timing.markPhase(.report);
 
     try timing.finish(.overall);
 }
@@ -842,12 +955,33 @@ pub fn main() !void {
                     \\  --raw-output
                     \\    don't buffer stdout writes
                     \\
+                    \\  -e or
+                    \\  --excite
+                    \\    make things less boring
+                    \\
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.trace = true;
             } else if (arg.is(.{"--raw-output"})) {
                 bufferOutput = false;
+            } else if (arg.is(.{ "-e", "--excite" })) {
+                config.boring = false;
+                config.rounds = 10000;
+                config.metrics.showRounds = &[_]usize{
+                    1,
+                    20,
+                    1000,
+                    2000,
+                    3000,
+                    4000,
+                    5000,
+                    6000,
+                    7000,
+                    8000,
+                    9000,
+                    10000,
+                };
             } else return error.InvalidArgument;
         }
     }
