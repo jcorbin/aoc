@@ -145,8 +145,20 @@ pub const Cursor = struct {
     }
 
     pub fn consumeInt(self: *Self, comptime T: type, radix: u8) ?T {
-        const token = self.consumeToken() orelse return null;
+        var i = self.i;
+        var j = i;
+        while (j < self.buf.len) switch (self.buf[j]) {
+            '-', '+' => {
+                if (j > i) break;
+                j += 1;
+            },
+            '_', '0'...'9', 'A'...'Z', 'a'...'z' => j += 1,
+            else => break,
+        };
+        if (j == i) return null;
+        const token = self.buf[self.i..j];
         const n = std.fmt.parseInt(T, token, radix) catch return null;
+        self.i = j;
         return n;
     }
 
