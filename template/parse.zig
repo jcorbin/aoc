@@ -119,11 +119,19 @@ pub const Cursor = struct {
         return if (j > i) self.buf[i..j] else null;
     }
 
-    pub fn haveToken(self: *Self, expected: []const u8) bool {
-        const token = self.peekToken() orelse return false;
-        if (!std.mem.eql(u8, token, expected)) return false;
-        self.i += token.len;
+    pub fn haveLiteral(self: *Self, expected: []const u8) bool {
+        var i = self.i;
+        for (expected) |c| {
+            if (i >= self.buf.len) return false;
+            if (self.buf[i] != c) return false;
+            i += 1;
+        }
+        self.i = i;
         return true;
+    }
+
+    pub fn expectLiteral(self: *Self, expected: []const u8, err: anyerror) !void {
+        if (!self.haveLiteral(expected)) return err;
     }
 
     pub fn consumeToken(self: *Self) ?[]const u8 {
