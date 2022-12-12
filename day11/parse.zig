@@ -119,11 +119,19 @@ pub const Cursor = struct {
         return if (j > i) self.buf[i..j] else null;
     }
 
-    pub fn haveToken(self: *Self, expected: []const u8) bool {
-        const token = self.peekToken() orelse return false;
-        if (!std.mem.eql(u8, token, expected)) return false;
-        self.i += token.len;
+    pub fn haveLiteral(self: *Self, expected: []const u8) bool {
+        var i = self.i;
+        for (expected) |c| {
+            if (i >= self.buf.len) return false;
+            if (self.buf[i] != c) return false;
+            i += 1;
+        }
+        self.i = i;
         return true;
+    }
+
+    pub fn expectLiteral(self: *Self, expected: []const u8, err: anyerror) !void {
+        if (!self.haveLiteral(expected)) return err;
     }
 
     pub fn consumeToken(self: *Self) ?[]const u8 {
@@ -137,8 +145,20 @@ pub const Cursor = struct {
     }
 
     pub fn consumeInt(self: *Self, comptime T: type, radix: u8) ?T {
-        const token = self.consumeToken() orelse return null;
+        var i = self.i;
+        var j = i;
+        while (j < self.buf.len) switch (self.buf[j]) {
+            '-', '+' => {
+                if (j > i) break;
+                j += 1;
+            },
+            '_', '0'...'9', 'A'...'Z', 'a'...'z' => j += 1,
+            else => break,
+        };
+        if (j == i) return null;
+        const token = self.buf[self.i..j];
         const n = std.fmt.parseInt(T, token, radix) catch return null;
+        self.i = j;
         return n;
     }
 

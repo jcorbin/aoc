@@ -2,7 +2,38 @@
 
 ## Day 11
 
-WIP
+No self reference by value:
+```zig
+/// A simple math expression on a single variable X
+const Op = union(enum) {
+    x: void,
+    value: u32,
+    add: [2]@This(),
+    mul: [2]@This(),
+};
+```
+
+Yes self reference by pointer:
+```zig
+/// A simple math expression on a single variable X
+const Op = union(enum) {
+    x: void,
+    value: u32,
+    add: [2]*@This(),
+    mul: [2]*@This(),
+};
+```
+
+Yes self reference by slice, which is a pointer+len:
+```zig
+/// A simple math expression on a single variable X
+const Op = union(enum) {
+    x: void,
+    value: u32,
+    add: []@This(),
+    mul: []@This(),
+};
+```
 
 ## Day 10
 
