@@ -44,6 +44,7 @@ test "example" {
                 .verbose = true,
                 .trace = true,
                 .rounds = 1,
+                .reportRounds = &[_]usize{1},
             },
             .input = example_input,
             .expected = 
@@ -131,7 +132,91 @@ test "example" {
             \\
             ,
         },
-        // TODO Part 1 example: round state for 1-10,15,20
+
+        // Part 1 example: round state for 1-10,15,20
+        .{
+            .config = .{
+                .verbose = true,
+                .rounds = 20,
+                .reportRounds = &[_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20 },
+            },
+            .input = example_input,
+            .expected = 
+            \\
+            \\# Round 1
+            \\    Monkey 0: 20, 23, 27, 26
+            \\    Monkey 1: 2080, 25, 167, 207, 401, 1046
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 2
+            \\    Monkey 0: 695, 10, 71, 135, 350
+            \\    Monkey 1: 43, 49, 58, 55, 362
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 3
+            \\    Monkey 0: 16, 18, 21, 20, 122
+            \\    Monkey 1: 1468, 22, 150, 286, 739
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 4
+            \\    Monkey 0: 491, 9, 52, 97, 248, 34
+            \\    Monkey 1: 39, 45, 43, 258
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 5
+            \\    Monkey 0: 15, 17, 16, 88, 1037
+            \\    Monkey 1: 20, 110, 205, 524, 72
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 6
+            \\    Monkey 0: 8, 70, 176, 26, 34
+            \\    Monkey 1: 481, 32, 36, 186, 2190
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 7
+            \\    Monkey 0: 162, 12, 14, 64, 732, 17
+            \\    Monkey 1: 148, 372, 55, 72
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 8
+            \\    Monkey 0: 51, 126, 20, 26, 136
+            \\    Monkey 1: 343, 26, 30, 1546, 36
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 9
+            \\    Monkey 0: 116, 10, 12, 517, 14
+            \\    Monkey 1: 108, 267, 43, 55, 288
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 10
+            \\    Monkey 0: 91, 16, 20, 98
+            \\    Monkey 1: 481, 245, 22, 26, 1092, 30
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 15
+            \\    Monkey 0: 83, 44, 8, 184, 9, 20, 26, 102
+            \\    Monkey 1: 110, 36
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            \\# Round 20
+            \\    Monkey 0: 10, 12, 14, 26, 34
+            \\    Monkey 1: 245, 93, 53, 199, 115
+            \\    Monkey 2:
+            \\    Monkey 3:
+            \\
+            ,
+        },
 
         // TODO Part 1 example: outcome
         // In this example, the two most active monkeys inspected items 101 and 105 times.
@@ -141,7 +226,13 @@ test "example" {
 
     const allocator = std.testing.allocator;
 
-    for (test_cases) |tc| {
+    for (test_cases) |tc, i| {
+        std.debug.print(
+            \\
+            \\Test Case {}
+            \\===
+            \\
+        , .{i});
         var input = std.io.fixedBufferStream(tc.input);
         var output = std.ArrayList(u8).init(allocator);
         defer output.deinit();
@@ -254,6 +345,7 @@ const Config = struct {
     verbose: bool = false,
     trace: bool = false,
     rounds: usize = 0,
+    reportRounds: []const usize = &[_]usize{},
 };
 
 const MonkeyBuilder = struct {
@@ -590,30 +682,35 @@ fn run(
     }
 
     { // run rounds
+        var reportRounds = config.reportRounds;
         var round: usize = 0;
         while (round < config.rounds) {
             var roundTime = try std.time.Timer.start();
             round += 1;
             world.run();
 
-            world.traceOpen = false;
-            try out.print(
-                \\
-                \\# Round {}
-                \\
-            , .{round});
-            for (world.monkeys) |*monkey, i| {
-                try out.print("    Monkey {}:", .{i});
-                var item = monkey.items.first;
-                while (item) |it| : (item = it.next) {
-                    if (item == monkey.items.first) {
-                        try out.print(" {}", .{it.data.worry});
-                    } else {
-                        try out.print(", {}", .{it.data.worry});
+            if (reportRounds.len > 0 and round == reportRounds[0]) {
+                reportRounds = reportRounds[1..];
+                world.traceOpen = false;
+                try out.print(
+                    \\
+                    \\# Round {}
+                    \\
+                , .{round});
+                for (world.monkeys) |*monkey, i| {
+                    try out.print("    Monkey {}:", .{i});
+                    var item = monkey.items.first;
+                    while (item) |it| : (item = it.next) {
+                        if (item == monkey.items.first) {
+                            try out.print(" {}", .{it.data.worry});
+                        } else {
+                            try out.print(", {}", .{it.data.worry});
+                        }
                     }
+                    try out.print("\n", .{});
                 }
-                try out.print("\n", .{});
             }
+
             try timing.collect(.runRound, roundTime.lap());
         }
         try timing.markPhase(.run);
