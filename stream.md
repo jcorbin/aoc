@@ -4,6 +4,10 @@
   - template and Day 11 updated
   - TODO marshal all prior day tests, and update
 
+## Day 12
+
+WIP
+
 # 2022-12-11: Day 11
 
 - whew... I kept trying to use big integers too long, before breaking down and
