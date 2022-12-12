@@ -17,7 +17,6 @@ test "example" {
             \\
             ,
             .expected = 
-            \\# Parse 1. `such data`
             \\# Solution
             \\> 42
             \\
@@ -27,7 +26,13 @@ test "example" {
 
     const allocator = std.testing.allocator;
 
-    for (test_cases) |tc| {
+    for (test_cases) |tc, i| {
+        std.debug.print(
+            \\
+            \\Test Case {}
+            \\===
+            \\
+        , .{i});
         var input = std.io.fixedBufferStream(tc.input);
         var output = std.ArrayList(u8).init(allocator);
         defer output.deinit();
@@ -45,6 +50,11 @@ const Timing = @import("./perf.zig").Timing;
 const Config = struct {
     verbose: bool = false,
 };
+
+fn parseLine(cur: *Parse.Cursor) !void {
+    // TODO refactor as needed, e.g. onto a stateful builder struct
+    try cur.expectEnd(error.ParseLineNotImplemented);
+}
 
 fn run(
     allocator: Allocator,
@@ -64,31 +74,39 @@ fn run(
     defer timing.deinit();
     defer timing.printDebugReport();
 
+    var out = output.writer();
+
+    // FIXME: hookup your config
+    _ = config;
+
     // FIXME: uncomment this if solutions need heap memory below
     // var arena = std.heap.ArenaAllocator.init(allocator);
     // defer arena.deinit();
 
-    var lines = Parse.lineScanner(input.reader());
-    var out = output.writer();
-
-    // FIXME: parse input (store intermediate form, or evaluate)
-    while (try lines.next()) |*cur| {
-        var lineTime = try std.time.Timer.start();
-        _ = cur; // FIXME: much line
-        try timing.collect(.parseLine, lineTime.lap());
-
-        if (config.verbose) {
-            try out.print(
-                \\# Parse {}. `{s}`
-                \\
-            , .{
-                cur.count,
-                cur.buf,
-            });
-            try timing.collect(.parseLineVerbose, lineTime.lap());
+    { // FIXME: parse input (store intermediate form, or evaluate)
+        var lines = Parse.lineScanner(input.reader());
+        while (try lines.next()) |*cur| {
+            var lineTime = try std.time.Timer.start();
+            parseLine(cur) catch |err| {
+                const space = " " ** 4096;
+                std.debug.print(
+                    \\Unable to parse line #{}:
+                    \\> {s}
+                    \\  {s}^-- {} here
+                    \\
+                , .{
+                    cur.count,
+                    cur.buf,
+                    space[0..cur.i],
+                    err,
+                });
+                return err;
+            };
+            try timing.collect(.parseLine, lineTime.lap());
         }
+
+        try timing.markPhase(.parse);
     }
-    try timing.markPhase(.parse);
 
     // FIXME: solve...
     {
@@ -113,6 +131,7 @@ pub fn main() !void {
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
     var config = Config{};
+    var bufferOutput = true;
 
     {
         var args = try ArgParser.init(allocator);
@@ -126,23 +145,32 @@ pub fn main() !void {
                     \\Usage: {s} [-v]
                     \\
                     \\Options:
+                    \\
                     \\  -v or
                     \\  --verbose
                     \\    print world state after evaluating each input line
                     \\
+                    \\  --raw-output
+                    \\    don't buffer stdout writes
+                    \\
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-v", "--verbose" })) {
-                config.verbose = true;
+                config.trace = true;
+            } else if (arg.is(.{"--raw-output"})) {
+                bufferOutput = false;
             } else return error.InvalidArgument;
         }
     }
 
     var bufin = std.io.bufferedReader(input.reader());
-    var bufout = std.io.bufferedWriter(output.writer());
 
+    if (!bufferOutput)
+        return run(allocator, &bufin, output, config);
+
+    var bufout = std.io.bufferedWriter(output.writer());
     try run(allocator, &bufin, &bufout, config);
     try bufout.flush();
-
     // TODO: sentinel-buffered output writer to flush lines progressively
+    // ... may obviate the desire for raw / non-buffered output else
 }
