@@ -817,7 +817,7 @@ fn run(
 
     { // parse monkey definitions
         var lines = Parse.lineScanner(input.reader());
-        while (try lines.next()) |*cur| {
+        while (try lines.next()) |cur| {
             var lineTime = try std.time.Timer.start();
             builder.parseLine(cur) catch |err| {
                 const space = " " ** 4096;
@@ -970,7 +970,7 @@ pub fn main() !void {
 
         // TODO: input filename arg
 
-        while (try args.next()) |arg| {
+        while (args.next()) |arg| {
             if (arg.is(.{ "-h", "--help" })) {
                 std.debug.print(
                     \\Usage: {s} [-v]

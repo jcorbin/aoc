@@ -7,21 +7,18 @@ pub fn DelimScanner(
     comptime bufferSize: usize,
 ) type {
     return struct {
-        const delim = delim;
-
         buffer: [bufferSize]u8 = [_]u8{0} ** bufferSize,
         reader: Reader,
-        count: usize = 0,
+        cur: Cursor = .{ .buf = "" },
 
         const Self = @This();
 
-        pub fn next(self: *Self) !?Cursor {
+        pub fn next(self: *Self) !?*Cursor {
             var line = (try self.reader.readUntilDelimiterOrEof(self.buffer[0..], delim)) orelse return null;
-            self.count += 1;
-            return Cursor{
-                .buf = line,
-                .count = self.count,
-            };
+            self.cur.count += 1;
+            self.cur.buf = line;
+            self.cur.i = 0;
+            return &self.cur;
         }
     };
 }

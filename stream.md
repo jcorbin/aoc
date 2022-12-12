@@ -1,6 +1,10 @@
-# 2022-12-11
+# 2022-12-12
 
-## Day 11
+- updates for breaking changes in zig v0.10
+  - template and Day 11 updated
+  - TODO marshal all prior day tests, and update
+
+# 2022-12-11: Day 11
 
 - whew... I kept trying to use big integers too long, before breaking down and
   getting smart about it...

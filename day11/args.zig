@@ -17,7 +17,7 @@ pub const Parser = struct {
     pub fn init(allocator: Allocator) !Self {
         var arena = std.heap.ArenaAllocator.init(allocator);
         var it = try std.process.argsWithAllocator(arena.allocator());
-        const progArg = try (it.next(arena.allocator()) orelse return error.MissingArg0);
+        const progArg = it.next() orelse return error.MissingArg0;
         return Self{
             // .allocator = allocator,
             .arena = arena,
@@ -39,8 +39,8 @@ pub const Parser = struct {
         }
     }
 
-    pub fn next(self: *Self) !?Arg {
-        var have = try (self.it.next(self.arena.allocator()) orelse return null);
+    pub fn next(self: *Self) ?Arg {
+        var have = self.it.next() orelse return null;
         const index = self.i;
         self.i += 1;
         return Arg{ .index = index, .have = have };
