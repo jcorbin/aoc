@@ -2,6 +2,9 @@
 
 ## Day 11
 
+- whew... I kept trying to use big integers too long, before breaking down and
+  getting smart about it...
+
 No self reference by value:
 ```zig
 /// A simple math expression on a single variable X

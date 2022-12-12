@@ -15,4 +15,4 @@ See dev log in [stream.md](stream.md) for now
 | [day8](day8/prompt.md)           | Tree height cardinal filling                  |
 | [day9](day9/prompt.md)           | Rope Snake Chase                              |
 | [day10](day10/prompt.md)         | CPU : CRT timing simulation                   |
-| [day11](day11/prompt.md)         | WIP                                           |
+| [day11](day11/prompt.md)         | Monkey Number Recurrence                      |

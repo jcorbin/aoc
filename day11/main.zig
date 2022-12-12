@@ -264,6 +264,7 @@ test "example" {
             },
             .input = example_input,
             .expected = 
+            \\
             \\# Round 1
             \\    Monkey 0 inspected items 2 times.
             \\    Monkey 1 inspected items 4 times.
@@ -366,6 +367,17 @@ test "example" {
 const Item = struct {
     worry: u64,
 };
+
+fn gcd(a: u64, b: u64) u64 {
+    return if (b == 0) a else gcd(b, a % b);
+}
+
+fn lcm(a: u64, b: u64) u64 {
+    return if (a > b)
+        (a / gcd(a, b)) * b
+    else
+        (b / gcd(a, b)) * a;
+}
 
 /// A simple math expression on a single variable X
 const Op = union(enum) {
@@ -675,6 +687,7 @@ fn World(
         arena: std.heap.ArenaAllocator,
         monkeys: []Monkey = &[_]Monkey{},
 
+        mod: u64 = 0,
         tmp: std.ArrayList(u8),
 
         const Self = @This();
@@ -706,6 +719,19 @@ fn World(
         }
 
         pub fn run(self: *Self) void {
+            if (!self.boring and self.mod == 0) {
+                var a: u64 = 0;
+                for (self.monkeys) |*monkey| {
+                    const b = monkey.testDiv;
+                    a = if (a == 0) b else lcm(a, b);
+                }
+                if (a == 0) {
+                    std.debug.print("no mod? no monkey divs? no monkeys?\n", .{});
+                    std.process.exit(1);
+                }
+                self.mod = a;
+            }
+
             for (self.monkeys) |*monkey| {
                 if (self.traceEnabled) self.trace("Monkey {}:\n", .{monkey.id});
 
@@ -732,6 +758,8 @@ fn World(
                         worry = @divTrunc(worry, 3);
                         if (self.traceEnabled)
                             self.trace("    Monkey gets bored with item. Worry level is divided by 3 to {}.\n", .{worry});
+                    } else {
+                        worry %= self.mod;
                     }
 
                     node.data.worry = worry;
@@ -782,6 +810,7 @@ fn run(
     var world = World(@TypeOf(out)).init(out, allocator);
     defer world.deinit();
 
+    world.boring = config.boring;
     world.traceEnabled = config.trace;
 
     var builder = MonkeyBuilder{ .arena = &world.arena };
@@ -852,7 +881,7 @@ fn run(
                     \\
                 , .{round});
                 for (world.monkeys) |*monkey|
-                    try out.print("    Monkey {} inspected {} times.\n", .{ monkey.id, monkey.businessMetric });
+                    try out.print("    Monkey {} inspected items {} times.\n", .{ monkey.id, monkey.businessMetric });
             }
 
             try timing.collect(.runRound, roundTime.lap());
