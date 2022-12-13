@@ -34,6 +34,22 @@ pub const Cursor = struct {
 
     const Self = @This();
 
+    pub fn carp(self: *Self, err: anyerror) anyerror {
+        const space = " " ** 4096;
+        std.debug.print(
+            \\Unable to parse line #{}:
+            \\> {s}
+            \\  {s}^-- {} here
+            \\
+        , .{
+            self.count,
+            self.buf,
+            space[0..self.i],
+            err,
+        });
+        return err;
+    }
+
     pub fn reset(self: *Self) void {
         self.i = 0;
     }
