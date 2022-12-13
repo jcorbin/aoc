@@ -230,6 +230,12 @@ fn pointTo(comptime T: anytype, pt: Point, width: anytype) T {
     return @intCast(T, pt[0]) + @intCast(T, pt[1]) * @intCast(T, width);
 }
 
+fn pointSumSq(pt: Point) u32 {
+    const x = @intCast(i32, pt[0]);
+    const y = @intCast(i32, pt[1]);
+    return @intCast(u32, x * x) + @intCast(u32, y * y);
+}
+
 const World = struct {
     buf: []const Cell,
     width: u15,
@@ -269,6 +275,16 @@ const Solution = struct {
                 .left => .{ -1, 0 },
             };
         }
+
+        pub fn glyph(self: @This()) u8 {
+            return switch (self) {
+                .none => '?',
+                .up => '^',
+                .right => '>',
+                .down => 'v',
+                .left => '<',
+            };
+        }
     };
 
     const Data = std.MultiArrayList(struct {
@@ -283,41 +299,76 @@ const Solution = struct {
     // TODO any worth-it to having a hash set for loc?
 
     const Self = @This();
-    pub fn init(allocator: Allocator, start: Point) !Self {
-        var self = Self{ .allocator = allocator };
-        self.data.append(self.allocator, .{ .loc = start });
+
+    const Queue = std.PriorityQueue(*Solution, *const World, Solution.compare);
+
+    pub fn compare(
+        world: *const World,
+        a: *const Self,
+        b: *const Self,
+    ) std.math.Order {
+        switch (std.math.order(a.data.len, b.data.len)) {
+            .eq => {},
+            else => |c| return c.invert(),
+        }
+
+        const end_loc = world.pointAt(world.endAt);
+        return std.math.order(
+            pointSumSq(end_loc - a.loc()),
+            pointSumSq(end_loc - b.loc()),
+        );
+    }
+
+    pub fn init(allocator: Allocator, start: Point) !*Self {
+        var self = try allocator.create(Self);
+        errdefer self.allocator.destroy(self);
+
+        self.* = .{ .allocator = allocator };
+        try self.data.append(self.allocator, .{ .loc = start });
         return self;
     }
 
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self) void {
         self.data.deinit(self.allocator);
     }
 
-    pub fn loc(self: Self) Point {
+    pub fn loc(self: *const Self) Point {
         return self.data.items(.loc)[self.data.len - 1];
     }
 
-    pub fn then(self: Self, move: Move, to: Point, done: bool) !Self {
-        var next = Self{
-            .allocator = self.allocator,
-            .data = try self.data.clone(self.allocator),
-            .done = done,
-        };
-        errdefer next.data.deinit();
-        next.data.items(.move)[next.data.len - 1] = move;
-        try next.data.append(next.allocator, .{ .loc = to });
+    pub fn final(self: *const Self) Move {
+        return self.data.items(.move)[self.data.len - 1];
+    }
+
+    pub fn then(self: *const Self, move: Move, to: Point, done: bool) !*Self {
+        var data = try self.data.clone(self.allocator);
+        errdefer data.deinit(self.allocator);
+
+        const i = data.len - 1;
+        try data.append(self.allocator, .{ .loc = to });
+        data.items(.move)[i] = move;
+
+        var next = try self.allocator.create(Self);
+        errdefer self.allocator.destroy(next);
+
+        next.* = .{ .allocator = self.allocator, .data = data, .done = done };
         return next;
     }
 
     const Next = struct {
         world: *const World,
-        sol: Solution,
+        sol: *const Solution,
         loc: Point,
         i: usize = 0,
 
-        const choices = [_]Move{ .up, .right, .down, .left };
+        const choices = [_]Move{
+            .up,
+            .down,
+            .left,
+            .right,
+        };
 
-        pub fn next(it: *@This()) !?Solution {
+        pub fn next(it: *@This()) !?*Solution {
             if (!it.sol.done) {
                 while (it.i < choices.len) {
                     const i = it.i;
@@ -328,23 +379,36 @@ const Solution = struct {
             return null;
         }
 
-        pub fn may(it: *@This(), move: Move) !?Solution {
-            const to = it.loc + switch (move) {
+        pub fn may(it: *@This(), move: Move) !?*Solution {
+            const from = it.loc;
+            const to = from + switch (move) {
                 .none => return null,
                 else => move.delta(),
             };
+
+            // bounds check
             if (to[0] < 0 or
                 to[1] < 0 or
                 to[0] >= it.world.width or
                 to[1] >= it.world.height) return null;
+
+            // loop check
             for (it.sol.data.items(.loc)) |prior|
-                if (to == prior) return null;
+                if (@reduce(.And, to == prior)) return null;
+
+            // climbing check
+            const from_level = it.world.get(from).height();
+            const to_level = it.world.get(to).height();
+            if (from_level < to_level and
+                to_level - from_level > 1)
+                return null;
+
             const done = it.world.atPoint(to) == it.world.endAt;
             return try it.sol.then(move, to, done);
         }
     };
 
-    pub fn moves(self: Self, world: *const World) Next {
+    pub fn moves(self: *const Self, world: *const World) Next {
         return .{
             .world = world,
             .sol = self,
@@ -395,9 +459,45 @@ fn run(
     };
     try timing.markPhase(.parse);
 
-    { // FIXME: solve...
-        std.debug.print("!!! TODO solve {} -> {}\n", .{ world.startAt, world.endAt });
-    }
+    // std.debug.print("... solving a {}x{} world\n", .{
+    //     world.width,
+    //     world.height,
+    // });
+
+    const solution = solve: {
+        var q = Solution.Queue.init(arena.allocator(), &world);
+        try q.add(try Solution.init(allocator, world.pointAt(world.startAt)));
+
+        var best: ?*Solution = null;
+        while (q.removeOrNull()) |sol| {
+            defer sol.deinit();
+            // std.debug.print("... qSize: {}\n", .{q.len});
+
+            if (best) |prior|
+                if (prior.data.len <= sol.data.len) continue;
+
+            var moves = sol.moves(&world);
+            while (try moves.next()) |next| {
+                if (!next.done) {
+                    try q.add(next);
+                } else {
+                    std.debug.print(">>> {} steps starting: {}@{}\n", .{
+                        next.data.len,
+                        next.data.items(.move)[0],
+                        next.data.items(.loc)[0],
+                    });
+                    if (best) |prior| {
+                        if (next.data.len < prior.data.len)
+                            best = next;
+                    } else {
+                        best = next;
+                    }
+                }
+            }
+        }
+
+        break :solve best orelse return error.NoSolution;
+    };
     try timing.markPhase(.solve);
 
     {
@@ -411,12 +511,25 @@ fn run(
         plan.set(world.pointAt(world.startAt), 'S');
         plan.set(world.pointAt(world.endAt), 'E');
 
+        { // TODO maybe into a Solution.method()
+            const solSlice = solution.data.slice();
+            const moveSlice = solSlice.items(.move);
+            for (solSlice.items(.loc)) |loc, i| {
+                switch (moveSlice[i]) {
+                    .none => {},
+                    else => |move| plan.set(loc, move.glyph()),
+                }
+            }
+        }
+
+        var steps = solution.data.len;
+        if (solution.final() == .none) steps -= 1;
         try out.print(
             \\# Solution
             \\{}
             \\> {} steps
             \\
-        , .{ plan, null });
+        , .{ plan, steps });
     }
     try timing.markPhase(.report);
 
@@ -439,7 +552,7 @@ pub fn main() !void {
 
         // TODO: input filename arg
 
-        while (try args.next()) |arg| {
+        while (args.next()) |arg| {
             if (arg.is(.{ "-h", "--help" })) {
                 std.debug.print(
                     \\Usage: {s} [-v]
@@ -456,7 +569,7 @@ pub fn main() !void {
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-v", "--verbose" })) {
-                config.trace = true;
+                config.verbose = true;
             } else if (arg.is(.{"--raw-output"})) {
                 bufferOutput = false;
             } else return error.InvalidArgument;
