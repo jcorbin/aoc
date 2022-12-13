@@ -31,10 +31,17 @@ test "example" {
             // \\    .>vv>E^^
             // \\    ..v>>>^^
             // \\    ..>>>>>^
-            \\    >>vv<<<<
-            \\    ..vvv<<^
-            \\    ..vv>E^^
-            \\    ..v>>>^^
+            //
+            // \\    >>vv<<<<
+            // \\    ..vvv<<^
+            // \\    ..vv>E^^
+            // \\    ..v>>>^^
+            // \\    ..>>>>>^
+            //
+            \\    v..v<<<<
+            \\    >v.vv<<^
+            \\    .v.v>E^^
+            \\    .>v>>>^^
             \\    ..>>>>>^
             \\> 31 steps
             \\
@@ -223,12 +230,17 @@ const Builder = struct {
         const startAt = self.startAt orelse return error.NoStart;
         const endAt = self.endAt orelse return error.NoEnd;
         const len = self.height * self.width;
+
+        var cost = try self.allocator.alloc(usize, len);
+        std.mem.set(usize, cost, 0);
+
         return .{
-            .buf = self.buf[0..len],
             .width = self.width,
             .height = self.height,
             .startAt = startAt,
             .endAt = endAt,
+            .cell = self.buf[0..len],
+            .cost = cost,
         };
     }
 };
@@ -253,11 +265,12 @@ fn pointSumSq(pt: Point) u32 {
 }
 
 const World = struct {
-    buf: []const Cell,
     width: u15,
     height: u15,
     startAt: u30,
     endAt: u30,
+    cell: []const Cell,
+    cost: []usize,
 
     const Self = @This();
 
@@ -270,7 +283,7 @@ const World = struct {
     }
 
     pub fn get(self: Self, pt: Point) Cell {
-        return self.buf[self.atPoint(pt)];
+        return self.cell[self.atPoint(pt)];
     }
 };
 
@@ -320,13 +333,13 @@ const Solution = struct {
     const Self = @This();
 
     const Search = struct {
-        const Queue = std.PriorityQueue(*Self, *const World, Self.compare);
+        const Queue = std.PriorityQueue(*Self, *World, Self.compare);
 
         q: Queue,
-        world: *const World,
+        world: *World,
         best: ?*Self = null,
 
-        pub fn run(allocator: Allocator, world: *const World, timer: ?*Timing.Timer) !?*Self {
+        pub fn run(allocator: Allocator, world: *World, timer: ?*Timing.Timer) !?*Self {
             var search = try Solution.Search.init(allocator, world);
             defer search.deinit();
 
@@ -342,7 +355,7 @@ const Solution = struct {
             return res;
         }
 
-        pub fn init(allocator: Allocator, world: *const World) !Search {
+        pub fn init(allocator: Allocator, world: *World) !Search {
             var q = Queue.init(allocator, world);
 
             var start = try Self.createStart(allocator, world);
@@ -388,26 +401,33 @@ const Solution = struct {
     };
 
     pub fn compare(
-        world: *const World,
+        world: *World,
         a: *const Self,
         b: *const Self,
     ) std.math.Order {
         if (a.done and !b.done) return .lt;
         if (b.done and !a.done) return .gt;
 
-        switch (std.math.order(a.path.items.len, b.path.items.len)) {
-            .eq => {},
-            else => |c| return c.invert(),
-        }
+        const cost_cmp = std.math.order(a.path.items.len, b.path.items.len);
 
         const end_loc = world.pointAt(world.endAt);
-        return std.math.order(
+        const dist_cmp = std.math.order(
             pointSumSq(end_loc - a.loc()),
             pointSumSq(end_loc - b.loc()),
         );
+
+        // return switch (dist_cmp) {
+        //     .eq => cost_cmp,
+        //     else => |c| c.invert(),
+        // };
+
+        return switch (cost_cmp) {
+            .eq => dist_cmp.invert(),
+            else => |c| c,
+        };
     }
 
-    pub fn createStart(allocator: Allocator, world: *const World) !*Self {
+    pub fn createStart(allocator: Allocator, world: *World) !*Self {
         return Self.create(
             allocator,
             world,
@@ -415,7 +435,7 @@ const Solution = struct {
         );
     }
 
-    pub fn create(allocator: Allocator, world: *const World, start: Point) !*Self {
+    pub fn create(allocator: Allocator, world: *World, start: Point) !*Self {
         const width = world.width;
         const height = world.height;
         const len = width * height;
@@ -432,7 +452,11 @@ const Solution = struct {
         var path = try Path.initCapacity(allocator, len);
         errdefer path.deinit(allocator);
 
+        const startAt = pointTo(u30, start, width);
+        visited.set(startAt);
+
         path.appendAssumeCapacity(.{ .loc = start });
+
         self.* = .{
             .allocator = allocator,
             .width = width,
@@ -482,7 +506,7 @@ const Solution = struct {
         SolutionInvalid,
     };
 
-    pub fn may(self: *Self, world: *const World, move: Move) ThenError!?*Self {
+    pub fn may(self: *Self, world: *World, move: Move) ThenError!?*Self {
         if (self.done) return null;
 
         // path was allocated with enough capacity to visit every cell in width x height
@@ -515,18 +539,21 @@ const Solution = struct {
             to_level - from_level > 1)
             return null;
 
-        const done = world.atPoint(to) == world.endAt;
+        // cost check / update
+        const prior = world.cost[toAt];
+        if (prior > 0 and prior <= pathLen) return null;
+        world.cost[toAt] = pathLen;
 
         var next = try self.clone();
-        next.done = done;
+        next.done = toAt == world.endAt;
+        next.visited.set(toAt);
         next.path.items[last].move = move;
         next.path.appendAssumeCapacity(.{ .loc = to });
-        next.visited.set(toAt);
         return next;
     }
 
     const Next = struct {
-        world: *const World,
+        world: *World,
         sol: *Solution,
         loc: Point,
         i: usize = 0,
@@ -549,7 +576,7 @@ const Solution = struct {
         }
     };
 
-    pub fn moves(self: *Self, world: *const World) Next {
+    pub fn moves(self: *Self, world: *World) Next {
         return .{
             .world = world,
             .sol = self,
