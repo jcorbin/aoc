@@ -23,9 +23,17 @@ test "example" {
             ,
             .expected = 
             \\# Solution
-            \\    v..v<<<<
-            \\    >v.vv<<^
-            \\    .>vv>E^^
+            // TODO this was the prompt example solution, but our search move
+            //      biases don't match yet we find an equivalent path...
+            //
+            // \\    v..v<<<<
+            // \\    >v.vv<<^
+            // \\    .>vv>E^^
+            // \\    ..v>>>^^
+            // \\    ..>>>>>^
+            \\    >>vv<<<<
+            \\    ..vvv<<^
+            \\    ..vv>E^^
             \\    ..v>>>^^
             \\    ..>>>>>^
             \\> 31 steps
@@ -123,7 +131,15 @@ const Grid = struct {
 };
 
 const Parse = @import("parse.zig");
-const Timing = @import("perf.zig").Timing;
+const Timing = @import("perf.zig").Timing(enum {
+    parse,
+    parseLine,
+    parseLineVerbose,
+    search,
+    searchRound,
+    report,
+    overall,
+});
 
 const Config = struct {
     verbose: bool = false,
@@ -287,27 +303,99 @@ const Solution = struct {
         }
     };
 
-    const Data = std.MultiArrayList(struct {
+    const Path = std.ArrayListUnmanaged(struct {
         loc: Point,
         move: Move = .none,
     });
 
-    allocator: Allocator,
-    data: Data = .{},
-    done: bool = false,
+    const Visited = std.DynamicBitSetUnmanaged;
 
-    // TODO any worth-it to having a hash set for loc?
+    allocator: Allocator,
+    done: bool = false,
+    width: u15,
+    height: u15,
+    visited: Visited,
+    path: Path,
 
     const Self = @This();
 
-    const Queue = std.PriorityQueue(*Solution, *const World, Solution.compare);
+    const Search = struct {
+        const Queue = std.PriorityQueue(*Self, *const World, Self.compare);
+
+        q: Queue,
+        world: *const World,
+        best: ?*Self = null,
+
+        pub fn run(allocator: Allocator, world: *const World, timer: ?*Timing.Timer) !?*Self {
+            var search = try Solution.Search.init(allocator, world);
+            defer search.deinit();
+
+            if (timer) |tm| tm.reset();
+            while (search.q.removeOrNull()) |sol| {
+                defer sol.destroy();
+                try search.expand(sol);
+                if (timer) |tm| try tm.lap();
+            }
+
+            var res = search.best;
+            search.best = null;
+            return res;
+        }
+
+        pub fn init(allocator: Allocator, world: *const World) !Search {
+            var q = Queue.init(allocator, world);
+
+            var start = try Self.createStart(allocator, world);
+            errdefer start.destroy();
+
+            try q.add(start);
+            return Search{ .q = q, .world = world };
+        }
+
+        pub fn deinit(search: *Search) void {
+            if (search.best) |sol| sol.destroy();
+            for (search.q.items[0..search.q.len]) |item| item.destroy();
+            search.q.deinit();
+        }
+
+        fn isObsolete(search: *Search, sol: *const Self) bool {
+            const prior = search.best orelse return false;
+            return prior.done and prior.path.items.len <= sol.path.items.len;
+        }
+
+        fn isBetter(search: *Search, sol: *const Self) bool {
+            if (!sol.done) return false;
+            const best = search.best orelse return true;
+            return sol.path.items.len < best.path.items.len;
+        }
+
+        fn expand(search: *Search, sol: *Self) !void {
+            if (search.isObsolete(sol)) return;
+            var solMoves = sol.moves(search.world);
+            while (try solMoves.next()) |next| {
+                if (search.isBetter(next)) {
+                    var prior = search.best;
+                    search.best = next;
+                    if (prior) |s| s.destroy();
+                } else if (next.done or search.isObsolete(next)) {
+                    next.destroy();
+                } else {
+                    errdefer next.destroy();
+                    try search.q.add(next);
+                }
+            }
+        }
+    };
 
     pub fn compare(
         world: *const World,
         a: *const Self,
         b: *const Self,
     ) std.math.Order {
-        switch (std.math.order(a.data.len, b.data.len)) {
+        if (a.done and !b.done) return .lt;
+        if (b.done and !a.done) return .gt;
+
+        switch (std.math.order(a.path.items.len, b.path.items.len)) {
             .eq => {},
             else => |c| return c.invert(),
         }
@@ -319,45 +407,127 @@ const Solution = struct {
         );
     }
 
-    pub fn init(allocator: Allocator, start: Point) !*Self {
-        var self = try allocator.create(Self);
-        errdefer self.allocator.destroy(self);
+    pub fn createStart(allocator: Allocator, world: *const World) !*Self {
+        return Self.create(
+            allocator,
+            world,
+            world.pointAt(world.startAt),
+        );
+    }
 
-        self.* = .{ .allocator = allocator };
-        try self.data.append(self.allocator, .{ .loc = start });
+    pub fn create(allocator: Allocator, world: *const World, start: Point) !*Self {
+        const width = world.width;
+        const height = world.height;
+        const len = width * height;
+
+        // TODO: can we just make one contiguous allocation here and cast
+        // tranches out of it?
+
+        var self = try allocator.create(Self);
+        errdefer allocator.destroy(self);
+
+        var visited = try Visited.initEmpty(allocator, len);
+        errdefer visited.deinit(allocator);
+
+        var path = try Path.initCapacity(allocator, len);
+        errdefer path.deinit(allocator);
+
+        path.appendAssumeCapacity(.{ .loc = start });
+        self.* = .{
+            .allocator = allocator,
+            .width = width,
+            .height = height,
+            .visited = visited,
+            .path = path,
+        };
         return self;
     }
 
-    pub fn deinit(self: *Self) void {
-        self.data.deinit(self.allocator);
+    pub fn destroy(self: *Self) void {
+        self.path.deinit(self.allocator);
+        self.visited.deinit(self.allocator);
+        self.allocator.destroy(self);
+    }
+
+    pub fn clone(self: *Self) !*Self {
+        var copy = try self.allocator.create(Self);
+        errdefer self.allocator.destroy(copy);
+
+        var visited = try self.visited.clone(self.allocator);
+        errdefer visited.deinit(self.allocator);
+
+        var path = try self.path.clone(self.allocator);
+        errdefer path.deinit(self.allocator);
+
+        copy.* = .{
+            .allocator = self.allocator,
+            .done = self.done,
+            .width = self.width,
+            .height = self.height,
+            .visited = visited,
+            .path = path,
+        };
+        return copy;
     }
 
     pub fn loc(self: *const Self) Point {
-        return self.data.items(.loc)[self.data.len - 1];
+        return self.path.items[self.path.items.len - 1].loc;
     }
 
     pub fn final(self: *const Self) Move {
-        return self.data.items(.move)[self.data.len - 1];
+        return self.path.items[self.path.items.len - 1].move;
     }
 
-    pub fn then(self: *const Self, move: Move, to: Point, done: bool) !*Self {
-        var data = try self.data.clone(self.allocator);
-        errdefer data.deinit(self.allocator);
+    const ThenError = std.mem.Allocator.Error || error{
+        SolutionInvalid,
+    };
 
-        const i = data.len - 1;
-        try data.append(self.allocator, .{ .loc = to });
-        data.items(.move)[i] = move;
+    pub fn may(self: *Self, world: *const World, move: Move) ThenError!?*Self {
+        if (self.done) return null;
 
-        var next = try self.allocator.create(Self);
-        errdefer self.allocator.destroy(next);
+        // path was allocated with enough capacity to visit every cell in width x height
+        // so if we're out of capacity, this solution should be abandoned
+        const pathLen = self.path.items.len;
+        if (pathLen >= self.path.capacity)
+            return ThenError.SolutionInvalid;
+        const last = pathLen - 1;
 
-        next.* = .{ .allocator = self.allocator, .data = data, .done = done };
+        const from = self.loc();
+        const to = from + switch (move) {
+            .none => return null,
+            else => move.delta(),
+        };
+
+        // bounds check
+        if (to[0] < 0 or
+            to[1] < 0 or
+            to[0] >= self.width or
+            to[1] >= self.height) return null;
+        const toAt = pointTo(u30, to, self.width);
+
+        // loop check
+        if (self.visited.isSet(toAt)) return null;
+
+        // climbing check
+        const from_level = world.get(from).height();
+        const to_level = world.get(to).height();
+        if (from_level < to_level and
+            to_level - from_level > 1)
+            return null;
+
+        const done = world.atPoint(to) == world.endAt;
+
+        var next = try self.clone();
+        next.done = done;
+        next.path.items[last].move = move;
+        next.path.appendAssumeCapacity(.{ .loc = to });
+        next.visited.set(toAt);
         return next;
     }
 
     const Next = struct {
         world: *const World,
-        sol: *const Solution,
+        sol: *Solution,
         loc: Point,
         i: usize = 0,
 
@@ -369,46 +539,17 @@ const Solution = struct {
         };
 
         pub fn next(it: *@This()) !?*Solution {
-            if (!it.sol.done) {
-                while (it.i < choices.len) {
-                    const i = it.i;
-                    it.i += 1;
-                    if (try it.may(choices[i])) |sol| return sol;
-                }
+            if (it.sol.done) return null;
+            while (it.i < choices.len) {
+                const i = it.i;
+                it.i += 1;
+                if (try it.sol.may(it.world, choices[i])) |sol| return sol;
             }
             return null;
         }
-
-        pub fn may(it: *@This(), move: Move) !?*Solution {
-            const from = it.loc;
-            const to = from + switch (move) {
-                .none => return null,
-                else => move.delta(),
-            };
-
-            // bounds check
-            if (to[0] < 0 or
-                to[1] < 0 or
-                to[0] >= it.world.width or
-                to[1] >= it.world.height) return null;
-
-            // loop check
-            for (it.sol.data.items(.loc)) |prior|
-                if (@reduce(.And, to == prior)) return null;
-
-            // climbing check
-            const from_level = it.world.get(from).height();
-            const to_level = it.world.get(to).height();
-            if (from_level < to_level and
-                to_level - from_level > 1)
-                return null;
-
-            const done = it.world.atPoint(to) == it.world.endAt;
-            return try it.sol.then(move, to, done);
-        }
     };
 
-    pub fn moves(self: *const Self, world: *const World) Next {
+    pub fn moves(self: *Self, world: *const World) Next {
         return .{
             .world = world,
             .sol = self,
@@ -425,14 +566,7 @@ fn run(
     output: anytype,
     config: Config,
 ) !void {
-    var timing = try Timing(enum {
-        parse,
-        parseLine,
-        parseLineVerbose,
-        solve,
-        report,
-        overall,
-    }).start(allocator);
+    var timing = try Timing.start(allocator);
     defer timing.deinit();
     defer timing.printDebugReport();
 
@@ -450,55 +584,23 @@ fn run(
             var cur = try lines.next() orelse return error.NoInput;
             break :init Builder.initLine(arena.allocator(), cur) catch |err| return cur.carp(err);
         };
+        var lineTime = try timing.timer(.parseLine);
         while (try lines.next()) |cur| {
-            var lineTime = try std.time.Timer.start();
             builder.parseLine(cur) catch |err| return cur.carp(err);
-            try timing.collect(.parseLine, lineTime.lap());
+            try lineTime.lap();
         }
         break :build try builder.finish();
     };
     try timing.markPhase(.parse);
 
-    // std.debug.print("... solving a {}x{} world\n", .{
-    //     world.width,
-    //     world.height,
-    // });
-
-    const solution = solve: {
-        var q = Solution.Queue.init(arena.allocator(), &world);
-        try q.add(try Solution.init(allocator, world.pointAt(world.startAt)));
-
-        var best: ?*Solution = null;
-        while (q.removeOrNull()) |sol| {
-            defer sol.deinit();
-            // std.debug.print("... qSize: {}\n", .{q.len});
-
-            if (best) |prior|
-                if (prior.data.len <= sol.data.len) continue;
-
-            var moves = sol.moves(&world);
-            while (try moves.next()) |next| {
-                if (!next.done) {
-                    try q.add(next);
-                } else {
-                    std.debug.print(">>> {} steps starting: {}@{}\n", .{
-                        next.data.len,
-                        next.data.items(.move)[0],
-                        next.data.items(.loc)[0],
-                    });
-                    if (best) |prior| {
-                        if (next.data.len < prior.data.len)
-                            best = next;
-                    } else {
-                        best = next;
-                    }
-                }
-            }
-        }
-
-        break :solve best orelse return error.NoSolution;
-    };
-    try timing.markPhase(.solve);
+    var searchRoundTimer = try timing.timer(.searchRound);
+    var solution = try Solution.Search.run(
+        allocator,
+        &world,
+        &searchRoundTimer,
+    ) orelse return error.NoSolution;
+    defer solution.destroy();
+    try timing.markPhase(.search);
 
     {
         var plan = try Grid.init(allocator, .{
@@ -507,22 +609,20 @@ fn run(
             .linePrefix = "    ",
             .fill = '.',
         });
+        defer plan.deinit();
 
         plan.set(world.pointAt(world.startAt), 'S');
         plan.set(world.pointAt(world.endAt), 'E');
 
         { // TODO maybe into a Solution.method()
-            const solSlice = solution.data.slice();
-            const moveSlice = solSlice.items(.move);
-            for (solSlice.items(.loc)) |loc, i| {
-                switch (moveSlice[i]) {
+            for (solution.path.items) |item|
+                switch (item.move) {
                     .none => {},
-                    else => |move| plan.set(loc, move.glyph()),
-                }
-            }
+                    else => |move| plan.set(item.loc, move.glyph()),
+                };
         }
 
-        var steps = solution.data.len;
+        var steps = solution.path.items.len;
         if (solution.final() == .none) steps -= 1;
         try out.print(
             \\# Solution
@@ -538,8 +638,13 @@ fn run(
 
 const ArgParser = @import("args.zig").Parser;
 
+const MainAllocator = std.heap.GeneralPurposeAllocator(.{
+    // .verbose_log = true,
+});
+
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
+    var gpa = MainAllocator{};
+    defer _ = gpa.deinit();
 
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
@@ -547,7 +652,10 @@ pub fn main() !void {
     var bufferOutput = true;
 
     {
-        var args = try ArgParser.init(allocator);
+        var argsArena = std.heap.ArenaAllocator.init(gpa.allocator());
+        defer argsArena.deinit();
+
+        var args = try ArgParser.init(argsArena.allocator());
         defer args.deinit();
 
         // TODO: input filename arg
@@ -579,10 +687,10 @@ pub fn main() !void {
     var bufin = std.io.bufferedReader(input.reader());
 
     if (!bufferOutput)
-        return run(allocator, &bufin, output, config);
+        return run(gpa.allocator(), &bufin, output, config);
 
     var bufout = std.io.bufferedWriter(output.writer());
-    try run(allocator, &bufin, &bufout, config);
+    try run(gpa.allocator(), &bufin, &bufout, config);
     try bufout.flush();
     // TODO: sentinel-buffered output writer to flush lines progressively
     // ... may obviate the desire for raw / non-buffered output else

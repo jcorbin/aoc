@@ -16,18 +16,40 @@ pub fn Timing(comptime Tag: type) type {
         phase: std.time.Timer,
 
         pub fn start(allocator: Allocator) !Self {
-            var timer = try std.time.Timer.start();
+            var overall = try std.time.Timer.start();
             return Self{
                 .arena = std.heap.ArenaAllocator.init(allocator),
                 .data = Data.init(allocator),
-                .overall = timer,
-                .phase = timer,
+                .overall = overall,
+                .phase = overall,
             };
         }
 
         pub fn deinit(self: *Self) void {
             self.data.deinit();
             self.arena.deinit();
+        }
+
+        pub const Timer = struct {
+            self: *Self,
+            tag: Tag,
+            t: std.time.Timer,
+
+            pub fn reset(tm: *@This()) void {
+                tm.t.reset();
+            }
+
+            pub fn lap(tm: *@This()) !void {
+                try tm.self.collect(tm.tag, tm.t.lap());
+            }
+        };
+
+        pub fn timer(self: *Self, tag: Tag) !Timer {
+            return Timer{
+                .self = self,
+                .tag = tag,
+                .t = try std.time.Timer.start(),
+            };
         }
 
         pub fn collect(self: *Self, tag: Tag, time: u64) !void {
