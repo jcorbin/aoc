@@ -3,6 +3,33 @@ const Allocator = std.mem.Allocator;
 const math = std.math;
 
 test "example" {
+    const example_input =
+        \\[1,1,3,1,1]
+        \\[1,1,5,1,1]
+        \\
+        \\[[1],[2,3,4]]
+        \\[[1],4]
+        \\
+        \\[9]
+        \\[[8,7,6]]
+        \\
+        \\[[4,4],4,4]
+        \\[[4,4],4,4,4]
+        \\
+        \\[7,7,7,7]
+        \\[7,7,7]
+        \\
+        \\[]
+        \\[3]
+        \\
+        \\[[[]]]
+        \\[[]]
+        \\
+        \\[1,[2,[3,[4,[5,6,7]]]],8,9]
+        \\[1,[2,[3,[4,[5,6,0]]]],8,9]
+        \\
+    ;
+
     const test_cases = [_]struct {
         input: []const u8,
         expected: []const u8,
@@ -13,32 +40,7 @@ test "example" {
             .config = .{
                 .verbose = 1,
             },
-            .input = 
-            \\[1,1,3,1,1]
-            \\[1,1,5,1,1]
-            \\
-            \\[[1],[2,3,4]]
-            \\[[1],4]
-            \\
-            \\[9]
-            \\[[8,7,6]]
-            \\
-            \\[[4,4],4,4]
-            \\[[4,4],4,4,4]
-            \\
-            \\[7,7,7,7]
-            \\[7,7,7]
-            \\
-            \\[]
-            \\[3]
-            \\
-            \\[[[]]]
-            \\[[]]
-            \\
-            \\[1,[2,[3,[4,[5,6,7]]]],8,9]
-            \\[1,[2,[3,[4,[5,6,0]]]],8,9]
-            \\
-            ,
+            .input = example_input,
             .expected = 
             \\# Solution
             \\1. correct
@@ -46,6 +48,40 @@ test "example" {
             \\4. correct
             \\6. correct
             \\> 13
+            \\
+            ,
+        },
+
+        // Part 2 example
+        .{
+            .config = .{
+                .verbose = 1,
+                .decode = "[[2]]\n[[6]]",
+            },
+            .input = example_input,
+            .expected = 
+            \\# Solution
+            \\    []
+            \\    [[]]
+            \\    [[[]]]
+            \\    [1,1,3,1,1]
+            \\    [1,1,5,1,1]
+            \\    [[1],[2,3,4]]
+            \\    [1,[2,[3,[4,[5,6,0]]]],8,9]
+            \\    [1,[2,[3,[4,[5,6,7]]]],8,9]
+            \\    [[1],4]
+            \\    [[2]]
+            \\    [3]
+            \\    [[4,4],4,4]
+            \\    [[4,4],4,4,4]
+            \\    [[6]]
+            \\    [7,7,7]
+            \\    [7,7,7,7]
+            \\    [[8,7,6]]
+            \\    [9]
+            \\- key @ 10
+            \\- key @ 14
+            \\> 140
             \\
             ,
         },
@@ -75,15 +111,23 @@ const Parse = @import("parse.zig");
 const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
+    parseDecodeKeys,
     compare,
     compareOne,
+
     count,
+
+    collect,
+    sort,
+    find,
+
     report,
     overall,
 });
 
 const Config = struct {
     verbose: usize = 0,
+    decode: []const u8 = "",
 };
 
 const Number = usize;
@@ -113,6 +157,48 @@ const Data = union(enum) {
         }
     }
 
+    pub fn lessThan(_: void, a: Data, b: Data) bool {
+        return Data.order(a, b) == .lt;
+    }
+
+    const ParseError = Allocator.Error || error{
+        ExpectedNumber,
+        ExpectedListCloseBrace,
+        UnexpectedTrailer,
+    };
+
+    pub fn parse(allocator: Allocator, str: []const u8) ParseError!Data {
+        var cur = Parse.Cursor{ .buf = str };
+        var d = Data.parseCursor(allocator, &cur);
+        if (cur.live()) return ParseError.UnexpectedTrailer;
+        return d;
+    }
+
+    pub fn parseCursor(allocator: Allocator, cur: *Parse.Cursor) ParseError!Data {
+        cur.star(' ');
+        return if (cur.have('['))
+            Data.parseList(allocator, cur)
+        else
+            Data{
+                .number = cur.consumeInt(Number, 10) orelse
+                    return ParseError.ExpectedNumber,
+            };
+    }
+
+    fn parseList(allocator: Allocator, cur: *Parse.Cursor) ParseError!Data {
+        if (cur.have(']')) return Data{ .list = .{} };
+        var list = List{};
+        errdefer list.deinit(allocator);
+        while (true) {
+            const data = try Data.parseCursor(allocator, cur);
+            try list.append(allocator, data);
+            cur.star(' ');
+            if (!cur.have(',')) break;
+        }
+        if (!cur.have(']')) return ParseError.ExpectedListCloseBrace;
+        return Data{ .list = list };
+    }
+
     pub fn format(value: Data, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         switch (value) {
             .number => |n| return writer.print("{d}", .{n}),
@@ -122,7 +208,7 @@ const Data = union(enum) {
                     if (i == 0)
                         try writer.print("{}", .{item})
                     else
-                        try writer.print(", {}", .{item});
+                        try writer.print(",{}", .{item});
                 try writer.print("]", .{});
             },
         }
@@ -170,13 +256,11 @@ const Builder = struct {
         return self;
     }
 
-    const ParseError = Allocator.Error || error{
+    const ParseError = Allocator.Error || Data.ParseError || error{
         MissingLeftPacket,
         MissingRightPacket,
         UnexpectedDataLine,
         UnexpectedLineTrailer,
-        ExpectedNumber,
-        ExpectedListCloseBrace,
     };
 
     pub fn takePair(self: *Self) !?Pair {
@@ -196,43 +280,18 @@ const Builder = struct {
         }
 
         if (self.left == null) {
-            self.left = try self.parseData(cur);
+            self.left = try Data.parseCursor(self.allocator, cur);
         } else if (self.right == null) {
-            self.right = try self.parseData(cur);
+            self.right = try Data.parseCursor(self.allocator, cur);
         } else return ParseError.UnexpectedDataLine;
 
         if (cur.live()) return ParseError.UnexpectedLineTrailer;
     }
 
-    pub fn parseData(self: *Self, cur: *Parse.Cursor) ParseError!Data {
-        cur.star(' ');
-        return if (cur.have('['))
-            self.parseList(cur)
-        else
-            Data{
-                .number = cur.consumeInt(Number, 10) orelse
-                    return ParseError.ExpectedNumber,
-            };
-    }
-
-    pub fn parseList(self: *Self, cur: *Parse.Cursor) ParseError!Data {
-        if (cur.have(']')) return Data{ .list = .{} };
-
-        var list = List{};
-        errdefer list.deinit(self.allocator);
-        while (true) {
-            const data = try self.parseData(cur);
-            try list.append(self.allocator, data);
-            cur.star(' ');
-            if (!cur.have(',')) break;
-        }
-        if (!cur.have(']')) return ParseError.ExpectedListCloseBrace;
-
-        return Data{ .list = list };
-    }
-
     pub fn finish(self: *Self) !World {
         defer self.* = undefined;
+        if (try self.takePair()) |pair|
+            try self.pairs.append(self.allocator, pair);
         return World{
             .allocator = self.allocator,
             .pairs = self.pairs.toOwnedSlice(self.allocator),
@@ -262,6 +321,25 @@ fn run(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
+    var decode: []Data = &[_]Data{};
+    if (config.decode.len > 0) {
+        var parts = std.mem.split(u8, config.decode, "\n");
+        var n: usize = 0;
+        while (parts.next()) |part| {
+            if (part.len > 0) n += 1;
+        }
+        decode = try arena.allocator().alloc(Data, n);
+
+        parts = std.mem.split(u8, config.decode, "\n");
+        var i: usize = 0;
+        while (parts.next()) |part| {
+            decode[i] = try Data.parse(arena.allocator(), part);
+            i += 1;
+        }
+
+        try timing.markPhase(.parseDecodeKeys);
+    }
+
     const world = build: {
         var lines = Parse.lineScanner(input.reader());
         var builder = init: {
@@ -275,51 +353,89 @@ fn run(
         }
         break :build try builder.finish();
     };
+
     try timing.markPhase(.parse);
 
-    var orders = try arena.allocator().alloc(math.Order, world.pairs.len);
-    var compareTimer = try timing.timer(.compareOne);
-    for (world.pairs) |pair, i| {
-        orders[i] = Data.order(pair.left, pair.right);
-        try compareTimer.lap();
-    }
-    try timing.markPhase(.compare);
-
-    var oks = try std.DynamicBitSetUnmanaged.initEmpty(arena.allocator(), world.pairs.len);
-    for (orders) |ord, i| if (ord != .gt) // .lt or .eq
-        oks.set(i);
-
-    const sum = sum_indices: {
-        var k: usize = 0;
-        var okIt = oks.iterator(.{});
-        while (okIt.next()) |i| {
-            const n = i + 1;
-            k += n;
+    if (decode.len > 0) {
+        // flatten pairs + decode keys
+        const nKeys = decode.len;
+        var seq = try arena.allocator().alloc(Data, nKeys + 2 * world.pairs.len);
+        std.mem.copy(Data, seq, decode);
+        for (world.pairs) |pair, i| {
+            seq[nKeys + 2 * i] = pair.left;
+            seq[nKeys + 2 * i + 1] = pair.right;
         }
-        break :sum_indices k;
-    };
+        try timing.markPhase(.collect);
 
-    try timing.markPhase(.count);
+        std.sort.sort(Data, seq, {}, Data.lessThan);
+        try timing.markPhase(.sort);
 
-    try out.print("# Solution\n", .{});
-    if (config.verbose > 0) {
-        var okIt = oks.iterator(.{});
-        while (okIt.next()) |i| {
-            const n = i + 1;
-            try out.print("{}. correct\n", .{n});
-            if (config.verbose > 1) {
-                const pair = world.pairs[i];
-                try out.print(
-                    \\  - left: {}
-                    \\  - right: {}
-                    \\
-                , .{ pair.left, pair.right });
+        var key_idx = try arena.allocator().alloc(usize, decode.len);
+        for (seq) |d, i| {
+            for (decode) |k, j| {
+                if (Data.order(d, k) == .eq) {
+                    key_idx[j] = i + 1;
+                }
             }
         }
-    }
-    try out.print("> {}\n", .{sum});
+        var key: usize = 1;
+        for (key_idx) |n| key *= n;
+        try timing.markPhase(.find);
 
-    try timing.markPhase(.report);
+        try out.print("# Solution\n", .{});
+        if (config.verbose > 0) {
+            for (seq) |d|
+                try out.print("    {}\n", .{d});
+            for (key_idx) |n|
+                try out.print("- key @ {}\n", .{n});
+        }
+        try out.print("> {}\n", .{key});
+        try timing.markPhase(.report);
+    } else {
+        var orders = try arena.allocator().alloc(math.Order, world.pairs.len);
+        var compareTimer = try timing.timer(.compareOne);
+        for (world.pairs) |pair, i| {
+            orders[i] = Data.order(pair.left, pair.right);
+            try compareTimer.lap();
+        }
+        try timing.markPhase(.compare);
+
+        var oks = try std.DynamicBitSetUnmanaged.initEmpty(arena.allocator(), world.pairs.len);
+        for (orders) |ord, i| if (ord != .gt) // .lt or .eq
+            oks.set(i);
+
+        const sum = sum_indices: {
+            var k: usize = 0;
+            var okIt = oks.iterator(.{});
+            while (okIt.next()) |i| {
+                const n = i + 1;
+                k += n;
+            }
+            break :sum_indices k;
+        };
+
+        try timing.markPhase(.count);
+
+        try out.print("# Solution\n", .{});
+        if (config.verbose > 0) {
+            var okIt = oks.iterator(.{});
+            while (okIt.next()) |i| {
+                const n = i + 1;
+                try out.print("{}. correct\n", .{n});
+                if (config.verbose > 1) {
+                    const pair = world.pairs[i];
+                    try out.print(
+                        \\  - left: {}
+                        \\  - right: {}
+                        \\
+                    , .{ pair.left, pair.right });
+                }
+            }
+        }
+        try out.print("> {}\n", .{sum});
+
+        try timing.markPhase(.report);
+    }
 
     try timing.finish(.overall);
 }
@@ -355,6 +471,10 @@ pub fn main() !void {
                     \\
                     \\Options:
                     \\
+                    \\ -d
+                    \\ --decode
+                    \\    decode part 2 w/ fixed keys
+                    \\
                     \\  -v or
                     \\  --verbose
                     \\    print world state after evaluating each input line
@@ -364,6 +484,8 @@ pub fn main() !void {
                     \\
                 , .{args.progName()});
                 std.process.exit(0);
+            } else if (arg.is(.{ "-d", "--decode" })) {
+                config.decode = "[[2]]\n[[6]]";
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.verbose += 1;
             } else if (arg.is(.{"--raw-output"})) {
