@@ -1,3 +1,10 @@
+# 2022-12-13
+
+## Day 12
+
+- finally finished, but running out of focus, probably goint to defer Day 13 to
+  tomorrow
+
 # 2022-12-12
 
 - updates for breaking changes in zig v0.10
@@ -6,7 +13,7 @@
 
 ## Day 12
 
-WIP
+- ran out of steam to finish today
 
 # 2022-12-11: Day 11
 

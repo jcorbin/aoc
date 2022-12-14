@@ -47,6 +47,41 @@ test "example" {
             \\
             ,
         },
+
+        // Part 2 example
+        .{
+            .config = .{
+                .verbose = true,
+                .anyStart = true,
+            },
+            .input = 
+            \\Sabqponm
+            \\abcryxxl
+            \\accszExk
+            \\acctuvwj
+            \\abdefghi
+            \\
+            ,
+            .expected = 
+            \\# Solution
+            // TODO the printed path is inverted and different than the prompt
+            //      reference similar to the Part 1 bias difference
+            //
+            // \\    ...v<<<<
+            // \\    ...vv<<^
+            // \\    ...v>E^^
+            // \\    .>v>>>^^
+            // \\    >^>>>>>^
+            //
+            \\    ...>>>>v
+            \\    ...^>>vv
+            \\    ...^^<vv
+            \\    .v<^<<<v
+            \\    .<^<<<<<
+            \\> 29 steps
+            \\
+            ,
+        },
     };
 
     const allocator = std.testing.allocator;
@@ -150,6 +185,7 @@ const Timing = @import("perf.zig").Timing(enum {
 
 const Config = struct {
     verbose: bool = false,
+    anyStart: bool = false,
 };
 
 const Cell = union(enum) {
@@ -267,6 +303,7 @@ fn pointSumSq(pt: Point) u32 {
 const World = struct {
     width: u15,
     height: u15,
+    findAnyStart: bool = false,
     startAt: u30,
     endAt: u30,
     cell: []const Cell,
@@ -428,11 +465,8 @@ const Solution = struct {
     }
 
     pub fn createStart(allocator: Allocator, world: *World) !*Self {
-        return Self.create(
-            allocator,
-            world,
-            world.pointAt(world.startAt),
-        );
+        const start = world.pointAt(if (world.findAnyStart) world.endAt else world.startAt);
+        return Self.create(allocator, world, start);
     }
 
     pub fn create(allocator: Allocator, world: *World, start: Point) !*Self {
@@ -535,9 +569,15 @@ const Solution = struct {
         // climbing check
         const from_level = world.get(from).height();
         const to_level = world.get(to).height();
-        if (from_level < to_level and
-            to_level - from_level > 1)
-            return null;
+        if (world.findAnyStart) {
+            if (to_level < from_level and
+                from_level - to_level > 1)
+                return null;
+        } else {
+            if (from_level < to_level and
+                to_level - from_level > 1)
+                return null;
+        }
 
         // cost check / update
         const prior = world.cost[toAt];
@@ -545,7 +585,10 @@ const Solution = struct {
         world.cost[toAt] = pathLen;
 
         var next = try self.clone();
-        next.done = toAt == world.endAt;
+        next.done = if (world.findAnyStart)
+            to_level == 0
+        else
+            toAt == world.endAt;
         next.visited.set(toAt);
         next.path.items[last].move = move;
         next.path.appendAssumeCapacity(.{ .loc = to });
@@ -620,6 +663,8 @@ fn run(
     };
     try timing.markPhase(.parse);
 
+    world.findAnyStart = config.anyStart;
+
     var searchRoundTimer = try timing.timer(.searchRound);
     var solution = try Solution.Search.run(
         allocator,
@@ -638,15 +683,26 @@ fn run(
         });
         defer plan.deinit();
 
-        plan.set(world.pointAt(world.startAt), 'S');
-        plan.set(world.pointAt(world.endAt), 'E');
+        if (!world.findAnyStart) {
+            plan.set(world.pointAt(world.startAt), 'S');
+            plan.set(world.pointAt(world.endAt), 'E');
+        }
 
         { // TODO maybe into a Solution.method()
-            for (solution.path.items) |item|
-                switch (item.move) {
+            var path = solution.path.items;
+
+            // if (world.findAnyStart) {
+            //     // TODO invert path
+            // }
+
+            for (path) |item| {
+                const move = item.move;
+
+                switch (move) {
                     .none => {},
                     else => |move| plan.set(item.loc, move.glyph()),
-                };
+                }
+            }
         }
 
         var steps = solution.path.items.len;
@@ -694,6 +750,9 @@ pub fn main() !void {
                     \\
                     \\Options:
                     \\
+                    \\  --any-start
+                    \\    Part 2: find path to nearest start
+                    \\
                     \\  -v or
                     \\  --verbose
                     \\    print world state after evaluating each input line
@@ -703,6 +762,8 @@ pub fn main() !void {
                     \\
                 , .{args.progName()});
                 std.process.exit(0);
+            } else if (arg.is(.{"--any-start"})) {
+                config.anyStart = true;
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.verbose = true;
             } else if (arg.is(.{"--raw-output"})) {
