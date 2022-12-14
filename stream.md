@@ -1,9 +1,18 @@
 # 2022-12-13
 
+- template progress
+  - adopted builder init/parse/finish -> world from day12
+  - main general page allocator
+  - arg parsing arena
+  - reified timer collection
+
 ## Day 12
 
 - finally finished, but running out of focus, probably goint to defer Day 13 to
   tomorrow
+- crash was due to using raw heap page allocator with multi array list... it
+  tried to free a sub-region
+  - got to learn about systemd coredump collection tho, which is super nice
 
 # 2022-12-12
 
@@ -13,7 +22,8 @@
 
 ## Day 12
 
-- ran out of steam to finish today
+- hit an interesting uncreachable crash with OOM preventing stack dump
+- ran out of steam to finish today, will debug tomorrow
 
 # 2022-12-11: Day 11
 
