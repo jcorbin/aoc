@@ -11,7 +11,7 @@ test "example" {
         // Part 1 example
         .{
             .config = .{
-                .verbose = true,
+                .verbose = 1,
             },
             .input = 
             \\[1,1,3,1,1]
@@ -75,13 +75,15 @@ const Parse = @import("parse.zig");
 const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
-    solve,
+    compare,
+    compareOne,
+    count,
     report,
     overall,
 });
 
 const Config = struct {
-    verbose: bool = false,
+    verbose: usize = 0,
 };
 
 const Number = usize;
@@ -91,20 +93,38 @@ const Data = union(enum) {
     number: Number,
     list: List,
 
-    pub fn compare(a: Data, b: Data) math.Order {
+    pub fn order(a: Data, b: Data) math.Order {
         var ait = a.datums();
         var bit = b.datums();
+        var res = math.Order.eq;
         while (true) {
-            const ad = ait.next() orelse return .lt;
-            const bd = bit.next() orelse return .gt;
-            switch (cmp: {
-                if (ad == .number) |an| if (bd == .number) |bn|
-                    break :cmp std.math.order(an, bn);
-                break :cmp ad.compare(bd);
-            }) {
-                .eq => {},
-                else => |o| return o,
-            }
+            const an = ait.next();
+            const bn = bit.next();
+            if (an == null and bn == null) return res;
+            if (res != .eq) continue;
+
+            const ad = an orelse return .lt;
+            const bd = bn orelse return .gt;
+
+            res = if (ad == .number and bd == .number)
+                std.math.order(ad.number, bd.number)
+            else
+                Data.order(ad, bd);
+        }
+    }
+
+    pub fn format(value: Data, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (value) {
+            .number => |n| return writer.print("{d}", .{n}),
+            .list => |l| {
+                try writer.print("[", .{});
+                for (l.items) |item, i|
+                    if (i == 0)
+                        try writer.print("{}", .{item})
+                    else
+                        try writer.print(", {}", .{item});
+                try writer.print("]", .{});
+            },
         }
     }
 
@@ -119,7 +139,7 @@ const Data = union(enum) {
                 },
                 .list => |l| if (l.items.len > 0) {
                     it.data = Data{ .list = .{ .items = l.items[1..] } };
-                    return l[0];
+                    return l.items[0];
                 } else return null,
             }
         }
@@ -239,13 +259,10 @@ fn run(
 
     var out = output.writer();
 
-    // FIXME: hookup your config
-    _ = config;
-
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var world = build: { // FIXME: parse input (store intermediate form, or evaluate)
+    const world = build: {
         var lines = Parse.lineScanner(input.reader());
         var builder = init: {
             var cur = try lines.next() orelse return error.NoInput;
@@ -260,19 +277,48 @@ fn run(
     };
     try timing.markPhase(.parse);
 
-    // FIXME: solve...
-    _ = world;
-    try timing.markPhase(.solve);
-
-    {
-        try out.print(
-            \\# Solution
-            \\> {}
-            \\
-        , .{
-            42,
-        });
+    var orders = try arena.allocator().alloc(math.Order, world.pairs.len);
+    var compareTimer = try timing.timer(.compareOne);
+    for (world.pairs) |pair, i| {
+        orders[i] = Data.order(pair.left, pair.right);
+        try compareTimer.lap();
     }
+    try timing.markPhase(.compare);
+
+    var oks = try std.DynamicBitSetUnmanaged.initEmpty(arena.allocator(), world.pairs.len);
+    for (orders) |ord, i| if (ord != .gt) // .lt or .eq
+        oks.set(i);
+
+    const sum = sum_indices: {
+        var k: usize = 0;
+        var okIt = oks.iterator(.{});
+        while (okIt.next()) |i| {
+            const n = i + 1;
+            k += n;
+        }
+        break :sum_indices k;
+    };
+
+    try timing.markPhase(.count);
+
+    try out.print("# Solution\n", .{});
+    if (config.verbose > 0) {
+        var okIt = oks.iterator(.{});
+        while (okIt.next()) |i| {
+            const n = i + 1;
+            try out.print("{}. correct\n", .{n});
+            if (config.verbose > 1) {
+                const pair = world.pairs[i];
+                try out.print(
+                    \\  - left: {}
+                    \\  - right: {}
+                    \\
+                , .{ pair.left, pair.right });
+            }
+        }
+    }
+    try out.print("> {}\n", .{sum});
+
     try timing.markPhase(.report);
 
     try timing.finish(.overall);
@@ -319,7 +365,7 @@ pub fn main() !void {
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-v", "--verbose" })) {
-                config.verbose = true;
+                config.verbose += 1;
             } else if (arg.is(.{"--raw-output"})) {
                 bufferOutput = false;
             } else return error.InvalidArgument;
