@@ -2,6 +2,11 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 test "example" {
+    const example_input =
+        \\such data
+        \\
+    ;
+
     const test_cases = [_]struct {
         input: []const u8,
         expected: []const u8,
@@ -10,12 +15,9 @@ test "example" {
         // Part 1 example
         .{
             .config = .{
-                .verbose = true,
+                .verbose = 1,
             },
-            .input = 
-            \\such data
-            \\
-            ,
+            .input = example_input,
             .expected = 
             \\# Solution
             \\> 42
@@ -48,13 +50,15 @@ const Parse = @import("parse.zig");
 const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
+
     solve,
+
     report,
     overall,
 });
 
 const Config = struct {
-    verbose: bool = false,
+    verbose: usize = 0,
 };
 
 const Builder = struct {
@@ -73,7 +77,7 @@ const Builder = struct {
 
     pub fn parseLine(self: *Self, cur: *Parse.Cursor) !void {
         _ = self;
-        try cur.expectEnd(error.ParseLineNotImplemented);
+        if (cur.live()) return error.ParseLineNotImplemented;
     }
 
     pub fn finish(self: *Self) !World {
@@ -127,15 +131,14 @@ fn run(
     _ = world;
     try timing.markPhase(.solve);
 
-    {
-        try out.print(
-            \\# Solution
-            \\> {}
-            \\
-        , .{
-            42,
-        });
-    }
+    try out.print(
+        \\# Solution
+        \\> {}
+        \\
+    , .{
+        42,
+    });
+
     try timing.markPhase(.report);
 
     try timing.finish(.overall);
@@ -182,7 +185,7 @@ pub fn main() !void {
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-v", "--verbose" })) {
-                config.verbose = true;
+                config.verbose += 1;
             } else if (arg.is(.{"--raw-output"})) {
                 bufferOutput = false;
             } else return error.InvalidArgument;

@@ -83,40 +83,24 @@ pub const Cursor = struct {
         return false;
     }
 
-    pub fn expectOrEnd(self: *Self, wanted: u8, err: anyerror) !void {
-        if (!self.have(wanted) and self.live()) return err;
-    }
-
-    pub fn expectEnd(self: *Self, err: anyerror) !void {
-        if (self.live()) return err;
-    }
-
-    pub fn expect(self: *Self, wanted: u8, err: anyerror) !void {
-        if (!self.have(wanted)) return err;
-    }
-
-    pub fn expectNM(self: *Self, wanted: u8, atleast: usize, upto: usize, err: anyerror) !void {
+    pub fn haveNM(self: *Self, wanted: u8, atleast: usize, upto: usize) bool {
         var got: usize = 0;
         while (got < upto) : (got += 1)
             if (!self.have(wanted))
-                if (got < atleast) return err else return;
+                break;
+        return got >= atleast;
     }
 
-    pub fn expectN(self: *Self, wanted: u8, n: usize, err: anyerror) !void {
-        return self.expectNM(wanted, n, n, err);
+    pub fn haveN(self: *Self, wanted: u8, n: usize) bool {
+        return self.haveNM(wanted, n, n);
     }
 
-    pub fn expectStar(self: *Self, wanted: u8) void {
-        self.expectNM(wanted, 0, 2 + self.buf.len - self.i, error.Nope) catch unreachable;
+    pub fn star(self: *Self, wanted: u8) void {
+        _ = self.haveNM(wanted, 0, 2 + self.buf.len - self.i);
     }
 
-    pub fn expectPlus(self: *Self, wanted: u8, err: anyerror) !void {
-        return self.expectNM(wanted, 1, 2 + self.buf.len - self.i, err);
-    }
-
-    pub fn expectStr(self: *Self, wanted: []const u8, err: anyerror) !void {
-        for (wanted) |c|
-            try self.expect(c, err);
+    pub fn plus(self: *Self, wanted: u8) bool {
+        return self.haveNM(wanted, 1, 2 + self.buf.len - self.i);
     }
 
     fn peekToken(self: *Self) ?[]const u8 {
@@ -132,9 +116,9 @@ pub const Cursor = struct {
         return if (j > i) self.buf[i..j] else null;
     }
 
-    pub fn haveLiteral(self: *Self, expected: []const u8) bool {
+    pub fn haveLiteral(self: *Self, literal: []const u8) bool {
         var i = self.i;
-        for (expected) |c| {
+        for (literal) |c| {
             if (i >= self.buf.len) return false;
             if (self.buf[i] != c) return false;
             i += 1;
@@ -143,18 +127,10 @@ pub const Cursor = struct {
         return true;
     }
 
-    pub fn expectLiteral(self: *Self, expected: []const u8, err: anyerror) !void {
-        if (!self.haveLiteral(expected)) return err;
-    }
-
     pub fn consumeToken(self: *Self) ?[]const u8 {
         const token = self.peekToken() orelse return null;
         self.i += token.len;
         return token;
-    }
-
-    pub fn expectToken(self: *Self, err: anyerror) ![]const u8 {
-        return self.consumeToken() orelse err;
     }
 
     pub fn consumeInt(self: *Self, comptime T: type, radix: u8) ?T {
@@ -173,9 +149,5 @@ pub const Cursor = struct {
         const n = std.fmt.parseInt(T, token, radix) catch return null;
         self.i = j;
         return n;
-    }
-
-    pub fn expectInt(self: *Self, comptime T: type, radix: u8, err: anyerror) !T {
-        return self.consumeInt(T, radix) orelse err;
     }
 };

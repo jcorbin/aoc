@@ -2,7 +2,16 @@
 
 # Day 13
 
-WIP
+- learning more about data structure design trade offs: kept trying to use a
+  singly or doubly linked list, switched to array list in the end for sake of
+  simplicity
+- comparison implemented over a flattening iterator was a neat take
+- updated template
+  - simplified parser: dropped `expect*` methods since narrowing their returned
+    error type is either not obvious or not possible
+  - variable verbosity level
+- TODO try binary search for the find-key phase in part 2
+- TODO why is parsing so slow? is it the array lists or just the depth of graph?
 
 # 2022-12-13
 
