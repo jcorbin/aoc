@@ -1,5 +1,9 @@
 # 2022-12-14
 
+# Day 14
+
+WIP
+
 # Day 13
 
 - learning more about data structure design trade offs: kept trying to use a

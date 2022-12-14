@@ -18,3 +18,4 @@ See dev log in [stream.md](stream.md) for now
 | [day11](day11/prompt.md)         | Monkey Number Recurrence                      |
 | [day12](day12/prompt.md)         | Pathfinding up a hill                         |
 | [day13](day13/prompt.md)         | Deep number/list comparisons                  |
+| [day14](day14/prompt.md)         | WIP                                           |
