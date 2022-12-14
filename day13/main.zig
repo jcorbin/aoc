@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const math = std.math;
 
 test "example" {
     const test_cases = [_]struct {
@@ -83,35 +84,145 @@ const Config = struct {
     verbose: bool = false,
 };
 
+const Number = usize;
+const List = std.ArrayListUnmanaged(Data);
+
+const Data = union(enum) {
+    number: Number,
+    list: List,
+
+    pub fn compare(a: Data, b: Data) math.Order {
+        var ait = a.datums();
+        var bit = b.datums();
+        while (true) {
+            const ad = ait.next() orelse return .lt;
+            const bd = bit.next() orelse return .gt;
+            switch (cmp: {
+                if (ad == .number) |an| if (bd == .number) |bn|
+                    break :cmp std.math.order(an, bn);
+                break :cmp ad.compare(bd);
+            }) {
+                .eq => {},
+                else => |o| return o,
+            }
+        }
+    }
+
+    const Datums = struct {
+        data: ?Data,
+
+        pub fn next(it: *Datums) ?Data {
+            switch (it.data orelse return null) {
+                .number => |n| {
+                    it.data = null;
+                    return Data{ .number = n };
+                },
+                .list => |l| if (l.items.len > 0) {
+                    it.data = Data{ .list = .{ .items = l.items[1..] } };
+                    return l[0];
+                } else return null,
+            }
+        }
+    };
+
+    pub fn datums(self: Data) Datums {
+        return .{ .data = self };
+    }
+};
+
+const Pair = struct {
+    left: Data,
+    right: Data,
+};
+
 const Builder = struct {
     allocator: Allocator,
-    // TODO state to be built up line-to-line
+
+    left: ?Data = null,
+    right: ?Data = null,
+    pairs: std.ArrayListUnmanaged(Pair) = .{},
 
     const Self = @This();
 
     pub fn initLine(allocator: Allocator, cur: *Parse.Cursor) !Self {
-        var self = Self{
-            .allocator = allocator,
-        };
+        var self = Self{ .allocator = allocator };
         try self.parseLine(cur);
         return self;
     }
 
-    pub fn parseLine(self: *Self, cur: *Parse.Cursor) !void {
-        _ = self;
-        try cur.expectEnd(error.ParseLineNotImplemented);
+    const ParseError = Allocator.Error || error{
+        MissingLeftPacket,
+        MissingRightPacket,
+        UnexpectedDataLine,
+        UnexpectedLineTrailer,
+        ExpectedNumber,
+        ExpectedListCloseBrace,
+    };
+
+    pub fn takePair(self: *Self) !?Pair {
+        if (self.left == null and self.right == null) return null;
+        const left = self.left orelse return ParseError.MissingLeftPacket;
+        const right = self.right orelse return ParseError.MissingRightPacket;
+        self.left = null;
+        self.right = null;
+        return Pair{ .left = left, .right = right };
+    }
+
+    pub fn parseLine(self: *Self, cur: *Parse.Cursor) ParseError!void {
+        if (std.mem.trim(u8, cur.buf, " \t").len == 0) {
+            if (try self.takePair()) |pair|
+                try self.pairs.append(self.allocator, pair);
+            return;
+        }
+
+        if (self.left == null) {
+            self.left = try self.parseData(cur);
+        } else if (self.right == null) {
+            self.right = try self.parseData(cur);
+        } else return ParseError.UnexpectedDataLine;
+
+        if (cur.live()) return ParseError.UnexpectedLineTrailer;
+    }
+
+    pub fn parseData(self: *Self, cur: *Parse.Cursor) ParseError!Data {
+        cur.star(' ');
+        return if (cur.have('['))
+            self.parseList(cur)
+        else
+            Data{
+                .number = cur.consumeInt(Number, 10) orelse
+                    return ParseError.ExpectedNumber,
+            };
+    }
+
+    pub fn parseList(self: *Self, cur: *Parse.Cursor) ParseError!Data {
+        if (cur.have(']')) return Data{ .list = .{} };
+
+        var list = List{};
+        errdefer list.deinit(self.allocator);
+        while (true) {
+            const data = try self.parseData(cur);
+            try list.append(self.allocator, data);
+            cur.star(' ');
+            if (!cur.have(',')) break;
+        }
+        if (!cur.have(']')) return ParseError.ExpectedListCloseBrace;
+
+        return Data{ .list = list };
     }
 
     pub fn finish(self: *Self) !World {
-        _ = self;
+        defer self.* = undefined;
         return World{
-            // TODO finalized problem data
+            .allocator = self.allocator,
+            .pairs = self.pairs.toOwnedSlice(self.allocator),
         };
     }
 };
 
 const World = struct {
-    // TODO problem representation
+    allocator: Allocator,
+    pairs: []Pair,
 };
 
 fn run(
