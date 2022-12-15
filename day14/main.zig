@@ -245,7 +245,6 @@ const Builder = struct {
         if (floor_y) |y| {
             bounds = rectExpand(bounds, Point{ source[0] - y, y });
             bounds = rectExpand(bounds, Point{ source[0] + y, y });
-            std.debug.print("! expanded bounds to include floor cone: {}\n", .{bounds});
         }
 
         if (bounds[0] > 0) bounds[0] -= 1;
@@ -317,14 +316,17 @@ const Cell = enum {
 const World = struct {
     allocator: Allocator,
 
+    /// where sand pours from
     source: Point,
 
+    /// last marked path so that we can clear it next time
+    marked: std.ArrayListUnmanaged(Point) = .{},
+
+    /// data scope; TODO break this out int a Shard struct so that world can have many
     bounds: Rect,
     width: usize,
     height: usize,
     data: []Cell,
-
-    marked: std.ArrayListUnmanaged(Point) = .{},
 
     const Self = @This();
 
@@ -539,13 +541,15 @@ pub fn main() !void {
     var gpa = MainAllocator{};
     defer _ = gpa.deinit();
 
+    var allocator = gpa.allocator();
+
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
     var config = Config{};
     var bufferOutput = true;
 
     {
-        var argsArena = std.heap.ArenaAllocator.init(gpa.allocator());
+        var argsArena = std.heap.ArenaAllocator.init(allocator);
         defer argsArena.deinit();
 
         var args = try ArgParser.init(argsArena.allocator());
@@ -586,10 +590,10 @@ pub fn main() !void {
     var bufin = std.io.bufferedReader(input.reader());
 
     if (!bufferOutput)
-        return run(gpa.allocator(), &bufin, output, config);
+        return run(allocator, &bufin, output, config);
 
     var bufout = std.io.bufferedWriter(output.writer());
-    try run(gpa.allocator(), &bufin, &bufout, config);
+    try run(allocator, &bufin, &bufout, config);
     try bufout.flush();
     // TODO: sentinel-buffered output writer to flush lines progressively
     // ... may obviate the desire for raw / non-buffered output else
