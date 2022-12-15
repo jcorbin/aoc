@@ -233,6 +233,7 @@ const Builder = struct {
         const width = size[0];
         const height = size[1];
         var world = World{
+            .allocator = self.allocator,
             .source = source,
             .bounds = bounds,
             .width = width,
@@ -283,13 +284,66 @@ const Cell = enum {
 };
 
 const World = struct {
+    allocator: Allocator,
+
     source: Point,
     bounds: Rect,
     width: usize,
     height: usize,
     data: []Cell,
 
+    marked: std.ArrayListUnmanaged(Point) = .{},
+
     const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        self.data.deinit(self.allocator);
+        self.marked.deinit(self.allocator);
+    }
+
+    pub fn pour(self: *Self) !bool {
+        // unmark any prior
+        for (self.marked.items) |at|
+            self.set(at, .air);
+        self.marked.clearRetainingCapacity();
+
+        var at = self.source + Point{ 0, 1 };
+        if (self.get(at) != .air) return error.SourceBlocked;
+
+        try self.marked.ensureTotalCapacity(self.allocator, 4 * (self.width + self.height));
+
+        fall: while (true) {
+            for ([_]Point{
+                .{ 0, 1 }, // down
+                .{ -1, 1 }, // down-left
+                .{ 1, 1 }, // down-right
+            }) |move| {
+                const to = at + move;
+
+                if (!self.isInside(to)) {
+                    try self.mark(at);
+                    return false;
+                }
+
+                switch (self.get(to)) {
+                    .rock, .sand, .source => continue,
+                    .air, .mark => {
+                        try self.mark(at);
+                        at = to;
+                        continue :fall;
+                    },
+                }
+            }
+            self.set(at, .sand);
+            return true;
+        }
+    }
+
+    pub fn mark(self: *Self, at: Point) !void {
+        if (self.get(at) != .air) return error.MayOnlyMarkAir;
+        try self.marked.append(self.allocator, at);
+        self.set(at, .mark);
+    }
 
     pub fn isInside(self: *Self, loc: Point) bool {
         return rectContains(self.bounds, loc);
@@ -376,7 +430,7 @@ fn run(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var world = build: { // FIXME: parse input (store intermediate form, or evaluate)
+    var world = build: {
         var lines = Parse.lineScanner(input.reader());
         var builder = init: {
             var cur = try lines.next() orelse return error.NoInput;
@@ -392,7 +446,9 @@ fn run(
     try timing.markPhase(.parse);
 
     var count: usize = 0;
-    // TODO while (pour sand) count += 1;
+
+    while (try world.pour()) count += 1;
+
     try timing.markPhase(.solve);
 
     try out.print(
@@ -407,6 +463,8 @@ fn run(
             .height = size[1],
             .linePrefix = "    ",
         });
+        defer grid.deinit();
+
         var worldCells = world.cells();
         while (worldCells.next()) |cell| {
             const gridAt = worldCells.relAt();
