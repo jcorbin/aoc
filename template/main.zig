@@ -1,5 +1,7 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
+
+const mem = std.mem;
+const Allocator = mem.Allocator;
 
 test "example" {
     const example_input =
@@ -154,13 +156,15 @@ pub fn main() !void {
     var gpa = MainAllocator{};
     defer _ = gpa.deinit();
 
+    var allocator = gpa.allocator();
+
     var input = std.io.getStdIn();
     var output = std.io.getStdOut();
     var config = Config{};
     var bufferOutput = true;
 
     {
-        var argsArena = std.heap.ArenaAllocator.init(gpa.allocator());
+        var argsArena = std.heap.ArenaAllocator.init(allocator);
         defer argsArena.deinit();
 
         var args = try ArgParser.init(argsArena.allocator());
@@ -195,10 +199,10 @@ pub fn main() !void {
     var bufin = std.io.bufferedReader(input.reader());
 
     if (!bufferOutput)
-        return run(gpa.allocator(), &bufin, output, config);
+        return run(allocator, &bufin, output, config);
 
     var bufout = std.io.bufferedWriter(output.writer());
-    try run(gpa.allocator(), &bufin, &bufout, config);
+    try run(allocator, &bufin, &bufout, config);
     try bufout.flush();
     // TODO: sentinel-buffered output writer to flush lines progressively
     // ... may obviate the desire for raw / non-buffered output else
