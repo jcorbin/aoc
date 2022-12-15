@@ -1,5 +1,6 @@
 const std = @import("std");
 const math = std.math;
+const assert = std.debug.assert;
 
 pub fn Space(comptime Int: type) type {
     const int_info = @typeInfo(Int);
@@ -12,7 +13,7 @@ pub fn Space(comptime Int: type) type {
 
     return struct {
         pub const Point = std.meta.Vector(2, Int);
-        pub const Size = std.meta.Vector(2, UInt);
+        pub const UPoint = std.meta.Vector(2, UInt);
 
         const LineIterator = struct {
             from: Point,
@@ -59,8 +60,17 @@ pub fn Space(comptime Int: type) type {
                 return if (self.to[1] > self.from[1]) @intCast(UInt, self.to[1] - self.from[1]) else 0;
             }
 
-            pub fn size(self: Self) Size {
+            pub fn size(self: Self) UPoint {
                 return .{ self.width(), self.height() };
+            }
+
+            pub fn relativize(self: Self, p: Point) UPoint {
+                assert(self.contains(p));
+                const d = p - self.from;
+                return .{
+                    @intCast(UInt, d[0]),
+                    @intCast(UInt, d[1]),
+                };
             }
 
             pub fn contains(self: Self, to: Point) bool {

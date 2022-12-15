@@ -23,7 +23,7 @@ test "example" {
     ;
 
     const inital_state =
-        \\ @{-2,0}
+        \\@{ -2, 0 }
         \\    ....S.......................
         \\    ......................S.....
         \\    ...............S............
@@ -90,12 +90,14 @@ test "example" {
                 .verbose = 1,
             },
             .input = example_input,
-            .expected = inital_state,
+            .expected = "" ++
+                "# Init\n" ++
+                inital_state ++
+                "\n",
         },
 
         // Part 1 example: query y=10
         .{
-            .skip = true,
             .config = .{
                 .verbose = 1,
                 .query_line = 10,
@@ -230,6 +232,8 @@ const World = struct {
     }
 };
 
+const Grid = @import("grid.zig").Grid;
+
 fn run(
     allocator: Allocator,
 
@@ -266,23 +270,47 @@ fn run(
     defer world.deinit();
     try timing.markPhase(.parse);
 
-    {
-        var data = world.input_data.toMultiArrayList();
-        std.debug.print("\n\n# parsed {} sensors\n", .{data.len});
-        var i: usize = 0;
-        while (i < data.len) : (i += 1)
-            std.debug.print("{}. {}\n", .{ i, data.get(i) });
+    if (config.verbose > 0) {
+        var bounds = space.Rect{ .from = .{ 0, 0 }, .to = .{ 0, 0 } };
+        for (world.sensors) |p| bounds.expandTo(p);
+        for (world.readings) |p| bounds.expandTo(p);
+
+        var grid = try Grid.init(arena.allocator(), .{
+            .width = bounds.width(),
+            .height = bounds.height(),
+            .linePrefix = "    ",
+            .fill = '.',
+        });
+
+        for (world.sensors) |p| {
+            const r = bounds.relativize(p);
+            grid.set(r[0], r[1], 'S');
+        }
+
+        for (world.readings) |p| {
+            const r = bounds.relativize(p);
+            grid.set(r[0], r[1], 'B');
+        }
+
+        try out.print(
+            \\# Init
+            \\@{}
+            \\{}
+            \\
+        , .{ bounds.from, grid });
     }
 
     try timing.markPhase(.solve);
 
-    try out.print(
-        \\# Solution
-        \\> {}
-        \\
-    , .{
-        42,
-    });
+    if (config.query_line) |line| {
+        try out.print(
+            \\# Solution
+            \\> {}
+            \\
+        , .{
+            line,
+        });
+    }
 
     try timing.markPhase(.report);
 
