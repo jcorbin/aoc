@@ -26,30 +26,6 @@ test "example" {
             .input = example_input,
             .expected = 
             \\# Solution
-            // \\@<494,0>
-            // \\    ......+...
-            // \\    ..........
-            // \\    ..........
-            // \\    ..........
-            // \\    ....#...##
-            // \\    ....#...#.
-            // \\    ..###...#.
-            // \\    ........#.
-            // \\    ........#.
-            // \\    #########.
-            // \\
-            // \\@<494,0>
-            // \\    ......+...
-            // \\    ..........
-            // \\    ......o...
-            // \\    .....ooo..
-            // \\    ....#ooo##
-            // \\    ...o#ooo#.
-            // \\    ..###ooo#.
-            // \\    ....oooo#.
-            // \\    .o.ooooo#.
-            // \\    #########.
-            // \\
             \\@<493,0>
             \\    .......+....
             \\    .......~....
@@ -64,6 +40,34 @@ test "example" {
             \\    ~...........
             // \\
             \\> 24
+            \\
+            ,
+        },
+
+        // Part 2 example
+        .{
+            .config = .{
+                .verbose = 1,
+                .floor_offset = 2,
+            },
+            .input = example_input,
+            .expected = 
+            \\# Solution
+            \\@<488,0>
+            \\    ............o............
+            \\    ...........ooo...........
+            \\    ..........ooooo..........
+            \\    .........ooooooo.........
+            \\    ........oo#ooo##o........
+            \\    .......ooo#ooo#ooo.......
+            \\    ......oo###ooo#oooo......
+            \\    .....oooo.oooo#ooooo.....
+            \\    ....oooooooooo#oooooo....
+            \\    ...ooo#########ooooooo...
+            \\    ..ooooo.......ooooooooo..
+            \\    #########################
+            \\    .........................
+            \\> 93
             \\
             ,
         },
@@ -94,6 +98,7 @@ const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
 
+    pourSand,
     solve,
 
     report,
@@ -102,6 +107,7 @@ const Timing = @import("perf.zig").Timing(enum {
 
 const Config = struct {
     verbose: usize = 0,
+    floor_offset: ?i16 = null,
 };
 
 const Point = Vector(2, i16);
@@ -214,7 +220,7 @@ const Builder = struct {
         }
     }
 
-    pub fn finish(self: *Self) !World {
+    pub fn finish(self: *Self, floor_offset: ?i16) !World {
         defer self.data.deinit(self.allocator);
 
         const source = Point{ 500, 0 };
@@ -223,6 +229,24 @@ const Builder = struct {
         bounds = rectExpand(bounds, source);
         for (self.data.items) |item|
             bounds = rectExpand(bounds, item.loc);
+
+        const floor_y = calc_floor: {
+            if (floor_offset) |offset| {
+                var max_y = source[1];
+                for (self.data.items) |item| {
+                    max_y = @maximum(max_y, item.loc[1]);
+                }
+                break :calc_floor max_y + offset;
+            }
+            break :calc_floor null;
+        };
+
+        // expand bounds to include any source -> floor cone
+        if (floor_y) |y| {
+            bounds = rectExpand(bounds, Point{ source[0] - y, y });
+            bounds = rectExpand(bounds, Point{ source[0] + y, y });
+            std.debug.print("! expanded bounds to include floor cone: {}\n", .{bounds});
+        }
 
         if (bounds[0] > 0) bounds[0] -= 1;
         if (bounds[1] > 0) bounds[1] -= 1;
@@ -259,6 +283,13 @@ const Builder = struct {
             }
         }
 
+        // draw any floor line
+        if (floor_y) |y| {
+            var line = pointRange(Point{ bounds[0], y }, Point{ bounds[2], y });
+            while (line.next()) |loc|
+                world.set(loc, .rock);
+        }
+
         return world;
     }
 };
@@ -287,6 +318,7 @@ const World = struct {
     allocator: Allocator,
 
     source: Point,
+
     bounds: Rect,
     width: usize,
     height: usize,
@@ -307,8 +339,8 @@ const World = struct {
             self.set(at, .air);
         self.marked.clearRetainingCapacity();
 
-        var at = self.source + Point{ 0, 1 };
-        if (self.get(at) != .air) return error.SourceBlocked;
+        var at = self.source;
+        if (self.get(at) != .source) return false;
 
         try self.marked.ensureTotalCapacity(self.allocator, 4 * (self.width + self.height));
 
@@ -340,9 +372,10 @@ const World = struct {
     }
 
     pub fn mark(self: *Self, at: Point) !void {
-        if (self.get(at) != .air) return error.MayOnlyMarkAir;
-        try self.marked.append(self.allocator, at);
-        self.set(at, .mark);
+        if (self.get(at) == .air) {
+            try self.marked.append(self.allocator, at);
+            self.set(at, .mark);
+        }
     }
 
     pub fn isInside(self: *Self, loc: Point) bool {
@@ -441,13 +474,17 @@ fn run(
             builder.parseLine(cur) catch |err| return cur.carp(err);
             try lineTime.lap();
         }
-        break :build try builder.finish();
+        break :build try builder.finish(config.floor_offset);
     };
     try timing.markPhase(.parse);
 
     var count: usize = 0;
 
-    while (try world.pour()) count += 1;
+    var pourTime = try timing.timer(.pourSand);
+    while (try world.pour()) {
+        count += 1;
+        try pourTime.lap();
+    }
 
     try timing.markPhase(.solve);
 
@@ -523,6 +560,10 @@ pub fn main() !void {
                     \\
                     \\Options:
                     \\
+                    \\  -f or
+                    \\  --floor
+                    \\    with floor for part 2
+                    \\
                     \\  -v or
                     \\  --verbose
                     \\    print world state after evaluating each input line
@@ -532,6 +573,8 @@ pub fn main() !void {
                     \\
                 , .{args.progName()});
                 std.process.exit(0);
+            } else if (arg.is(.{ "-f", "--floor" })) {
+                config.floor_offset = 2;
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.verbose += 1;
             } else if (arg.is(.{"--raw-output"})) {

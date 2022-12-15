@@ -2,7 +2,10 @@
 
 # Day 14
 
-WIP
+- very enjoyable, and brings back 2018 simulation memories for sure
+- almost went to a sparse or sharded world for part 2, but resisted the urge
+  and just computed the likely source -> floor cone
+- only taking around 400-700ns to pour each grain of sand feels good!
 
 # Day 13
 
