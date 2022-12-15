@@ -23,33 +23,6 @@ test "example" {
     ;
 
     const inital_state =
-
-        // \\               1    1    2    2
-        // \\     0    5    0    5    0    5
-        // \\ 0 ....S.......................
-        // \\ 1 ......................S.....
-        // \\ 2 ...............S............
-        // \\ 3 ................SB..........
-        // \\ 4 ............................
-        // \\ 5 ............................
-        // \\ 6 ............................
-        // \\ 7 ..........S.......S.........
-        // \\ 8 ............................
-        // \\ 9 ............................
-        // \\10 ....B.......................
-        // \\11 ..S.........................
-        // \\12 ............................
-        // \\13 ............................
-        // \\14 ..............S.......S.....
-        // \\15 B...........................
-        // \\16 ...........SB...............
-        // \\17 ................S..........B
-        // \\18 ....S.......................
-        // \\19 ............................
-        // \\20 ............S......S........
-        // \\21 ............................
-        // \\22 .......................B....
-
         \\ @{-2,0}
         \\    ....S.......................
         \\    ......................S.....
@@ -76,10 +49,39 @@ test "example" {
         \\    .......................B....
     ;
 
+    //                1    1    2    2
+    //      0    5    0    5    0    5
+    // -2 ..........#.................
+    // -1 .........###................
+    //  0 ....S...#####...............
+    //  1 .......#######........S.....
+    //  2 ......#########S............
+    //  3 .....###########SB..........
+    //  4 ....#############...........
+    //  5 ...###############..........
+    //  6 ..#################.........
+    //  7 .#########S#######S#........
+    //  8 ..#################.........
+    //  9 ...###############..........
+    // 10 ....B############...........
+    // 11 ..S..###########............
+    // 12 ......#########.............
+    // 13 .......#######..............
+    // 14 ........#####.S.......S.....
+    // 15 B........###................
+    // 16 ..........#SB...............
+    // 17 ................S..........B
+    // 18 ....S.......................
+    // 19 ............................
+    // 20 ............S......S........
+    // 21 ............................
+    // 22 .......................B....
+
     const test_cases = [_]struct {
         input: []const u8,
         expected: []const u8,
         config: Config,
+        skip: bool = false,
     }{
 
         // Part 1 example: setup
@@ -93,6 +95,7 @@ test "example" {
 
         // Part 1 example: query y=10
         .{
+            .skip = true,
             .config = .{
                 .verbose = 1,
                 .query_line = 10,
@@ -113,6 +116,7 @@ test "example" {
     const allocator = std.testing.allocator;
 
     for (test_cases) |tc, i| {
+        if (tc.skip) continue;
         std.debug.print(
             \\
             \\Test Case {}
@@ -147,8 +151,13 @@ const Config = struct {
 };
 
 const Builder = struct {
+    const Data = std.MultiArrayList(struct {
+        sensor: Point,
+        reading: Point,
+    });
+
     allocator: Allocator,
-    // TODO state to be built up line-to-line
+    data: Data = .{},
 
     const Self = @This();
 
@@ -161,20 +170,64 @@ const Builder = struct {
     }
 
     pub fn parseLine(self: *Self, cur: *Parse.Cursor) !void {
-        _ = self;
-        if (cur.live()) return error.ParseLineNotImplemented;
+        cur.star(' ');
+        if (!cur.haveLiteral("Sensor at")) return error.ExpectedSensorAt;
+        const at = try self.parsePoint(cur);
+
+        cur.star(' ');
+        if (!cur.haveLiteral(":")) return error.ExpectedColon;
+
+        cur.star(' ');
+        if (!cur.haveLiteral("closest beacon is at")) return error.ExpectedClosestBeacon;
+        const closest = try self.parsePoint(cur);
+
+        if (cur.live()) return error.UnexpectedTrailer;
+
+        try self.data.append(self.allocator, .{
+            .sensor = at,
+            .reading = closest,
+        });
+    }
+
+    fn parsePoint(_: *Self, cur: *Parse.Cursor) !Point {
+        cur.star(' ');
+        if (!cur.haveLiteral("x=")) return error.ExpectedXEquals;
+        const x = cur.consumeInt(i32, 10) orelse return error.ExpectedX;
+        if (!cur.haveLiteral(",")) return error.ExpectedComma;
+        cur.star(' ');
+        if (!cur.haveLiteral("y=")) return error.ExpectedYEquals;
+        const y = cur.consumeInt(i32, 10) orelse return error.ExpectedY;
+        return Point{ x, y };
     }
 
     pub fn finish(self: *Self) !World {
-        _ = self;
+        const slice = self.data.toOwnedSlice();
+
         return World{
-            // TODO finalized problem data
+            .allocator = self.allocator,
+            .input_data = slice,
+
+            .sensors = slice.items(.sensor),
+            .readings = slice.items(.reading),
         };
     }
 };
 
+const space = @import("space.zig").Space(i32);
+const Point = space.Point;
+
 const World = struct {
-    // TODO problem representation
+    allocator: Allocator,
+    input_data: Builder.Data.Slice,
+
+    sensors: []const Point,
+    readings: []const Point,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        self.input_data.deinit(self.allocator);
+    }
 };
 
 fn run(
@@ -210,10 +263,17 @@ fn run(
         }
         break :build try builder.finish();
     };
+    defer world.deinit();
     try timing.markPhase(.parse);
 
-    // FIXME: solve...
-    _ = world;
+    {
+        var data = world.input_data.toMultiArrayList();
+        std.debug.print("\n\n# parsed {} sensors\n", .{data.len});
+        var i: usize = 0;
+        while (i < data.len) : (i += 1)
+            std.debug.print("{}. {}\n", .{ i, data.get(i) });
+    }
+
     try timing.markPhase(.solve);
 
     try out.print(
