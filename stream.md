@@ -1,3 +1,14 @@
+# 2022-12-15
+
+# Day 15
+
+WIP
+
+# Day 14
+
+- exported copy of grid module to new `/lib`
+- updated template main a little
+
 # 2022-12-14
 
 # Day 14
