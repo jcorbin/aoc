@@ -301,7 +301,7 @@ const World = struct {
     }
 
     const Available = struct {
-        query: *const RangeList,
+        cant: []const Range,
         upto: i32,
         cur: i32 = 0,
 
@@ -312,15 +312,15 @@ const World = struct {
                 .end = it.upto + 1,
             };
             defer it.cur = rem.end;
-            for (it.query.data.items) |item|
-                rem = rem.subPart(item) orelse return null;
+            for (it.cant) |wont|
+                rem = rem.subPart(wont) orelse return null;
             return rem;
         }
     };
 
     pub fn available(self: Self, upto: i32) Available {
         return .{
-            .query = &self.query,
+            .cant = self.query.data.items,
             .upto = upto,
         };
     }

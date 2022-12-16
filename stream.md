@@ -6,9 +6,8 @@
   nil-gap away when `a.end == b.start`
 - otoh took a nice diversion into lexically labeled area display, and spent too
   much time trying to make an x-axis ruler
-- TODO today's final part 2 solution exhibits WRONG behavior under any
-  non-Debug build ; circle back and understand how I'm abusing UB, or chase a
-  report upstream otherwise
+- fixed some surprising Release-vs-Debug build behavior by passing a slice,
+  rather than a pointer to an array list
 
 # 2022-12-15
 
