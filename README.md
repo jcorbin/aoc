@@ -20,3 +20,4 @@ See dev log in [stream.md](stream.md) for now
 | [day13](day13/prompt.md)         | Deep number/list comparisons                  |
 | [day14](day14/prompt.md)         | Falling Sand Simulation                       |
 | [day15](day15/prompt.md)         | Ranging through sensor beacons                |
+| [day16](day16/prompt.md)         | WIP                                           |
