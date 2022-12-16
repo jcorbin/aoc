@@ -49,6 +49,33 @@ test "example" {
         \\    .......................B....
     ;
 
+    const example_areas =
+        \\@{ -2, 0 }
+        \\    +0  hhhhhhhhggggghcccnnnnnnnnnnn
+        \\    +1  hhhhhhhggggggcccccnnnnnnnnnn
+        \\    +2  hhhhhhggggggcccccccnnnnnnnnn
+        \\    +3  hhhhhggggggggcccccllnnnnnnnn
+        \\    +4  hhhhggggggggggcccllllnnnnnn.
+        \\    +5  hhhggggggggggggcggllllnnnn..
+        \\    +6  hhgggggggggggggggggllljnn...
+        \\    +7  .gggggggggggggggggggljjj....
+        \\    +8  ..gggggggggggggggggljjjjj...
+        \\    +9  .iigggggggggggggggljjjjjjj..
+        \\    +10 iiiiggggggggggdggljjjjjjjjj.
+        \\    +11 iiiiaggggggggddd.jjjjjjjjjjj
+        \\    +12 iiiaaaggggggdddddjjjjjjjjjjj
+        \\    +13 .iaaaaaggggdddddddjjjjjjjjjj
+        \\    +14 .aaaaaaaggdddddddddjjjjjjjjj
+        \\    +15 aaaaaaaaaggbddddddffjjjjjjjj
+        \\    +16 aaaaaaaaaabbbddddffffjjjjjjj
+        \\    +17 aaaaaaaaaaabedddffffffjjjjjj
+        \\    +18 aaaaaaaaaaaaeedffffffjjjjjj.
+        \\    +19 aaaaaaaaaaaeeeeeffffjjjjjj..
+        \\    +20 aaaaaaaaaaeeeeeeeffkjjjjjk..
+        \\    +21 aaaaaaaaaeeeeeeeffkkkjjjk...
+        \\    +22 .aaaaaaa..eeeeekfkkkkkjk....
+    ;
+
     const test_cases = [_]struct {
         input: []const u8,
         expected: []const u8,
@@ -65,6 +92,8 @@ test "example" {
             .expected = "" ++
                 "# Init\n" ++
                 inital_state ++
+                "\n# Areas\n" ++
+                example_areas ++
                 "\n",
         },
 
@@ -96,8 +125,7 @@ test "example" {
             .input = example_input,
             .expected = 
             \\# Tune to 20
-            \\@{ 14, 11 }
-            \\> 56000011
+            \\* found 56000011 @{ 14, 11 }
             \\
             ,
         },
@@ -271,6 +299,31 @@ const World = struct {
         for (self.query.data.items) |range| count += range.size();
         return count;
     }
+
+    const Available = struct {
+        query: *const RangeList,
+        upto: i32,
+        cur: i32 = 0,
+
+        pub fn next(it: *@This()) ?Range {
+            if (it.cur > it.upto) return null;
+            var rem = Range{
+                .start = it.cur,
+                .end = it.upto + 1,
+            };
+            defer it.cur = rem.end;
+            for (it.query.data.items) |item|
+                rem = rem.subPart(item) orelse return null;
+            return rem;
+        }
+    };
+
+    pub fn available(self: Self, upto: i32) Available {
+        return .{
+            .query = &self.query,
+            .upto = upto,
+        };
+    }
 };
 
 const Area = struct {
@@ -315,10 +368,36 @@ const Range = struct {
         return self.start < self.end;
     }
 
+    pub fn subPart(a: Self, b: Self) ?Self {
+        if (!(a.valid() and b.valid())) return null;
+
+        if (a.end < b.start) return a;
+        // b.start <= a.end
+
+        if (b.end < a.start) return a;
+        // and b.end >= a.start
+
+        if (b.end <= a.end) return if (b.start > a.start) .{
+            .start = a.start,
+            .end = b.start,
+        } else .{
+            .start = b.end,
+            .end = a.end,
+        };
+        // and b.end > a.end
+
+        if (a.start < b.start) return .{
+            .start = a.start,
+            .end = b.start,
+        };
+
+        return null;
+    }
+
     pub fn merge(a: Self, b: Self) ?Self {
         if (!(a.valid() and b.valid())) return null;
         if (a.start > b.start) return merge(b, a);
-        if (a.end <= b.start) return null;
+        if (a.end < b.start) return null;
         return .{
             .start = @minimum(a.start, b.start),
             .end = @maximum(a.end, b.end),
@@ -330,7 +409,7 @@ const Range = struct {
     }
 };
 
-pub fn search(
+pub fn binarySearch(
     comptime T: type,
     key: T,
     items: []const T,
@@ -363,8 +442,12 @@ const RangeList = struct {
         };
     }
 
+    pub fn search(self: Self, range: Range) usize {
+        return binarySearch(Range, range, self.data.items, {}, Range.startLessThan);
+    }
+
     pub fn addRange(self: *Self, range: Range) !void {
-        const i = search(Range, range, self.data.items, {}, Range.startLessThan);
+        const i = self.search(range);
         if (i > 0 and try self.mayMerge(range, i - 1))
             return
         else if (try self.mayMerge(range, i))
@@ -502,7 +585,9 @@ fn run(
                 }
             }
 
-            for (world.areas) |area| {
+            for (world.areas) |area, i| {
+                const base: u8 = (if ((i / 26) % 2 == 0) 'a' else 'A');
+                const c = base + @intCast(u8, i % 26);
                 var y = bounds.from[1];
 
                 while (y < bounds.to[1]) : (y += 1) {
@@ -512,21 +597,12 @@ fn run(
                             const p = Point{ x, y };
                             if (bounds.contains(p)) {
                                 const r = bounds.relativize(p);
-                                grid.set(r[0], r[1], '#');
+                                if (grid.get(r[0], r[1]) == '.')
+                                    grid.set(r[0], r[1], c);
                             }
                         }
                     }
                 }
-            }
-
-            for (world.sensors) |p| {
-                const r = bounds.relativize(p);
-                grid.set(r[0], r[1], 'S');
-            }
-
-            for (world.readings) |p| {
-                const r = bounds.relativize(p);
-                grid.set(r[0], r[1], 'B');
             }
 
             try out.print(
@@ -595,52 +671,27 @@ fn run(
             try timing.markPhase(.report);
         },
         .tune => |tune| {
+            try out.print("# Tune to {}\n", .{tune.upto});
             var y: i32 = 0;
             while (y <= tune.upto) : (y += 1) {
-                // TODO debug extra range holes, the areas dump above is
-                // correct, but query range lists below have too many gap
-                //
-                //                 1    1    2
-                //       0    5    0    5    0
-                // 0  ## ##S################## #####
-                // 1  ## ####################S #####
-                // 2  ## #############S####### #####
-                // 3  ## ##############SB##### #####
-                // 4  ## ##################### ####.
-                // 5  ## ##################### ###..
-                // 6  ## ##################### ##...
-                // 7  .# ########S#######S#### #....
-                // 8  .. ##################### ##...
-                // 9  .# ##################### ###..
-                // 10 ## ##B################## ####.
-                // 11 ## S#############.###### #####
-                // 12 ## ##################### #####
-                // 13 .# ##################### #####
-                // 14 .# ############S#######S #####
-                // 15 B# ##################### #####
-                // 16 ## #########SB########## #####
-                // 17 ## ##############S###### ####B
-                // 18 ## ##S################## ####.
-                // 19 ## ##################### ###..
-                // 20 ## ##########S######S### ###..
-                //
-                // 21 ## ##################### ##...
-                // 22 .# ######..############# B....
-
-                try out.print("- query_at: {}\n", .{y});
-
                 try world.query_at(y);
                 inline for ([_][]const Point{ world.sensors, world.readings }) |points| {
                     for (points) |at| if (at[1] == y) {
                         const p = Range.point(at[0]);
-                        try out.print("  - add point: {}\n", .{p});
                         try world.query.addRange(p);
                     };
                 }
 
-                for (world.query.data.items) |r, i|
-                    try out.print("  {}. {}\n", .{ i, r });
+                var avail = world.available(@intCast(i32, tune.upto));
+                while (avail.next()) |r| {
+                    var x = r.start;
+                    while (x < r.end) : (x += 1) {
+                        const freq = @intCast(u64, x) * @intCast(u64, tune.by) + @intCast(u64, y);
+                        try out.print("* found {} @{}\n", .{ freq, Point{ x, y } });
+                    }
+                }
             }
+            try timing.markPhase(.solve);
         },
     }
 
@@ -679,6 +730,10 @@ pub fn main() !void {
                     \\Usage: {s} [-v]
                     \\
                     \\Options:
+                    \\
+                    \\  -t MAX or
+                    \\  --tune MAX
+                    \\    tune frequency by searching x and y in [0, MAX]
                     \\
                     \\  -q LINE or
                     \\  --query LINE

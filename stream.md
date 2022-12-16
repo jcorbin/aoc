@@ -1,8 +1,20 @@
+# 2022-12-16
+
+# Day 15
+
+- last night's issue wasn't actually a bug, just a wart around not merging a
+  nil-gap away when `a.end == b.start`
+- otoh took a nice diversion into lexically labeled area display, and spent too
+  much time trying to make an x-axis ruler
+- TODO today's final part 2 solution exhibits WRONG behavior under any
+  non-Debug build ; circle back and understand how I'm abusing UB, or chase a
+  report upstream otherwise
+
 # 2022-12-15
 
 # Day 15
 
-WIP
+- got most of the way done, but ran out of gas trying to debug range gap issues
 
 # Day 14
 
