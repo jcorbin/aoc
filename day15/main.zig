@@ -87,7 +87,7 @@ test "example" {
         // Part 1 example: setup
         .{
             .config = .{
-                .verbose = 1,
+                .verbose = 2,
             },
             .input = example_input,
             .expected = "" ++
@@ -105,10 +105,9 @@ test "example" {
             .input = example_input,
             .expected = 
             \\# Neighborhood around Y=10
-            \\    ...#########################...
-            \\    ..####B######################..
-            \\    .###S#############.###########.
-            \\
+            \\    .#########################..
+            \\    ####B######################.
+            \\    ##S#############.###########
             \\> 26 eliminated cells
             \\
             ,
@@ -218,6 +217,12 @@ const Builder = struct {
 const space = @import("space.zig").Space(i32);
 const Point = space.Point;
 
+fn dist(a: Point, b: Point) usize {
+    const dx = if (a[0] > b[0]) a[0] - b[0] else b[0] - a[0];
+    const dy = if (a[1] > b[1]) a[1] - b[1] else b[1] - a[1];
+    return @intCast(usize, dx) + @intCast(usize, dy);
+}
+
 const World = struct {
     allocator: Allocator,
     input_data: Builder.Data.Slice,
@@ -229,6 +234,13 @@ const World = struct {
 
     pub fn deinit(self: *Self) void {
         self.input_data.deinit(self.allocator);
+    }
+
+    pub fn bounds(self: Self) space.Rect {
+        var r = space.Rect{ .from = .{ 0, 0 }, .to = .{ 0, 0 } };
+        for (self.sensors) |p| r.expandTo(p);
+        for (self.readings) |p| r.expandTo(p);
+        return r;
     }
 };
 
@@ -270,46 +282,136 @@ fn run(
     defer world.deinit();
     try timing.markPhase(.parse);
 
-    if (config.verbose > 0) {
-        var bounds = space.Rect{ .from = .{ 0, 0 }, .to = .{ 0, 0 } };
-        for (world.sensors) |p| bounds.expandTo(p);
-        for (world.readings) |p| bounds.expandTo(p);
+    if (config.verbose > 1) {
+        const bounds = world.bounds();
+        const size = bounds.size();
+        if (size[0] > 1_000 or size[1] > 1_000) {
+            try out.print(
+                \\# Init (Large!)
+                \\@{} size: {}
+                \\
+            , .{ bounds.from, size });
+        } else {
+            var grid = try Grid.init(arena.allocator(), .{
+                .width = size[0],
+                .height = size[1],
+                .linePrefix = "    ",
+                .fill = '.',
+            });
 
-        var grid = try Grid.init(arena.allocator(), .{
-            .width = bounds.width(),
-            .height = bounds.height(),
-            .linePrefix = "    ",
-            .fill = '.',
-        });
+            for (world.sensors) |p| {
+                const r = bounds.relativize(p);
+                grid.set(r[0], r[1], 'S');
+            }
 
-        for (world.sensors) |p| {
-            const r = bounds.relativize(p);
-            grid.set(r[0], r[1], 'S');
+            for (world.readings) |p| {
+                const r = bounds.relativize(p);
+                grid.set(r[0], r[1], 'B');
+            }
+
+            try out.print(
+                \\# Init
+                \\@{}
+                \\{}
+                \\
+            , .{ bounds.from, grid });
         }
-
-        for (world.readings) |p| {
-            const r = bounds.relativize(p);
-            grid.set(r[0], r[1], 'B');
-        }
-
-        try out.print(
-            \\# Init
-            \\@{}
-            \\{}
-            \\
-        , .{ bounds.from, grid });
     }
 
     try timing.markPhase(.solve);
 
     if (config.query_line) |line| {
-        try out.print(
-            \\# Solution
-            \\> {}
-            \\
-        , .{
-            line,
-        });
+        try out.print("# Neighborhood around Y={}\n", .{line});
+
+        const bounds = world.bounds();
+        const size = bounds.size();
+
+        const Area = struct {
+            at: Point,
+            r: usize,
+            lo: Point,
+            hi: Point,
+
+            pub fn x_range(area: @This(), y: i32) ?struct { start: i32, end: i32 } {
+                if (area.lo[1] <= y and y <= area.hi[1]) {
+                    const d = if (area.at[1] > y) area.at[1] - y else y - area.at[1];
+                    const r = @intCast(i32, area.r) - d;
+                    return .{
+                        .start = area.at[0] - r,
+                        .end = area.at[0] + r + 1,
+                    };
+                } else return null;
+            }
+        };
+
+        var areas = try arena.allocator().alloc(Area, world.sensors.len);
+        for (world.sensors) |at, i| {
+            const reading = world.readings[i];
+            const r = dist(at, reading);
+            areas[i] = .{
+                .at = at,
+                .r = r,
+                .lo = at - @splat(2, @intCast(i32, r)),
+                .hi = at + @splat(2, @intCast(i32, r)),
+            };
+        }
+
+        const count = do_count: {
+            var line_set = try std.DynamicBitSetUnmanaged.initEmpty(arena.allocator(), size[0]);
+            for (areas) |area| {
+                if (area.x_range(line)) |range| {
+                    var j = @intCast(usize, @maximum(0, range.start - bounds.from[0]));
+                    const until = @minimum(line_set.bit_length, @intCast(usize, range.end - bounds.from[0]));
+                    while (j < until) : (j += 1) line_set.set(j);
+                }
+            }
+
+            inline for ([_][]const Point{ world.sensors, world.readings }) |points|
+                for (points) |at|
+                    if (at[1] == line) line_set.unset(@intCast(usize, at[0] - bounds.from[0]));
+
+            break :do_count line_set.count();
+        };
+
+        if (config.verbose > 0) {
+            const show_lines = [_]i32{ line - 1, line, line + 1 };
+
+            const show_bounds = space.Rect{
+                .from = space.Point{ bounds.from[0], show_lines[0] },
+                .to = space.Point{ bounds.to[0], show_lines[2] + 1 },
+            };
+
+            var grid = try Grid.init(arena.allocator(), .{
+                .width = size[0], // TODO truncate to affected
+                .height = show_lines.len,
+                .linePrefix = "    ",
+                .fill = '.',
+            });
+
+            for (areas) |area| {
+                for (show_lines) |show_y| {
+                    if (area.x_range(show_y)) |range| {
+                        const y = @intCast(usize, show_y - show_bounds.from[1]);
+
+                        var x = @intCast(usize, @maximum(0, range.start - show_bounds.from[0]));
+                        const until = @minimum(grid.width, @intCast(usize, range.end - show_bounds.from[0]));
+                        while (x < until) : (x += 1) grid.set(x, y, '#');
+                    }
+                }
+            }
+
+            inline for ([_]struct { where: []const Point, mark: u8 }{
+                .{ .where = world.sensors, .mark = 'S' },
+                .{ .where = world.readings, .mark = 'B' },
+            }) |wm| for (wm.where) |at| if (show_bounds.contains(at)) {
+                const p = show_bounds.relativize(at);
+                grid.set(p[0], p[1], wm.mark);
+            };
+
+            try out.print("{}\n", .{grid});
+        }
+
+        try out.print("> {} eliminated cells\n", .{count});
     }
 
     try timing.markPhase(.report);
@@ -364,7 +466,7 @@ pub fn main() !void {
                 , .{args.progName()});
                 std.process.exit(0);
             } else if (arg.is(.{ "-q", "--query" })) {
-                var line_arg = (try args.next()) orelse return error.MissingQueryLine;
+                var line_arg = args.next() orelse return error.MissingQueryLine;
                 config.query_line = try line_arg.parseInt(i32, 10);
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.verbose += 1;

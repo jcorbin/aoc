@@ -82,7 +82,7 @@ pub fn Space(comptime Int: type) type {
 
             pub fn expandTo(self: *Self, to: Point) void {
                 const top = Point{ to[0] + 1, to[1] + 1 };
-                self.* = if (self.width() * self.height() == 0) .{
+                self.* = if (self.width() == 0 or self.height() == 0) .{
                     .from = to,
                     .to = top,
                 } else .{

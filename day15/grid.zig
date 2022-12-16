@@ -13,13 +13,15 @@ pub const Grid = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator, opts: struct {
+    pub const Options = struct {
         width: usize,
         height: usize,
         linePrefix: []const u8 = "",
         lineSuffix: []const u8 = "\n",
         fill: u8 = ' ',
-    }) !Self {
+    };
+
+    pub fn init(allocator: Allocator, opts: Options) !Self {
         const lineStride = opts.linePrefix.len + opts.width + opts.lineSuffix.len;
         const memSize = lineStride * opts.height;
         var buf = try allocator.alloc(u8, memSize);
