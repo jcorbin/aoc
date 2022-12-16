@@ -157,6 +157,7 @@ const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
 
+    queryLine,
     solve,
 
     report,
@@ -673,6 +674,7 @@ fn run(
         .tune => |tune| {
             try out.print("# Tune to {}\n", .{tune.upto});
             var y: i32 = 0;
+            var queryTime = try timing.timer(.queryLine);
             while (y <= tune.upto) : (y += 1) {
                 try world.query_at(y);
                 inline for ([_][]const Point{ world.sensors, world.readings }) |points| {
@@ -690,6 +692,7 @@ fn run(
                         try out.print("* found {} @{}\n", .{ freq, Point{ x, y } });
                     }
                 }
+                try queryTime.lap();
             }
             try timing.markPhase(.solve);
         },
