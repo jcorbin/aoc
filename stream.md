@@ -2,6 +2,7 @@
 
 # Day 15
 
+- updated lib/grid module
 - exported space module into lib
 - last night's issue wasn't actually a bug, just a wart around not merging a
   nil-gap away when `a.end == b.start`
