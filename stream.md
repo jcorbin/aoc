@@ -2,6 +2,7 @@
 
 # Day 15
 
+- exported minor template/main progress
 - updated lib/grid module
 - exported space module into lib
 - last night's issue wasn't actually a bug, just a wart around not merging a

@@ -13,6 +13,7 @@ test "example" {
         input: []const u8,
         expected: []const u8,
         config: Config,
+        skip: bool = false,
     }{
         // Part 1 example
         .{
@@ -31,6 +32,7 @@ test "example" {
     const allocator = std.testing.allocator;
 
     for (test_cases) |tc, i| {
+        if (tc.skip) continue;
         std.debug.print(
             \\
             \\Test Case {}
@@ -82,7 +84,7 @@ const Builder = struct {
         if (cur.live()) return error.ParseLineNotImplemented;
     }
 
-    pub fn finish(self: *Self) !World {
+    pub fn finish(self: *Self) World {
         _ = self;
         return World{
             // TODO finalized problem data
@@ -92,6 +94,12 @@ const Builder = struct {
 
 const World = struct {
     // TODO problem representation
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        _ = self; // TODO free built data
+    }
 };
 
 fn run(
@@ -125,8 +133,9 @@ fn run(
             builder.parseLine(cur) catch |err| return cur.carp(err);
             try lineTime.lap();
         }
-        break :build try builder.finish();
+        break :build builder.finish();
     };
+    defer world.deinit();
     try timing.markPhase(.parse);
 
     // FIXME: solve...
@@ -140,7 +149,6 @@ fn run(
     , .{
         42,
     });
-
     try timing.markPhase(.report);
 
     try timing.finish(.overall);
