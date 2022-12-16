@@ -246,6 +246,57 @@ const World = struct {
 
 const Grid = @import("grid.zig").Grid;
 
+const Range = struct {
+    start: i32,
+    end: i32,
+
+    const Self = @This();
+
+    pub fn size(self: Self) usize {
+        return if (self.start < self.end) @intCast(usize, self.end - self.start) else 0;
+    }
+
+    pub fn includes(self: Self, x: i32) bool {
+        return self.start <= x and x < self.end;
+    }
+
+    pub fn valid(self: Self) bool {
+        return self.start < self.end;
+    }
+
+    pub fn merge(a: Self, b: Self) ?Self {
+        if (!(a.valid() and b.valid())) return null;
+        if (a.start > b.start) return merge(b, a);
+        if (a.end <= b.start) return null;
+        return .{
+            .start = @minimum(a.start, b.start),
+            .end = @maximum(a.end, b.end),
+        };
+    }
+
+    pub fn startLessThan(_: void, a: Self, b: Self) bool {
+        return a.start < b.start;
+    }
+};
+
+const Area = struct {
+    at: Point,
+    r: usize,
+    lo: Point,
+    hi: Point,
+
+    pub fn x_range(area: @This(), y: i32) ?Range {
+        if (area.lo[1] <= y and y <= area.hi[1]) {
+            const d = if (area.at[1] > y) area.at[1] - y else y - area.at[1];
+            const r = @intCast(i32, area.r) - d;
+            return .{
+                .start = area.at[0] - r,
+                .end = area.at[0] + r + 1,
+            };
+        } else return null;
+    }
+};
+
 fn run(
     allocator: Allocator,
 
@@ -260,13 +311,10 @@ fn run(
 
     var out = output.writer();
 
-    // FIXME: hookup your config
-    _ = config;
-
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var world = build: { // FIXME: parse input (store intermediate form, or evaluate)
+    var world = build: {
         var lines = Parse.lineScanner(input.reader());
         var builder = init: {
             var cur = try lines.next() orelse return error.NoInput;
@@ -318,31 +366,11 @@ fn run(
         }
     }
 
-    try timing.markPhase(.solve);
-
     if (config.query_line) |line| {
         try out.print("# Neighborhood around Y={}\n", .{line});
 
         const bounds = world.bounds();
         const size = bounds.size();
-
-        const Area = struct {
-            at: Point,
-            r: usize,
-            lo: Point,
-            hi: Point,
-
-            pub fn x_range(area: @This(), y: i32) ?struct { start: i32, end: i32 } {
-                if (area.lo[1] <= y and y <= area.hi[1]) {
-                    const d = if (area.at[1] > y) area.at[1] - y else y - area.at[1];
-                    const r = @intCast(i32, area.r) - d;
-                    return .{
-                        .start = area.at[0] - r,
-                        .end = area.at[0] + r + 1,
-                    };
-                } else return null;
-            }
-        };
 
         var areas = try arena.allocator().alloc(Area, world.sensors.len);
         for (world.sensors) |at, i| {
@@ -357,21 +385,53 @@ fn run(
         }
 
         const count = do_count: {
-            var line_set = try std.DynamicBitSetUnmanaged.initEmpty(arena.allocator(), size[0]);
-            for (areas) |area| {
-                if (area.x_range(line)) |range| {
-                    var j = @intCast(usize, @maximum(0, range.start - bounds.from[0]));
-                    const until = @minimum(line_set.bit_length, @intCast(usize, range.end - bounds.from[0]));
-                    while (j < until) : (j += 1) line_set.set(j);
+            const ranges = find_ranges: {
+                // TODO reify a RangeList out of here, and implement direct binary insortion
+
+                var ranges = try std.ArrayList(Range).initCapacity(arena.allocator(), areas.len * 2);
+                for (areas) |area|
+                    if (area.x_range(line)) |range|
+                        ranges.appendAssumeCapacity(range);
+
+                std.sort.sort(Range, ranges.items, {}, Range.startLessThan);
+
+                var i: usize = 0;
+                while (i < ranges.items.len - 1) {
+                    if (Range.merge(ranges.items[i], ranges.items[i + 1])) |range|
+                        try ranges.replaceRange(0, 2, &[_]Range{range})
+                    else
+                        i += 1;
                 }
-            }
 
-            inline for ([_][]const Point{ world.sensors, world.readings }) |points|
-                for (points) |at|
-                    if (at[1] == line) line_set.unset(@intCast(usize, at[0] - bounds.from[0]));
+                inline for ([_][]const Point{ world.sensors, world.readings }) |points| {
+                    for (points) |at| if (at[1] == line) {
+                        for (ranges.items) |range, j| {
+                            const x = at[0];
+                            if (range.includes(x)) {
+                                const a = Range{ .start = range.start, .end = x };
+                                const b = Range{ .start = x + 1, .end = range.end };
+                                try ranges.replaceRange(j, 1, if (a.valid() and b.valid())
+                                    &[_]Range{ a, b }
+                                else if (a.valid())
+                                    &[_]Range{a}
+                                else if (b.valid())
+                                    &[_]Range{b}
+                                else
+                                    &[_]Range{});
+                                break;
+                            }
+                        }
+                    };
+                }
 
-            break :do_count line_set.count();
+                break :find_ranges ranges.toOwnedSlice();
+            };
+
+            var count: usize = 0;
+            for (ranges) |range| count += range.size();
+            break :do_count count;
         };
+        try timing.markPhase(.solve);
 
         if (config.verbose > 0) {
             const show_lines = [_]i32{ line - 1, line, line + 1 };
@@ -412,9 +472,9 @@ fn run(
         }
 
         try out.print("> {} eliminated cells\n", .{count});
-    }
 
-    try timing.markPhase(.report);
+        try timing.markPhase(.report);
+    }
 
     try timing.finish(.overall);
 }
