@@ -1,6 +1,8 @@
 const std = @import("std");
 
+const assert = std.debug.assert;
 const mem = std.mem;
+
 const Allocator = mem.Allocator;
 
 test "example" {
@@ -189,41 +191,185 @@ const Config = struct {
 };
 
 const Builder = struct {
+    const Data = std.ArrayListUnmanaged(union(enum) {
+        name: []const u8,
+        flow: u16,
+        next: []const u8,
+    });
+
     allocator: Allocator,
-    // TODO state to be built up line-to-line
+    arena: std.heap.ArenaAllocator,
+    data: Data = .{},
 
     const Self = @This();
 
     pub fn initLine(allocator: Allocator, cur: *Parse.Cursor) !Self {
         var self = Self{
             .allocator = allocator,
+            .arena = std.heap.ArenaAllocator.init(allocator),
         };
         try self.parseLine(cur);
         return self;
     }
 
-    pub fn parseLine(self: *Self, cur: *Parse.Cursor) !void {
-        _ = self;
-        if (cur.live()) return error.ParseLineNotImplemented;
+    pub fn intern(self: *Self, str: []const u8) ![]const u8 {
+        // TODO: a self.strings : std.StringHashMap
+        return try self.arena.allocator().dupe(u8, str);
     }
 
-    pub fn finish(self: *Self) World {
-        _ = self;
+    pub fn parseLine(self: *Self, cur: *Parse.Cursor) !void {
+        try self.data.ensureUnusedCapacity(self.allocator, 3);
+
+        _ = cur.star(.{ .just = ' ' });
+        _ = cur.have(.{ .literal = "Valve" }) orelse return error.ExpectedValve;
+
+        _ = cur.star(.{ .just = ' ' });
+        self.data.appendAssumeCapacity(.{
+            .name = try self.intern(cur.haveN(2, .{
+                .range = .{ .min = 'A', .max = 'Z' },
+            }) orelse return error.ExpectedValveName),
+        });
+
+        _ = cur.star(.{ .just = ' ' });
+        _ = cur.have(.{ .literal = "has flow rate=" }) orelse return error.ExpectedFlowRate;
+        self.data.appendAssumeCapacity(.{
+            .flow = try std.fmt.parseInt(u16, cur.plus(.{
+                .any = "0123456789",
+            }) orelse return error.ExpectedNumber, 10),
+        });
+
+        if (cur.have(.{ .literal = "; tunnel leads to valve" }) != null) {
+            _ = cur.star(.{ .just = ' ' });
+            try self.data.append(self.allocator, .{
+                .next = try self.intern(cur.haveN(2, .{
+                    .range = .{ .min = 'A', .max = 'Z' },
+                }) orelse return error.ExpectedValveName),
+            });
+            if (cur.live()) return error.UnexpectedTrailer;
+        } else if (cur.have(.{ .literal = "; tunnels lead to valves" }) != null) {
+            while (cur.live()) {
+                _ = cur.star(.{ .just = ' ' });
+                try self.data.append(self.allocator, .{
+                    .next = try self.intern(cur.haveN(2, .{
+                        .range = .{ .min = 'A', .max = 'Z' },
+                    }) orelse return error.ExpectedValveName),
+                });
+                if (cur.live())
+                    _ = cur.have(.{ .just = ',' }) orelse return error.ExpectedComma;
+            }
+        } else return error.ExpectedConnectedValves;
+    }
+
+    pub fn finish(self: *Self) !World {
+        errdefer self.arena.deinit();
+        defer self.data.deinit(self.allocator);
+
+        // to cause next-linkage flush below
+        try self.data.append(self.allocator, .{ .name = "" });
+
+        var slab = try self.arena.allocator().alloc(Valve, count: {
+            var n: usize = 0;
+            for (self.data.items) |item| switch (item) {
+                .name => |name| {
+                    if (name.len > 0) n += 1;
+                },
+                else => {},
+            };
+            break :count n;
+        });
+
+        var links = try self.arena.allocator().alloc(*Valve, count: {
+            var n: usize = 0;
+            for (self.data.items) |item| switch (item) {
+                .next => n += 1,
+                else => {},
+            };
+            break :count n;
+        });
+
+        var valves = World.ValveMap{};
+        try valves.ensureTotalCapacity(self.arena.allocator(), @intCast(u32, slab.len));
+
+        for (self.data.items) |item| switch (item) {
+            .name => |name| if (name.len > 0) {
+                var valve = &slab[0];
+                slab = slab[1..];
+                valve.* = .{
+                    .name = name,
+                    .next = links[0..0],
+                };
+                try valves.put(self.arena.allocator(), name, valve);
+            },
+            else => {},
+        };
+        assert(slab.len == 0);
+
+        var valve: ?*Valve = null;
+        var next_len: usize = 0;
+        for (self.data.items) |item| switch (item) {
+            .name => |name| {
+                if (valve) |prior| {
+                    prior.next = links[0..next_len];
+                    links = links[next_len..];
+                    next_len = 0;
+                }
+                valve = if (name.len > 0)
+                    valves.get(name) orelse return error.UndefinedValve
+                else
+                    null;
+            },
+            .flow => |flow| {
+                if (valve) |prior| prior.flow = flow else return error.FlowBeforeValve;
+            },
+            .next => |name| {
+                links[next_len] = valves.get(name) orelse return error.UndefinedNextValve;
+                next_len += 1;
+            },
+        };
+        assert(links.len == 0);
+
         return World{
-            // TODO finalized problem data
+            .allocator = self.allocator,
+            .arena = self.arena,
+            .valves = valves,
         };
     }
 };
 
+const Valve = struct {
+    name: []const u8,
+    flow: u16 = 0,
+    next: []*Valve,
+
+    const Self = @This();
+
+    pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{s}({})", .{ self.name, self.flow });
+        for (self.next) |next, i|
+            if (i == 0)
+                try writer.print(" -> {s}", .{next.name})
+            else
+                try writer.print(", {s}", .{next.name});
+    }
+};
+
 const World = struct {
-    // TODO problem representation
+    const ValveMap = std.StringHashMapUnmanaged(*Valve);
+
+    allocator: Allocator,
+    arena: std.heap.ArenaAllocator,
+    valves: ValveMap,
 
     const Self = @This();
 
     pub fn deinit(self: *Self) void {
-        _ = self; // TODO free built data
+        self.arena.deinit();
     }
 };
+
+// TODO const Plan = struct {};
+
+// TODO build a search.zig module based on Day XXX
 
 fn run(
     allocator: Allocator,
@@ -256,13 +402,16 @@ fn run(
             builder.parseLine(cur) catch |err| return cur.carp(err);
             try lineTime.lap();
         }
-        break :build builder.finish();
+        break :build try builder.finish();
     };
     defer world.deinit();
     try timing.markPhase(.parse);
 
-    // FIXME: solve...
-    _ = world;
+    // TODO: search for a solution
+    // TODO: if verbose, print solution playback
+    var start = world.valves.get("AA") orelse return error.MissingStartValve;
+    try out.print("TODO start from {}\n", .{start});
+
     try timing.markPhase(.solve);
 
     try out.print(
