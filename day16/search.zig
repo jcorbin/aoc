@@ -9,6 +9,7 @@ const PriorityQueue = std.PriorityQueue;
 pub const Action = enum {
     halt,
     take,
+    skip,
     queue,
 };
 
@@ -28,23 +29,28 @@ pub fn Queue(
 
         const PQ = PriorityQueue(State, Context, compareFn);
 
+        context: Context,
         queue: PQ,
         halted: bool = false,
 
-        pub fn init(allocator: Allocator, context: Context) !Self {
-            return Self{ .queue = try PQ.init(allocator, context) };
+        pub fn init(allocator: Allocator, context: Context) Self {
+            return Self{
+                .context = context,
+                .queue = PQ.init(allocator, context),
+            };
         }
 
         pub fn deinit(self: *Self) void {
             for (self.queue.items[0..self.queue.len]) |state|
-                destroyFn(state);
+                destroyFn(self.context, state);
             self.queue.deinit();
         }
 
         pub fn add(self: *Self, state: State) !void {
             switch (consumeFn(self.context, state)) {
                 .halt => self.halted = true,
-                .skip => {},
+                .take => {},
+                .skip => destroyFn(self.context, state),
                 .queue => try self.queue.add(state),
             }
         }

@@ -175,7 +175,7 @@ test "example" {
     }
 }
 
-fn memAsc(comptime T: type) fn (void, T, T) bool {
+fn memLessThan(comptime T: type) fn (void, T, T) bool {
     const impl = struct {
         fn inner(_: void, a: []const T, b: []const T) bool {
             return std.mem.lessThan(T, a, b);
@@ -314,34 +314,52 @@ const Builder = struct {
         };
         assert(slab.len == 0);
 
-        var valve: ?*Valve = null;
-        var next_len: usize = 0;
-        for (self.data.items) |item| switch (item) {
-            .name => |name| {
-                if (valve) |prior| {
-                    prior.next = links[0..next_len];
-                    links = links[next_len..];
-                    next_len = 0;
+        {
+            var valve: ?*Valve = null;
+            var next_len: usize = 0;
+            for (self.data.items) |item| switch (item) {
+                .name => |name| {
+                    if (valve) |prior| {
+                        prior.next = links[0..next_len];
+                        links = links[next_len..];
+                        next_len = 0;
+                    }
+                    valve = if (name.len > 0)
+                        valves.get(name) orelse return error.UndefinedValve
+                    else
+                        null;
+                },
+                .flow => |flow| {
+                    if (valve) |prior| prior.flow = flow else return error.FlowBeforeValve;
+                },
+                .next => |name| {
+                    links[next_len] = valves.get(name) orelse return error.UndefinedNextValve;
+                    next_len += 1;
+                },
+            };
+            assert(links.len == 0);
+        }
+
+        var openable = try self.arena.allocator().alloc(*const Valve, valves.size);
+        {
+            var values = valves.valueIterator();
+            var i: usize = 0;
+            while (values.next()) |v| {
+                const valve = v.*;
+                if (valve.flow > 0) {
+                    openable[i] = valve;
+                    i += 1;
                 }
-                valve = if (name.len > 0)
-                    valves.get(name) orelse return error.UndefinedValve
-                else
-                    null;
-            },
-            .flow => |flow| {
-                if (valve) |prior| prior.flow = flow else return error.FlowBeforeValve;
-            },
-            .next => |name| {
-                links[next_len] = valves.get(name) orelse return error.UndefinedNextValve;
-                next_len += 1;
-            },
-        };
-        assert(links.len == 0);
+            }
+            openable = openable[0..i];
+            std.sort.sort(*const Valve, openable, {}, Valve.flowLessThan);
+        }
 
         return World{
             .allocator = self.allocator,
             .arena = self.arena,
             .valves = valves,
+            .openable = openable,
         };
     }
 };
@@ -352,6 +370,10 @@ const Valve = struct {
     next: []*Valve,
 
     const Self = @This();
+
+    pub fn flowLessThan(_: void, a: *const Valve, b: *const Valve) bool {
+        return a.flow < b.flow;
+    }
 
     pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("{s}({})", .{ self.name, self.flow });
@@ -369,6 +391,7 @@ const World = struct {
     allocator: Allocator,
     arena: std.heap.ArenaAllocator,
     valves: ValveMap,
+    openable: []*const Valve,
 
     const Self = @This();
 
@@ -395,7 +418,7 @@ const Search = struct {
     allocator: Allocator,
     queue: Queue,
     world: *const World,
-    result: ?Plan,
+    result: ?Plan = null,
 
     pub fn init(allocator: Allocator, opts: struct {
         world: *const World,
@@ -404,16 +427,18 @@ const Search = struct {
     }) !*Self {
         var self = try allocator.create(Self);
         errdefer allocator.free(self);
+
         self.* = .{
             .allocator = allocator,
-            .queue = try Queue.init(allocator, self),
+            .queue = Queue.init(allocator, self),
             .world = opts.world,
         };
 
         try self.queue.add(Plan.init(
             allocator,
-            self.world.valves.get(self.start_name) orelse return error.NoStartValve,
-            self.max_steps,
+            self.world.valves.get(opts.start_name) orelse return error.NoStartValve,
+            opts.max_steps,
+            self.world.openable,
         ));
 
         return self;
@@ -425,17 +450,22 @@ const Search = struct {
     }
 
     fn consumePlan(self: *Self, plan: Plan) search.Action {
-        if (plan.steps.items.len < plan.steps.capacity)
-            return .queue;
-        if (self.result) |prior| {
-            if (plan.totalReleased > prior.totalReleased) {
-                self.result = plan;
-                destroyPlan(prior);
-            } else {
-                destroyPlan(plan);
+        if (plan.steps.items.len < plan.steps.capacity) {
+            if (self.result) |prior| {
+                if (plan.potentialReleased() <= prior.totalReleased)
+                    return .skip;
             }
-        } else self.result = plan;
-        return .take;
+            return .queue;
+        } else if (self.result) |prior| {
+            if (plan.totalReleased <= prior.totalReleased)
+                return .skip;
+            self.result = plan;
+            self.destroyPlan(prior);
+            return .take;
+        } else {
+            self.result = plan;
+            return .take;
+        }
     }
 
     fn destroyPlan(self: *Self, plan: Plan) void {
@@ -445,20 +475,14 @@ const Search = struct {
     fn comparePlan(_: *Self, a: Plan, b: Plan) std.math.Order {
         // NOTE .lt -> a expandBefore b
 
-        const stepOrder = std.math.order(a.availableSteps(), b.availableSteps());
+        switch (std.math.order(a.availableSteps(), b.availableSteps())) {
 
-        // deepen paths first to keep search frontier smaller
-        return stepOrder.invert();
+            // explore better plans first
+            .eq => return std.math.order(a.totalReleased, b.totalReleased).invert(),
 
-        // TODO totalReleased doesn't really matter yet, since we have no
-        //      pruning and will need to explore every path eventually anyhow,
-        //      but for if we did/can prune:
-        // switch (stepOrder.invert()) {
-        //     // explore better plans first
-        //     .eq => return std.math.order(a.totalReleased, b.totalReleased).invert(),
-        //     // deepen paths first to keep search frontier smaller
-        //     else => |ord| return ord,
-        // }
+            // deepen paths first to keep search frontier smaller
+            else => |ord| return ord.invert(),
+        }
     }
 
     fn expandPlan(self: *Self, plan: Plan) Expander {
@@ -473,13 +497,17 @@ const Search = struct {
         reused: bool = false,
 
         pub fn next(it: *@This()) !?Plan {
-            // TODO stop if no more can be opened
+            if (it.reused) return null;
 
-            if (!it.opened) {
+            if (it.prior.openable.len == 0) {
+                var plan = it.reuse();
+                try plan.noop();
+                return plan;
+            }
+
+            if (it.prior.at.flow > 0 and !it.opened) {
                 it.opened = true;
-                if (it.prior.at.flow > 0 and
-                    it.prior.opened.get(it.prior.at) == null)
-                {
+                if (std.mem.indexOfScalar(*const Valve, it.prior.openable, it.prior.at) != null) {
                     var plan = it.nextPlan();
                     try plan.open();
                     return plan;
@@ -507,12 +535,16 @@ const Search = struct {
         fn nextPlan(it: *@This()) !Plan {
             if (it.reused) return error.PlanReused;
             const nx = it.prior.at.nx;
-            if (it.nexti < nx.len) {
-                return try it.prior.clone(it.self.allocator);
-            } else {
-                it.reused = true;
-                return it.prior;
-            }
+            return if (it.nexti < nx.len)
+                try it.prior.clone(it.self.allocator)
+            else
+                it.reuse();
+        }
+
+        fn reuse(it: *@This()) Plan {
+            assert(!it.reused);
+            it.reused = true;
+            return it.prior;
         }
 
         pub fn deinit(it: @This()) void {
@@ -526,6 +558,7 @@ const ValveSet = std.AutoHashMapUnmanaged(*const Valve, void);
 
 const Plan = struct {
     const Step = union(enum) {
+        nnop: void,
         move: *const Valve,
         open: *const Valve,
     };
@@ -534,19 +567,29 @@ const Plan = struct {
 
     at: *Valve,
     steps: Steps,
-    opened: ValveSet = .{},
+    openable: []const *Valve,
     totalOpen: usize = 0,
     totalReleased: usize = 0,
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator, start: *Valve, max_steps: usize) !Self {
-        var self = Self{
+    pub fn init(
+        allocator: Allocator,
+        start: *Valve,
+        max_steps: usize,
+        openable: []const *Valve,
+    ) !Self {
+        var steps = try Steps.initCapacity(allocator, max_steps);
+        errdefer Steps.deinit(allocator);
+
+        var op = try allocator.dupe(*const Valve, openable);
+        errdefer allocator.free(op);
+
+        return Self{
             .at = start,
-            .steps = try Steps.initCapacity(allocator, max_steps),
+            .steps = steps,
+            .openable = op,
         };
-        try self.opened.ensureUnusedCapacity(max_steps);
-        return self;
     }
 
     pub fn clone(self: Self, allocator: Allocator) !Self {
@@ -555,7 +598,7 @@ const Plan = struct {
         other.steps = try self.steps.clone(allocator);
         errdefer other.steps.deinit(allocator);
 
-        other.opened = try self.opened.clone(allocator);
+        other.openable = try allocator.dupe(*const Valve, self.openable);
         errdefer other.opened.deinit(allocator);
 
         return other;
@@ -563,7 +606,13 @@ const Plan = struct {
 
     pub fn deinit(self: Self, allocator: Allocator) void {
         self.steps.deinit(allocator);
-        self.opened.deinit(allocator);
+        allocator.free(self.openable);
+    }
+
+    pub fn noop(self: *Self) !void {
+        if (self.steps.items.len >= self.steps.capacity) return error.PlanFull;
+        self.steps.appendAssumeCapacity(.{ .noop = {} });
+        self.totalReleased += self.totalOpen;
     }
 
     pub fn moveTo(self: *Self, move: *const Valve) !void {
@@ -574,17 +623,44 @@ const Plan = struct {
     }
 
     pub fn open(self: *Self) !void {
-        if (self.steps.items.len >= self.steps.capacity) return error.PlanFull;
+        if (self.steps.items.len >= self.steps.capacity)
+            return error.PlanFull;
+
+        const i = std.mem.indexOfScalar(*const Valve, self.openable, self.at) orelse
+            return error.CantOpen;
+
         const valve = self.at;
         assert(valve.flow > 0);
         self.steps.appendAssumeCapacity(.{ .open = valve });
-        self.opened.putAssumeCapacity(valve, {});
+
+        std.mem.copy(*const Valve, self.openable[i..], self.openable[i + 1 ..]);
+        self.openable = self.openable[0 .. i - 1];
+
         self.totalReleased += self.totalOpen;
         self.totalOpen += valve.flow;
     }
 
     pub fn availableSteps(self: Self) usize {
         return self.steps.capacity - self.steps.items.len;
+    }
+
+    pub fn potentialReleased(self: Self) usize {
+        const stepsRem = self.availableSteps();
+        const willAccum = self.totalOpen * stepsRem;
+
+        // optimistic over-estimate, assuming that we can open the top-N
+        // openable valves with minimal travel time; modeled as a "double
+        // step", assuming we can move, then open on the next turn
+        const canOpen = @min(self.openable.len, (stepsRem / 2) + 1);
+        const couldOpen: usize = 0;
+        var dubStep: usize = 0;
+        var canAccum: usize = 0;
+        while (dubStep < canOpen) : (dubStep += 1) {
+            couldOpen += self.openable[self.openable.len - dubStep].flow;
+            canAccum += couldOpen * 2;
+        }
+
+        return self.totalReleased + willAccum + canAccum;
     }
 };
 
@@ -601,9 +677,6 @@ fn run(
     defer timing.printDebugReport();
 
     var out = output.writer();
-
-    // FIXME: hookup your config
-    _ = config;
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -670,10 +743,9 @@ fn run(
                             i += 1;
                         }
                         var names = nameList[0..i];
-                        std.sort.sort([]const u8, names, {}, memAsc(u8));
+                        std.sort.sort([]const u8, names, {}, memLessThan(u8));
 
                         tmp.clearRetainingCapacity();
-
                         for (names) |name, j| {
                             if (j > 0) // the dread comma-and problem
                                 try tmp.appendSlice(if (j < names.len - 1) ", " else if (j > 1) ", and " else " and ");
@@ -687,6 +759,7 @@ fn run(
             }
 
             switch (step) {
+                .noop => {},
                 .move => |valve| {
                     try out.print("- You move to valve {}.\n", .{valve.name});
                 },
