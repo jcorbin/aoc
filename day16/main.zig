@@ -32,7 +32,7 @@ test "example" {
                 .verbose = 1,
             },
             .input = example_input,
-            .expected = 
+            .expected =
             \\# Minute 1
             \\- No valves are open.
             \\- You move to valve DD.
@@ -175,7 +175,7 @@ test "example" {
     }
 }
 
-fn memLessThan(comptime T: type) fn (void, T, T) bool {
+fn memLessThan(comptime T: type) fn (void, []const T, []const T) bool {
     const impl = struct {
         fn inner(_: void, a: []const T, b: []const T) bool {
             return std.mem.lessThan(T, a, b);
@@ -406,7 +406,7 @@ const Search = struct {
     const Self = @This();
 
     const Queue = search.Queue(
-        Plan,
+        *Plan,
         Expander,
         *Self,
         comparePlan,
@@ -418,7 +418,7 @@ const Search = struct {
     allocator: Allocator,
     queue: Queue,
     world: *const World,
-    result: ?Plan = null,
+    result: ?*Plan = null,
 
     pub fn init(allocator: Allocator, opts: struct {
         world: *const World,
@@ -428,18 +428,21 @@ const Search = struct {
         var self = try allocator.create(Self);
         errdefer allocator.free(self);
 
+        var seed = try Plan.init(
+            allocator,
+            opts.world.valves.get(opts.start_name) orelse return error.NoStartValve,
+            opts.max_steps,
+            opts.world.openable,
+        );
+        errdefer seed.deinit(allocator);
+
         self.* = .{
             .allocator = allocator,
             .queue = Queue.init(allocator, self),
             .world = opts.world,
         };
 
-        try self.queue.add(Plan.init(
-            allocator,
-            self.world.valves.get(opts.start_name) orelse return error.NoStartValve,
-            opts.max_steps,
-            self.world.openable,
-        ));
+        try self.queue.add(seed);
 
         return self;
     }
@@ -449,7 +452,7 @@ const Search = struct {
         self.allocator.free(self);
     }
 
-    fn consumePlan(self: *Self, plan: Plan) search.Action {
+    fn consumePlan(self: *Self, plan: *Plan) search.Action {
         if (plan.steps.items.len < plan.steps.capacity) {
             if (self.result) |prior| {
                 if (plan.potentialReleased() <= prior.totalReleased)
@@ -468,11 +471,11 @@ const Search = struct {
         }
     }
 
-    fn destroyPlan(self: *Self, plan: Plan) void {
+    fn destroyPlan(self: *Self, plan: *Plan) void {
         plan.deinit(self.allocator);
     }
 
-    fn comparePlan(_: *Self, a: Plan, b: Plan) std.math.Order {
+    fn comparePlan(_: *Self, a: *Plan, b: *Plan) std.math.Order {
         // NOTE .lt -> a expandBefore b
 
         switch (std.math.order(a.availableSteps(), b.availableSteps())) {
@@ -485,18 +488,18 @@ const Search = struct {
         }
     }
 
-    fn expandPlan(self: *Self, plan: Plan) Expander {
+    fn expandPlan(self: *Self, plan: *Plan) Expander {
         return .{ .self = self, .prior = plan };
     }
 
     const Expander = struct {
         self: *Self,
-        prior: Plan,
+        prior: *Plan,
         opened: bool = false,
         nexti: usize = 0,
         reused: bool = false,
 
-        pub fn next(it: *@This()) !?Plan {
+        pub fn next(it: *@This()) !?*Plan {
             if (it.reused) return null;
 
             if (it.prior.openable.len == 0) {
@@ -532,7 +535,7 @@ const Search = struct {
             return null;
         }
 
-        fn nextPlan(it: *@This()) !Plan {
+        fn nextPlan(it: *@This()) !*Plan {
             if (it.reused) return error.PlanReused;
             const nx = it.prior.at.nx;
             return if (it.nexti < nx.len)
@@ -541,7 +544,7 @@ const Search = struct {
                 it.reuse();
         }
 
-        fn reuse(it: *@This()) Plan {
+        fn reuse(it: *@This()) *Plan {
             assert(!it.reused);
             it.reused = true;
             return it.prior;
@@ -558,7 +561,7 @@ const ValveSet = std.AutoHashMapUnmanaged(*const Valve, void);
 
 const Plan = struct {
     const Step = union(enum) {
-        nnop: void,
+        noop: void,
         move: *const Valve,
         open: *const Valve,
     };
@@ -567,7 +570,7 @@ const Plan = struct {
 
     at: *Valve,
     steps: Steps,
-    openable: []const *Valve,
+    openable: []*const Valve,
     totalOpen: usize = 0,
     totalReleased: usize = 0,
 
@@ -577,19 +580,24 @@ const Plan = struct {
         allocator: Allocator,
         start: *Valve,
         max_steps: usize,
-        openable: []const *Valve,
-    ) !Self {
+        openable: []*const Valve,
+    ) !*Self {
         var steps = try Steps.initCapacity(allocator, max_steps);
-        errdefer Steps.deinit(allocator);
+        errdefer steps.deinit(allocator);
 
         var op = try allocator.dupe(*const Valve, openable);
         errdefer allocator.free(op);
 
-        return Self{
+        var self = try allocator.create(Self);
+        errdefer allocator.destroy(self);
+
+        self.* = Self{
             .at = start,
             .steps = steps,
             .openable = op,
         };
+
+        return self;
     }
 
     pub fn clone(self: Self, allocator: Allocator) !Self {
@@ -604,9 +612,11 @@ const Plan = struct {
         return other;
     }
 
-    pub fn deinit(self: Self, allocator: Allocator) void {
+    pub fn deinit(self: *Self, allocator: Allocator) void {
         self.steps.deinit(allocator);
         allocator.free(self.openable);
+        self.* = undefined;
+        allocator.destroy(self);
     }
 
     pub fn noop(self: *Self) !void {
@@ -652,7 +662,7 @@ const Plan = struct {
         // openable valves with minimal travel time; modeled as a "double
         // step", assuming we can move, then open on the next turn
         const canOpen = @min(self.openable.len, (stepsRem / 2) + 1);
-        const couldOpen: usize = 0;
+        var couldOpen: usize = 0;
         var dubStep: usize = 0;
         var canAccum: usize = 0;
         while (dubStep < canOpen) : (dubStep += 1) {
@@ -703,40 +713,42 @@ fn run(
         .start_name = "AA",
     });
     defer srch.deinit();
-    while (!srch.done()) {
+
+    while (!srch.queue.done()) {
         var roundTime = try timing.timer(.searchRound);
-        const ran = srch.runUpto(1_000);
+        const ran = srch.queue.runUpto(1_000);
         try roundTime.lap();
 
         if (config.verbose > 0) {
-            const time = timing.data.items[timing.data.len - 1].time;
+            const time = timing.data.items[timing.data.items.len - 1].time;
             const best = if (srch.result) |res| res.totalReleased else 0;
             std.debug.print("searched {} in {} ; best = {}\n", .{ ran, time, best });
         }
     }
+
     const result = srch.result orelse return error.NoResultFound;
     try timing.markPhase(.solve);
 
     if (config.verbose > 0) {
         var opened = ValveSet{};
-        try opened.ensureUnusedCapacity(arena.allocator(), result.steps.len);
+        try opened.ensureUnusedCapacity(arena.allocator(), @intCast(u32, result.steps.capacity));
         var totalOpen: usize = 0;
-        var nameList = try arena.allocator().alloc([]const u8, opened.capacity);
+        var nameList = try arena.allocator().alloc([]const u8, result.steps.capacity);
         var tmp = std.ArrayList(u8).init(arena.allocator());
 
-        for (result.steps) |step, step_i| {
+        for (result.steps.items) |step, step_i| {
             try out.print("# Minute {}\n", .{step_i + 1});
 
             if (opened.size == 0) {
                 try out.print("- No valves are open.\n", .{});
             } else {
+                var keys = opened.keyIterator();
                 switch (opened.size) {
                     1 => {
-                        const k = opened.keyIterator().next() orelse @panic("should have 1");
+                        const k = keys.next() orelse @panic("should have 1");
                         try out.print("- Valve {} is open", .{k.*.name});
                     },
                     else => {
-                        var keys = opened.keyIterator();
                         var i: usize = 0;
                         while (keys.next()) |k| {
                             nameList[i] = k.*.name;
