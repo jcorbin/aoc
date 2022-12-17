@@ -175,11 +175,21 @@ test "example" {
     }
 }
 
+fn memAsc(comptime T: type) fn (void, T, T) bool {
+    const impl = struct {
+        fn inner(_: void, a: []const T, b: []const T) bool {
+            return std.mem.lessThan(T, a, b);
+        }
+    };
+    return impl.inner;
+}
+
 const Parse = @import("parse.zig");
 const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
 
+    searchRound,
     solve,
 
     report,
@@ -367,9 +377,216 @@ const World = struct {
     }
 };
 
-// TODO const Plan = struct {};
+const search = @import("search.zig");
 
-// TODO build a search.zig module based on Day XXX
+const Search = struct {
+    const Self = @This();
+
+    const Queue = search.Queue(
+        Plan,
+        Expander,
+        *Self,
+        comparePlan,
+        expandPlan,
+        consumePlan,
+        destroyPlan,
+    );
+
+    allocator: Allocator,
+    queue: Queue,
+    world: *const World,
+    result: ?Plan,
+
+    pub fn init(allocator: Allocator, opts: struct {
+        world: *const World,
+        max_steps: usize,
+        start_name: []const u8,
+    }) !*Self {
+        var self = try allocator.create(Self);
+        errdefer allocator.free(self);
+        self.* = .{
+            .allocator = allocator,
+            .queue = try Queue.init(allocator, self),
+            .world = opts.world,
+        };
+
+        try self.queue.add(Plan.init(
+            allocator,
+            self.world.valves.get(self.start_name) orelse return error.NoStartValve,
+            self.max_steps,
+        ));
+
+        return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.queue.deinit();
+        self.allocator.free(self);
+    }
+
+    fn consumePlan(self: *Self, plan: Plan) search.Action {
+        if (plan.steps.items.len < plan.steps.capacity)
+            return .queue;
+        if (self.result) |prior| {
+            if (plan.totalReleased > prior.totalReleased) {
+                self.result = plan;
+                destroyPlan(prior);
+            } else {
+                destroyPlan(plan);
+            }
+        } else self.result = plan;
+        return .take;
+    }
+
+    fn destroyPlan(self: *Self, plan: Plan) void {
+        plan.deinit(self.allocator);
+    }
+
+    fn comparePlan(_: *Self, a: Plan, b: Plan) std.math.Order {
+        // NOTE .lt -> a expandBefore b
+
+        const stepOrder = std.math.order(a.availableSteps(), b.availableSteps());
+
+        // deepen paths first to keep search frontier smaller
+        return stepOrder.invert();
+
+        // TODO totalReleased doesn't really matter yet, since we have no
+        //      pruning and will need to explore every path eventually anyhow,
+        //      but for if we did/can prune:
+        // switch (stepOrder.invert()) {
+        //     // explore better plans first
+        //     .eq => return std.math.order(a.totalReleased, b.totalReleased).invert(),
+        //     // deepen paths first to keep search frontier smaller
+        //     else => |ord| return ord,
+        // }
+    }
+
+    fn expandPlan(self: *Self, plan: Plan) Expander {
+        return .{ .self = self, .prior = plan };
+    }
+
+    const Expander = struct {
+        self: *Self,
+        prior: Plan,
+        opened: bool = false,
+        nexti: usize = 0,
+        reused: bool = false,
+
+        pub fn next(it: *@This()) !?Plan {
+            // TODO stop if no more can be opened
+
+            if (!it.opened) {
+                it.opened = true;
+                if (it.prior.at.flow > 0 and
+                    it.prior.opened.get(it.prior.at) == null)
+                {
+                    var plan = it.nextPlan();
+                    try plan.open();
+                    return plan;
+                }
+            }
+
+            if (it.nextMove()) |move| {
+                var plan = it.nextPlan();
+                try plan.moveTo(move);
+                return plan;
+            }
+
+            return null;
+        }
+
+        fn nextMove(it: *@This()) *const Valve {
+            const nx = it.prior.at.nx;
+            if (it.nexti < nx.len) {
+                it.nexti += 1;
+                return nx[it.nexti];
+            }
+            return null;
+        }
+
+        fn nextPlan(it: *@This()) !Plan {
+            if (it.reused) return error.PlanReused;
+            const nx = it.prior.at.nx;
+            if (it.nexti < nx.len) {
+                return try it.prior.clone(it.self.allocator);
+            } else {
+                it.reused = true;
+                return it.prior;
+            }
+        }
+
+        pub fn deinit(it: @This()) void {
+            if (!it.reuse)
+                it.prior.deinit(it.self.allocator);
+        }
+    };
+};
+
+const ValveSet = std.AutoHashMapUnmanaged(*const Valve, void);
+
+const Plan = struct {
+    const Step = union(enum) {
+        move: *const Valve,
+        open: *const Valve,
+    };
+
+    const Steps = std.ArrayListUnmanaged(Step);
+
+    at: *Valve,
+    steps: Steps,
+    opened: ValveSet = .{},
+    totalOpen: usize = 0,
+    totalReleased: usize = 0,
+
+    const Self = @This();
+
+    pub fn init(allocator: Allocator, start: *Valve, max_steps: usize) !Self {
+        var self = Self{
+            .at = start,
+            .steps = try Steps.initCapacity(allocator, max_steps),
+        };
+        try self.opened.ensureUnusedCapacity(max_steps);
+        return self;
+    }
+
+    pub fn clone(self: Self, allocator: Allocator) !Self {
+        var other = self;
+
+        other.steps = try self.steps.clone(allocator);
+        errdefer other.steps.deinit(allocator);
+
+        other.opened = try self.opened.clone(allocator);
+        errdefer other.opened.deinit(allocator);
+
+        return other;
+    }
+
+    pub fn deinit(self: Self, allocator: Allocator) void {
+        self.steps.deinit(allocator);
+        self.opened.deinit(allocator);
+    }
+
+    pub fn moveTo(self: *Self, move: *const Valve) !void {
+        if (self.steps.items.len >= self.steps.capacity) return error.PlanFull;
+        self.at = move;
+        self.steps.appendAssumeCapacity(.{ .move = move });
+        self.totalReleased += self.totalOpen;
+    }
+
+    pub fn open(self: *Self) !void {
+        if (self.steps.items.len >= self.steps.capacity) return error.PlanFull;
+        const valve = self.at;
+        assert(valve.flow > 0);
+        self.steps.appendAssumeCapacity(.{ .open = valve });
+        self.opened.putAssumeCapacity(valve, {});
+        self.totalReleased += self.totalOpen;
+        self.totalOpen += valve.flow;
+    }
+
+    pub fn availableSteps(self: Self) usize {
+        return self.steps.capacity - self.steps.items.len;
+    }
+};
 
 fn run(
     allocator: Allocator,
@@ -407,19 +624,88 @@ fn run(
     defer world.deinit();
     try timing.markPhase(.parse);
 
-    // TODO: search for a solution
-    // TODO: if verbose, print solution playback
-    var start = world.valves.get("AA") orelse return error.MissingStartValve;
-    try out.print("TODO start from {}\n", .{start});
+    var srch = try Search.init(arena.allocator(), .{
+        .world = &world,
+        .max_steps = 30,
+        .start_name = "AA",
+    });
+    defer srch.deinit();
+    while (!srch.done()) {
+        var roundTime = try timing.timer(.searchRound);
+        const ran = srch.runUpto(1_000);
+        try roundTime.lap();
 
+        if (config.verbose > 0) {
+            const time = timing.data.items[timing.data.len - 1].time;
+            const best = if (srch.result) |res| res.totalReleased else 0;
+            std.debug.print("searched {} in {} ; best = {}\n", .{ ran, time, best });
+        }
+    }
+    const result = srch.result orelse return error.NoResultFound;
     try timing.markPhase(.solve);
+
+    if (config.verbose > 0) {
+        var opened = ValveSet{};
+        try opened.ensureUnusedCapacity(arena.allocator(), result.steps.len);
+        var totalOpen: usize = 0;
+        var nameList = try arena.allocator().alloc([]const u8, opened.capacity);
+        var tmp = std.ArrayList(u8).init(arena.allocator());
+
+        for (result.steps) |step, step_i| {
+            try out.print("# Minute {}\n", .{step_i + 1});
+
+            if (opened.size == 0) {
+                try out.print("- No valves are open.\n", .{});
+            } else {
+                switch (opened.size) {
+                    1 => {
+                        const k = opened.keyIterator().next() orelse @panic("should have 1");
+                        try out.print("- Valve {} is open", .{k.*.name});
+                    },
+                    else => {
+                        var keys = opened.keyIterator();
+                        var i: usize = 0;
+                        while (keys.next()) |k| {
+                            nameList[i] = k.*.name;
+                            i += 1;
+                        }
+                        var names = nameList[0..i];
+                        std.sort.sort([]const u8, names, {}, memAsc(u8));
+
+                        tmp.clearRetainingCapacity();
+
+                        for (names) |name, j| {
+                            if (j > 0) // the dread comma-and problem
+                                try tmp.appendSlice(if (j < names.len - 1) ", " else if (j > 1) ", and " else " and ");
+                            try tmp.appendSlice(name);
+                        }
+
+                        try out.print("- Valves {} are open", .{tmp.items});
+                    },
+                }
+                try out.print(", releasing {} pressure.\n", .{totalOpen});
+            }
+
+            switch (step) {
+                .move => |valve| {
+                    try out.print("- You move to valve {}.\n", .{valve.name});
+                },
+                .open => |valve| {
+                    try out.print("- You open valve {}.\n", .{valve.name});
+                    opened.putAssumeCapacity(valve, {});
+                    totalOpen += valve.flow;
+                },
+            }
+            try out.print("\n", .{});
+        }
+    }
 
     try out.print(
         \\# Solution
-        \\> {}
+        \\> {} total pressure released
         \\
     , .{
-        42,
+        result.totalReleased,
     });
     try timing.markPhase(.report);
 
