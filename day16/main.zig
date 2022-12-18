@@ -32,7 +32,7 @@ test "example" {
                 .verbose = 1,
             },
             .input = example_input,
-            .expected = 
+            .expected =
             \\# Minute 1
             \\- No valves are open.
             \\- You move to valve DD.
@@ -164,7 +164,7 @@ test "example" {
                 },
             },
             .input = example_input,
-            .expected = 
+            .expected =
             \\# Minute 1
             \\- No valves are open.
             \\- You move to valve II.
@@ -820,7 +820,7 @@ const Plan = struct {
         allocator.destroy(self);
     }
 
-    pub fn canOpen(self: *Self, valve: *const Valve) bool {
+    pub fn canOpen(self: Self, valve: *const Valve) bool {
         return std.mem.indexOfScalar(*const Valve, self.openable, valve) != null;
     }
 
@@ -874,19 +874,25 @@ const Plan = struct {
         var couldOpen: usize = 0;
         var step: usize = self.len;
 
-        // TODO take travel cost into account again
+        for (self.actors) |*actor| {
+            if (self.canOpen(actor.at)) couldOpen += actor.at.flow;
+        }
 
         var oi: usize = 1;
         var ai: usize = 0;
         var nextOpen: usize = 0;
-        while (step < self.max) {
+        model_step: while (step < self.max) {
             if (oi > self.openable.len) break;
 
             const op = self.openable[self.openable.len - oi];
-            nextOpen += op.flow;
-
-            ai += 1;
             oi += 1;
+
+            for (self.actors) |*actor| {
+                if (op == actor.at) continue :model_step;
+            }
+
+            nextOpen += op.flow;
+            ai += 1;
 
             var flush = false;
             if (ai > self.actors.len) {
@@ -897,7 +903,24 @@ const Plan = struct {
             }
 
             if (flush) {
+                // move step
+                canAccum += couldOpen;
+                step += 1;
+                if (step >= self.max) break;
+
                 // open step
+                canAccum += couldOpen;
+                couldOpen += nextOpen;
+                nextOpen = 0;
+                step += 1;
+            }
+        }
+
+        if (nextOpen > 0 and step < self.max) {
+            // move step
+            canAccum += couldOpen;
+            step += 1;
+            if (step < self.max) {
                 canAccum += couldOpen;
                 couldOpen += nextOpen;
                 nextOpen = 0;
