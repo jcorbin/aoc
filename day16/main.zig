@@ -152,6 +152,124 @@ test "example" {
             \\
             ,
         },
+
+        // Part 2 example
+        .{
+            .config = .{
+                .verbose = 1,
+                .max_steps = 26,
+                .actor_names = &[_][]const u8{
+                    "You",
+                    "The elephant",
+                },
+            },
+            .input = example_input,
+            .expected = 
+            \\# Minute 1
+            \\- No valves are open.
+            \\- You move to valve II.
+            \\- The elephant moves to valve DD.
+            \\
+            \\# Minute 2
+            \\- No valves are open.
+            \\- You move to valve JJ.
+            \\- The elephant opens valve DD.
+            \\
+            \\# Minute 3
+            \\- Valve DD is open, releasing 20 pressure.
+            \\- You open valve JJ.
+            \\- The elephant moves to valve EE.
+            \\
+            \\# Minute 4
+            \\- Valves DD and JJ are open, releasing 41 pressure.
+            \\- You move to valve II.
+            \\- The elephant moves to valve FF.
+            \\
+            \\# Minute 5
+            \\- Valves DD and JJ are open, releasing 41 pressure.
+            \\- You move to valve AA.
+            \\- The elephant moves to valve GG.
+            \\
+            \\# Minute 6
+            \\- Valves DD and JJ are open, releasing 41 pressure.
+            \\- You move to valve BB.
+            \\- The elephant moves to valve HH.
+            \\
+            \\# Minute 7
+            \\- Valves DD and JJ are open, releasing 41 pressure.
+            \\- You open valve BB.
+            \\- The elephant opens valve HH.
+            \\
+            \\# Minute 8
+            \\- Valves BB, DD, HH, and JJ are open, releasing 76 pressure.
+            \\- You move to valve CC.
+            \\- The elephant moves to valve GG.
+            \\
+            \\# Minute 9
+            \\- Valves BB, DD, HH, and JJ are open, releasing 76 pressure.
+            \\- You open valve CC.
+            \\- The elephant moves to valve FF.
+            \\
+            \\# Minute 10
+            \\- Valves BB, CC, DD, HH, and JJ are open, releasing 78 pressure.
+            \\- You move to valve DD.
+            \\- The elephant moves to valve EE.
+            \\
+            \\# Minute 11
+            \\- Valves BB, CC, DD, HH, and JJ are open, releasing 78 pressure.
+            \\- You move to valve CC.
+            \\- The elephant opens valve EE.
+            \\
+            \\# Minute 12
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 13
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 14
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 15
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 16
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 17
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 18
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 19
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 20
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 21
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 22
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 23
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 24
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 25
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Minute 26
+            \\- Valves BB, CC, DD, EE, HH, and JJ are open, releasing 81 pressure.
+            \\
+            \\# Solution
+            \\> 1707 total pressure released
+            \\
+            ,
+        },
     };
 
     const allocator = std.testing.allocator;
@@ -198,6 +316,11 @@ const Timing = @import("perf.zig").Timing(enum {
 
 const Config = struct {
     verbose: usize = 0,
+    max_steps: usize = 30,
+    start_name: []const u8 = "AA",
+    actor_names: []const []const u8 = &[_][]const u8{
+        "You",
+    },
 };
 
 const Builder = struct {
@@ -418,6 +541,14 @@ const Search = struct {
     allocator: Allocator,
     world: *const World,
     result: ?*Plan = null,
+    // TODO recycle: std.ArrayList(*Plan),
+
+    fn deinit(self: *Self) void {
+        if (self.result) |plan| {
+            self.result = null;
+            self.destroyPlan(plan);
+        }
+    }
 
     fn consumePlan(self: *Self, plan: *Plan) search.Action {
         if (plan.availableSteps() > 0) {
@@ -455,70 +586,89 @@ const Search = struct {
     }
 
     fn expandPlan(self: *Self, plan: *Plan) Expander {
-        return .{ .self = self, .prior = plan };
+        var count: usize = 1;
+        if (plan.openable.len > 0) {
+            for (plan.actors) |actor| {
+                var n = actor.at.next.len;
+                if (actor.at.flow > 0 and plan.canOpen(actor.at))
+                    n += 1;
+                count *= n;
+            }
+        }
+        return .{
+            .self = self,
+            .prior = plan,
+            .count = count,
+        };
     }
 
     const Expander = struct {
         self: *Self,
         prior: *Plan,
-        opened: bool = false,
-        nexti: usize = 0,
         reused: bool = false,
 
+        count: usize,
+        i: usize = 0,
+
         pub fn next(it: *@This()) !?*Plan {
-            if (it.reused) return null;
+            const i = it.i;
+            if (it.reused or i >= it.count) return null;
+            it.i += 1;
+
+            var plan = if (it.i == it.count)
+                try it.reuse()
+            else
+                try it.prior.clone(it.self.allocator);
+            errdefer if (plan != it.prior)
+                plan.deinit(it.self.allocator);
 
             if (it.prior.openable.len == 0) {
-                var plan = it.reuse();
-                try plan.noop();
+                for (plan.actors) |*actor|
+                    try plan.noop(actor);
                 return plan;
             }
 
-            if (it.prior.at.flow > 0 and !it.opened) {
-                it.opened = true;
-                if (std.mem.indexOfScalar(*const Valve, it.prior.openable, it.prior.at) != null) {
-                    var plan = try it.nextPlan();
-                    try plan.open();
-                    return plan;
+            var j = i;
+            for (plan.actors) |*actor| {
+                const canOpen = actor.at.flow > 0 and it.prior.canOpen(actor.at);
+                const nx = actor.at.next;
+                const n = if (canOpen) nx.len + 1 else nx.len;
+                var choice = j % n;
+                j /= n;
+
+                if (canOpen) {
+                    if (choice == 0) {
+                        if (plan.canOpen(actor.at)) {
+                            try plan.open(actor);
+                        } else {
+                            // NOTE this is slightly wasteful: another actor
+                            //      was co-located and chose to open this valve
+                            //      already in this same turn; ideally we'd
+                            //      skip this choice and advance transparently
+                            //      here within it.i space, but I'm lazy and
+                            //      haven't sorted out the i/j striding maths,
+                            //      and don't believe such to be worth
+                            try plan.noop(actor);
+                        }
+                        continue;
+                    }
+                    choice -= 1;
                 }
+
+                try plan.moveTo(actor, nx[choice]);
             }
 
-            if (it.nextMove()) |move| {
-                var plan = try it.nextPlan();
-                try plan.moveTo(move);
-                return plan;
-            }
-
-            return null;
+            return plan;
         }
 
-        fn nextMove(it: *@This()) ?*const Valve {
-            const nx = it.prior.at.next;
-            const i = it.nexti;
-            if (i < nx.len) {
-                it.nexti += 1;
-                return nx[i];
-            }
-            return null;
-        }
-
-        fn nextPlan(it: *@This()) !*Plan {
-            if (it.reused) return error.PlanReused;
-            const nx = it.prior.at.next;
-            return if (it.nexti < nx.len)
-                try it.prior.clone(it.self.allocator)
-            else
-                it.reuse();
-        }
-
-        fn reuse(it: *@This()) *Plan {
-            assert(!it.reused);
+        pub fn reuse(it: *@This()) !*Plan {
+            if (it.reused) return error.AlreadyReused;
             it.reused = true;
             return it.prior;
         }
 
-        pub fn deinit(it: @This()) void {
-            if (!it.reuse)
+        pub fn deinit(it: *@This()) void {
+            if (!it.reused)
                 it.prior.deinit(it.self.allocator);
         }
     };
@@ -535,33 +685,63 @@ const Plan = struct {
 
     const Steps = std.ArrayListUnmanaged(Step);
 
-    at: *const Valve,
-    steps: Steps,
+    const Actor = struct {
+        at: *const Valve,
+        steps: Steps,
+
+        pub fn availableSteps(actor: @This()) usize {
+            return actor.steps.capacity - actor.steps.items.len;
+        }
+    };
+
+    op: []*const Valve,
     openable: []*const Valve,
+
+    actors: []Actor,
+    len: usize = 0,
+    max: usize,
+
     totalOpen: usize = 0,
+    nextOpen: usize = 0,
     totalReleased: usize = 0,
 
     const Self = @This();
 
-    pub fn init(
-        allocator: Allocator,
+    pub fn init(allocator: Allocator, params: struct {
         start: *Valve,
         max_steps: usize,
         openable: []*const Valve,
-    ) !*Self {
-        var steps = try Steps.initCapacity(allocator, max_steps);
-        errdefer steps.deinit(allocator);
-
-        var op = try allocator.dupe(*const Valve, openable);
-        errdefer allocator.free(op);
-
+        actor_names: []const []const u8,
+    }) !*Self {
         var self = try allocator.create(Self);
         errdefer allocator.destroy(self);
 
+        var op = try allocator.dupe(*const Valve, params.openable);
+        errdefer allocator.free(op);
+
+        var actors = try allocator.alloc(Actor, params.actor_names.len);
+        errdefer allocator.free(actors);
+
+        var actor_i: usize = 0;
+        errdefer while (actor_i > 0) {
+            actor_i -= 1;
+            actors[actor_i].steps.deinit(allocator);
+        };
+
+        for (params.actor_names) |_| {
+            var steps = try Steps.initCapacity(allocator, params.max_steps);
+            actors[actor_i] = .{
+                .at = params.start,
+                .steps = steps,
+            };
+            actor_i += 1;
+        }
+
         self.* = Self{
-            .at = start,
-            .steps = steps,
+            .op = op,
             .openable = op,
+            .max = params.max_steps,
+            .actors = actors,
         };
 
         return self;
@@ -572,54 +752,84 @@ const Plan = struct {
         errdefer allocator.destroy(other);
         other.* = self;
 
-        other.steps = try self.steps.clone(allocator);
-        errdefer other.steps.deinit(allocator);
-
         other.openable = try allocator.dupe(*const Valve, self.openable);
-        errdefer other.opened.deinit(allocator);
+        errdefer allocator.free(other.openable);
+        other.op = other.openable;
+
+        var actors = try allocator.alloc(Actor, self.actors.len);
+        errdefer allocator.free(actors);
+        other.actors = actors;
+
+        var actor_i: usize = 0;
+        errdefer while (actor_i > 0) {
+            actor_i -= 1;
+            actors[actor_i].steps.deinit(allocator);
+        };
+
+        for (self.actors) |actor| {
+            var aa = &actors[actor_i];
+            var steps = try actor.steps.clone(allocator);
+            aa.* = actor;
+            aa.steps = steps;
+            actor_i += 1;
+        }
 
         return other;
     }
 
     pub fn deinit(self: *Self, allocator: Allocator) void {
-        self.steps.deinit(allocator);
-        allocator.free(self.openable);
+        allocator.free(self.op);
+        for (self.actors) |*actor|
+            actor.steps.deinit(allocator);
+        allocator.free(self.actors);
         self.* = undefined;
         allocator.destroy(self);
     }
 
-    pub fn noop(self: *Self) !void {
-        if (self.availableSteps() == 0) return error.PlanFull;
-        self.steps.appendAssumeCapacity(.{ .noop = {} });
-        self.totalReleased += self.totalOpen;
+    pub fn canOpen(self: *Self, valve: *const Valve) bool {
+        return std.mem.indexOfScalar(*const Valve, self.openable, valve) != null;
     }
 
-    pub fn moveTo(self: *Self, move: *const Valve) !void {
-        if (self.availableSteps() == 0) return error.PlanFull;
-        self.at = move;
-        self.steps.appendAssumeCapacity(.{ .move = move });
-        self.totalReleased += self.totalOpen;
+    pub fn noop(self: *Self, actor: *Actor) !void {
+        if (actor.availableSteps() == 0) return error.PlanFull;
+        if (actor.steps.items.len > self.len) return error.AlreadyActed;
+        actor.steps.appendAssumeCapacity(.{ .noop = {} });
+        self.checkActors();
     }
 
-    pub fn open(self: *Self) !void {
-        if (self.availableSteps() == 0) return error.PlanFull;
+    pub fn moveTo(self: *Self, actor: *Actor, move: *const Valve) !void {
+        if (actor.availableSteps() == 0) return error.PlanFull;
+        if (actor.steps.items.len > self.len) return error.AlreadyActed;
+        actor.at = move;
+        actor.steps.appendAssumeCapacity(.{ .move = move });
+        self.checkActors();
+    }
 
-        const i = std.mem.indexOfScalar(*const Valve, self.openable, self.at) orelse
+    pub fn open(self: *Self, actor: *Actor) !void {
+        if (actor.availableSteps() == 0) return error.PlanFull;
+        if (actor.steps.items.len > self.len) return error.AlreadyActed;
+        const i = std.mem.indexOfScalar(*const Valve, self.openable, actor.at) orelse
             return error.CantOpen;
-
-        const valve = self.at;
+        const valve = actor.at;
         assert(valve.flow > 0);
-        self.steps.appendAssumeCapacity(.{ .open = valve });
-
+        actor.steps.appendAssumeCapacity(.{ .open = valve });
         std.mem.copy(*const Valve, self.openable[i..], self.openable[i + 1 ..]);
         self.openable = self.openable[0 .. self.openable.len - 1];
+        self.nextOpen += valve.flow;
+        self.checkActors();
+    }
 
+    pub fn checkActors(self: *Self) void {
+        for (self.actors) |*actor|
+            if (actor.steps.items.len <= self.len) return;
+        self.len += 1;
         self.totalReleased += self.totalOpen;
-        self.totalOpen += valve.flow;
+        self.totalOpen += self.nextOpen;
+        self.nextOpen = 0;
     }
 
     pub fn availableSteps(self: Self) usize {
-        return self.steps.capacity - self.steps.items.len;
+        return self.max - self.len;
     }
 
     pub fn potentialReleased(self: Self) usize {
@@ -628,29 +838,40 @@ const Plan = struct {
 
         var canAccum: usize = 0;
         var couldOpen: usize = 0;
-        var step: usize = self.steps.items.len;
+        var step: usize = self.len;
+
+        // TODO take travel cost into account again
 
         var oi: usize = 1;
-        while (step < self.steps.capacity and oi <= self.openable.len) {
-            const op = self.openable[self.openable.len - oi];
+        var ai: usize = 0;
+        var nextOpen: usize = 0;
+        while (step < self.max) {
+            if (oi > self.openable.len) break;
 
-            if (op != self.at) {
-                // need at least 1 move step
-                canAccum += couldOpen;
-                step += 1;
+            const op = self.openable[self.openable.len - oi];
+            nextOpen += op.flow;
+
+            ai += 1;
+            oi += 1;
+
+            var flush = false;
+            if (ai > self.actors.len) {
+                ai = 0;
+                flush = true;
+            } else if (oi >= self.openable.len) {
+                flush = true;
             }
 
-            if (step < self.steps.capacity) {
+            if (flush) {
                 // open step
                 canAccum += couldOpen;
-                couldOpen += op.flow;
+                couldOpen += nextOpen;
+                nextOpen = 0;
                 step += 1;
             }
-
-            oi += 1;
         }
 
-        canAccum += couldOpen * (self.steps.capacity - step);
+        canAccum += couldOpen * (self.max - step);
 
         return self.totalReleased + willAccum + canAccum;
     }
@@ -690,22 +911,19 @@ fn run(
     try timing.markPhase(.parse);
 
     var srch = Search{
-        .allocator = arena.allocator(),
+        .allocator = allocator,
         .world = &world,
     };
 
     var queue = Search.Queue.init(srch.allocator, &srch);
-    // defer queue.deinit();
+    defer queue.deinit();
 
-    const max_steps = 30;
-    const start_name = "AA";
-
-    try queue.add(try Plan.init(
-        srch.allocator,
-        world.valves.get(start_name) orelse return error.NoStartValve,
-        max_steps,
-        world.openable,
-    ));
+    try queue.add(try Plan.init(srch.allocator, .{
+        .openable = world.openable,
+        .start = world.valves.get(config.start_name) orelse return error.NoStartValve,
+        .max_steps = config.max_steps,
+        .actor_names = config.actor_names,
+    }));
 
     while (!queue.done()) {
         var roundTime = try timing.timer(.searchBatch);
@@ -724,17 +942,21 @@ fn run(
         }
     }
 
+    // NOTE the final result can have redundant final moves while some actors
+    //      continue to move while the critical finisher(s) do also
+    // TODO These moves could be pruned away by an optimizer at this point
     const result = srch.result orelse return error.NoResultFound;
     try timing.markPhase(.solve);
 
     if (config.verbose > 0) {
         var opened = ValveSet{};
-        try opened.ensureUnusedCapacity(arena.allocator(), @intCast(u32, result.steps.capacity));
+        try opened.ensureUnusedCapacity(arena.allocator(), @intCast(u32, result.max));
         var totalOpen: usize = 0;
-        var nameList = try arena.allocator().alloc([]const u8, result.steps.capacity);
+        var nameList = try arena.allocator().alloc([]const u8, result.max);
         var tmp = std.ArrayList(u8).init(arena.allocator());
 
-        for (result.steps.items) |step, step_i| {
+        var step_i: usize = 0;
+        while (step_i < result.max) : (step_i += 1) {
             try out.print("# Minute {}\n", .{step_i + 1});
 
             if (opened.size == 0) {
@@ -768,16 +990,27 @@ fn run(
                 try out.print(", releasing {} pressure.\n", .{totalOpen});
             }
 
-            switch (step) {
-                .noop => {},
-                .move => |valve| {
-                    try out.print("- You move to valve {s}.\n", .{valve.name});
-                },
-                .open => |valve| {
-                    try out.print("- You open valve {s}.\n", .{valve.name});
-                    opened.putAssumeCapacity(valve, {});
-                    totalOpen += valve.flow;
-                },
+            for (result.actors) |actor, ai| {
+                const actor_name = config.actor_names[ai];
+                const itsMe = std.mem.eql(u8, actor_name, "You");
+                const step = actor.steps.items[step_i];
+                switch (step) {
+                    .noop => {},
+                    .move => |valve| {
+                        if (itsMe)
+                            try out.print("- You move to valve {s}.\n", .{valve.name})
+                        else
+                            try out.print("- {s} moves to valve {s}.\n", .{ actor_name, valve.name });
+                    },
+                    .open => |valve| {
+                        if (itsMe)
+                            try out.print("- You open valve {s}.\n", .{valve.name})
+                        else
+                            try out.print("- {s} opens valve {s}.\n", .{ actor_name, valve.name });
+                        opened.putAssumeCapacity(valve, {});
+                        totalOpen += valve.flow;
+                    },
+                }
             }
             try out.print("\n", .{});
         }
@@ -798,12 +1031,15 @@ fn run(
 const ArgParser = @import("args.zig").Parser;
 
 const MainAllocator = std.heap.GeneralPurposeAllocator(.{
+    .enable_memory_limit = true,
+
     // .verbose_log = true,
 });
 
 pub fn main() !void {
     var gpa = MainAllocator{};
     defer _ = gpa.deinit();
+    gpa.setRequestedMemoryLimit(4 * 1024 * 1024 * 1024);
 
     var allocator = gpa.allocator();
 
@@ -828,6 +1064,10 @@ pub fn main() !void {
                     \\
                     \\Options:
                     \\
+                    \\  -e or
+                    \\  --elephant
+                    \\    train an elephant for part 2
+                    \\
                     \\  -v or
                     \\  --verbose
                     \\    print world state after evaluating each input line
@@ -837,6 +1077,14 @@ pub fn main() !void {
                     \\
                 , .{args.progName()});
                 std.process.exit(0);
+            } else if (arg.is(.{ "-e", "--elephant" })) {
+                // TODO we could support N elephants at this point, but that
+                //      wasn't necessary for Part 2
+                config.actor_names = &[_][]const u8{
+                    "You",
+                    "The elephant",
+                };
+                config.max_steps = 26;
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 config.verbose += 1;
             } else if (arg.is(.{"--raw-output"})) {

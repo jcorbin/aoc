@@ -79,7 +79,7 @@ pub fn Queue(
             if (self.halted) return false;
             var state = self.queue.removeOrNull() orelse return false;
             var it = expandFn(self.context, state);
-
+            defer it.deinit();
             while (try it.next()) |next| {
                 try self.add(next);
                 if (self.halted) break;
