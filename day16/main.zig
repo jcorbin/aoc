@@ -628,6 +628,7 @@ const Search = struct {
                 return plan;
             }
 
+            var skip = false;
             var j = i;
             for (plan.actors) |*actor| {
                 const canOpen = actor.at.flow > 0 and it.prior.canOpen(actor.at);
@@ -640,22 +641,28 @@ const Search = struct {
                     if (choice == 0) {
                         if (plan.canOpen(actor.at)) {
                             try plan.open(actor);
+                            actor.visited.clearRetainingCapacity();
                         } else {
-                            // NOTE this is slightly wasteful: another actor
-                            //      was co-located and chose to open this valve
-                            //      already in this same turn; ideally we'd
-                            //      skip this choice and advance transparently
-                            //      here within it.i space, but I'm lazy and
-                            //      haven't sorted out the i/j striding maths,
-                            //      and don't believe such to be worth
                             try plan.noop(actor);
+                            skip = true;
                         }
                         continue;
                     }
                     choice -= 1;
                 }
 
-                try plan.moveTo(actor, nx[choice]);
+                const res = try actor.visited.getOrPut(it.self.allocator, nx[choice]);
+                if (res.found_existing) {
+                    try plan.noop(actor);
+                    skip = true;
+                } else {
+                    try plan.moveTo(actor, nx[choice]);
+                }
+            }
+
+            if (skip and plan != it.prior) {
+                plan.deinit(it.self.allocator);
+                return it.next();
             }
 
             return plan;
@@ -688,6 +695,40 @@ const Plan = struct {
     const Actor = struct {
         at: *const Valve,
         steps: Steps,
+        visited: ValveSet = .{},
+
+        pub fn initCapacity(allocator: Allocator, at: *const Valve, cap: usize) !Actor {
+            var steps = try Steps.initCapacity(allocator, cap);
+            errdefer steps.deinit(allocator);
+
+            var visited = ValveSet{};
+            try visited.ensureTotalCapacity(allocator, 2 * @intCast(u32, cap));
+            errdefer visited.deinit(allocator);
+
+            return Actor{
+                .at = at,
+                .steps = steps,
+                .visited = visited,
+            };
+        }
+
+        pub fn clone(self: Actor, allocator: Allocator) !Actor {
+            var other = self;
+
+            other.steps = try self.steps.clone(allocator);
+            errdefer other.steps.deinit(allocator);
+
+            other.visited = try self.visited.clone(allocator);
+            errdefer other.visited.deinit(allocator);
+
+            return other;
+        }
+
+        pub fn deinit(self: *Actor, allocator: Allocator) void {
+            self.steps.deinit(allocator);
+            self.visited.deinit(allocator);
+            self.* = undefined;
+        }
 
         pub fn availableSteps(actor: @This()) usize {
             return actor.steps.capacity - actor.steps.items.len;
@@ -725,15 +766,11 @@ const Plan = struct {
         var actor_i: usize = 0;
         errdefer while (actor_i > 0) {
             actor_i -= 1;
-            actors[actor_i].steps.deinit(allocator);
+            actors[actor_i].deinit(allocator);
         };
 
         for (params.actor_names) |_| {
-            var steps = try Steps.initCapacity(allocator, params.max_steps);
-            actors[actor_i] = .{
-                .at = params.start,
-                .steps = steps,
-            };
+            actors[actor_i] = try Actor.initCapacity(allocator, params.start, params.max_steps);
             actor_i += 1;
         }
 
@@ -763,14 +800,11 @@ const Plan = struct {
         var actor_i: usize = 0;
         errdefer while (actor_i > 0) {
             actor_i -= 1;
-            actors[actor_i].steps.deinit(allocator);
+            actors[actor_i].deinit(allocator);
         };
 
         for (self.actors) |actor| {
-            var aa = &actors[actor_i];
-            var steps = try actor.steps.clone(allocator);
-            aa.* = actor;
-            aa.steps = steps;
+            actors[actor_i] = try actor.clone(allocator);
             actor_i += 1;
         }
 
@@ -780,7 +814,7 @@ const Plan = struct {
     pub fn deinit(self: *Self, allocator: Allocator) void {
         allocator.free(self.op);
         for (self.actors) |*actor|
-            actor.steps.deinit(allocator);
+            actor.deinit(allocator);
         allocator.free(self.actors);
         self.* = undefined;
         allocator.destroy(self);
@@ -911,7 +945,8 @@ fn run(
     try timing.markPhase(.parse);
 
     var srch = Search{
-        .allocator = allocator,
+        // .allocator = allocator, //  NOTE use to expose leaks under test
+        .allocator = arena.allocator(),
         .world = &world,
     };
 
@@ -1036,9 +1071,9 @@ const MainAllocator = std.heap.GeneralPurposeAllocator(.{
     // .verbose_log = true,
 });
 
+var gpa = MainAllocator{};
+
 pub fn main() !void {
-    var gpa = MainAllocator{};
-    defer _ = gpa.deinit();
     gpa.setRequestedMemoryLimit(4 * 1024 * 1024 * 1024);
 
     var allocator = gpa.allocator();
