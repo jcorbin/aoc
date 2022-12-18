@@ -1,6 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+pub const log = std.log.scoped(.perf);
+
 pub fn Timing(comptime Tag: type) type {
     return struct {
         const Self = @This();
@@ -70,11 +72,9 @@ pub fn Timing(comptime Tag: type) type {
         }
 
         pub fn printDebugReport(self: *Self) void {
-            std.debug.print("# Timing\n\n", .{});
             for (self.data.items) |item| {
-                std.debug.print("- {} {}\n", .{ item.time, item.tag });
+                log.info("timing.{} {}", .{ item.tag, item.time });
             }
-            std.debug.print("\n", .{});
         }
     };
 }

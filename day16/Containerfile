@@ -1,0 +1,7 @@
+FROM scratch
+
+WORKDIR /
+COPY main main
+COPY input.txt input.txt
+
+ENTRYPOINT ["/main", "input.txt"]

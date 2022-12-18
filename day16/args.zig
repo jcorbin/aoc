@@ -53,6 +53,10 @@ const Arg = struct {
 
     const Self = @This();
 
+    pub fn isOption(self: Self) bool {
+        return std.mem.startsWith(u8, self.have, "-");
+    }
+
     pub fn is(self: Self, anyOf: anytype) bool {
         const AnyOfType = @TypeOf(anyOf);
         // XXX std.meta.trait.isTuple(AnyOfType) doesn't seem to work...

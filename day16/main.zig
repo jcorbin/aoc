@@ -32,7 +32,7 @@ test "example" {
                 .verbose = 1,
             },
             .input = example_input,
-            .expected =
+            .expected = 
             \\# Minute 1
             \\- No valves are open.
             \\- You move to valve DD.
@@ -164,7 +164,7 @@ test "example" {
                 },
             },
             .input = example_input,
-            .expected =
+            .expected = 
             \\# Minute 1
             \\- No valves are open.
             \\- You move to valve II.
@@ -300,6 +300,33 @@ fn memLessThan(comptime T: type) fn (void, []const T, []const T) bool {
         }
     };
     return impl.inner;
+}
+
+pub const log_level: std.log.Level = .debug;
+
+const log_others: std.log.Level = .debug;
+
+pub fn log(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const scope_prefix = "(" ++ switch (scope) {
+        .default => @tagName(scope),
+        else => if (@enumToInt(level) <= @enumToInt(log_others))
+            @tagName(scope)
+        else
+            return,
+    } ++ "): ";
+
+    const prefix = "[" ++ comptime level.asText() ++ "] " ++ scope_prefix;
+
+    // Print the message to stderr, silently ignoring any errors
+    std.debug.getStderrMutex().lock();
+    defer std.debug.getStderrMutex().unlock();
+    const stderr = std.io.getStdErr().writer();
+    nosuspend stderr.print(prefix ++ format ++ "\n", args) catch return;
 }
 
 const Parse = @import("parse.zig");
@@ -968,8 +995,8 @@ fn run(
     try timing.markPhase(.parse);
 
     var srch = Search{
-        // .allocator = allocator, //  NOTE use to expose leaks under test
-        .allocator = arena.allocator(),
+        .allocator = allocator, // NOTE use to expose leaks under test
+        // .allocator = arena.allocator(),
         .world = &world,
     };
 
@@ -991,7 +1018,7 @@ fn run(
         if (config.verbose > 0) {
             const time = timing.data.items[timing.data.items.len - 1].time;
             const best = if (srch.result) |res| res.totalReleased else 0;
-            std.debug.print("searched {} in {} ; best = {} depth = {}\n", .{
+            std.log.info("searched {} in {} ; best = {} depth = {}", .{
                 ran,
                 time,
                 best,
@@ -1090,8 +1117,7 @@ const ArgParser = @import("args.zig").Parser;
 
 const MainAllocator = std.heap.GeneralPurposeAllocator(.{
     .enable_memory_limit = true,
-
-    // .verbose_log = true,
+    .verbose_log = false,
 });
 
 var gpa = MainAllocator{};
@@ -1113,12 +1139,15 @@ pub fn main() !void {
         var args = try ArgParser.init(argsArena.allocator());
         defer args.deinit();
 
-        // TODO: input filename arg
-
         while (args.next()) |arg| {
-            if (arg.is(.{ "-h", "--help" })) {
+            if (!arg.isOption()) {
+                var prior = input;
+                input = try std.fs.cwd().openFile(arg.have, .{});
+                prior.close();
+                std.log.info("reading input from {s}", .{arg.have});
+            } else if (arg.is(.{ "-h", "--help" })) {
                 std.debug.print(
-                    \\Usage: {s} [-v]
+                    \\Usage: {s} [options] [INPUT_FILE]
                     \\
                     \\Options:
                     \\
@@ -1151,14 +1180,24 @@ pub fn main() !void {
         }
     }
 
-    var bufin = std.io.bufferedReader(input.reader());
+    (do_run: {
+        var bufin = std.io.bufferedReader(input.reader());
 
-    if (!bufferOutput)
-        return run(allocator, &bufin, output, config);
+        if (!bufferOutput)
+            break :do_run run(allocator, &bufin, output, config);
 
-    var bufout = std.io.bufferedWriter(output.writer());
-    try run(allocator, &bufin, &bufout, config);
-    try bufout.flush();
-    // TODO: sentinel-buffered output writer to flush lines progressively
-    // ... may obviate the desire for raw / non-buffered output else
+        var bufout = std.io.bufferedWriter(output.writer());
+        defer bufout.flush() catch {};
+
+        break :do_run run(allocator, &bufin, &bufout, config);
+        // TODO: sentinel-buffered output writer to flush lines progressively
+        // ... may obviate the desire for raw / non-buffered output else
+    }) catch |err| switch (err) {
+        mem.Allocator.Error.OutOfMemory => {
+            const have_leaks = gpa.detectLeaks();
+            std.log.err("{} detectLeaks() -> {}", .{ err, have_leaks });
+            std.process.exit(9);
+        },
+        else => return err,
+    };
 }
