@@ -1,8 +1,12 @@
+# 2022-12-17
+
+- WIP
+
 # 2022-12-16
 
 # Day 16
 
-WIP
+- started... low spoons, lower results
 
 # Day 15
 

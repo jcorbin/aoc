@@ -32,7 +32,7 @@ test "example" {
                 .verbose = 1,
             },
             .input = example_input,
-            .expected =
+            .expected = 
             \\# Minute 1
             \\- No valves are open.
             \\- You move to valve DD.
@@ -189,7 +189,7 @@ const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
 
-    searchRound,
+    searchBatch,
     solve,
 
     report,
@@ -416,56 +416,22 @@ const Search = struct {
     );
 
     allocator: Allocator,
-    queue: Queue,
     world: *const World,
     result: ?*Plan = null,
 
-    pub fn init(allocator: Allocator, opts: struct {
-        world: *const World,
-        max_steps: usize,
-        start_name: []const u8,
-    }) !*Self {
-        var self = try allocator.create(Self);
-        errdefer allocator.free(self);
-
-        var seed = try Plan.init(
-            allocator,
-            opts.world.valves.get(opts.start_name) orelse return error.NoStartValve,
-            opts.max_steps,
-            opts.world.openable,
-        );
-        errdefer seed.deinit(allocator);
-
-        self.* = .{
-            .allocator = allocator,
-            .queue = Queue.init(allocator, self),
-            .world = opts.world,
-        };
-
-        try self.queue.add(seed);
-
-        return self;
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.queue.deinit();
-        self.allocator.free(self);
-    }
-
     fn consumePlan(self: *Self, plan: *Plan) search.Action {
-        if (plan.steps.items.len < plan.steps.capacity) {
+        if (plan.availableSteps() > 0) {
             if (self.result) |prior| {
                 if (plan.potentialReleased() <= prior.totalReleased)
                     return .skip;
             }
             return .queue;
-        } else if (self.result) |prior| {
-            if (plan.totalReleased <= prior.totalReleased)
-                return .skip;
-            self.result = plan;
-            self.destroyPlan(prior);
-            return .take;
         } else {
+            if (self.result) |prior| {
+                if (plan.totalReleased <= prior.totalReleased)
+                    return .skip;
+                self.destroyPlan(prior);
+            }
             self.result = plan;
             return .take;
         }
@@ -484,7 +450,7 @@ const Search = struct {
             .eq => return std.math.order(a.totalReleased, b.totalReleased).invert(),
 
             // deepen paths first to keep search frontier smaller
-            else => |ord| return ord.invert(),
+            else => |ord| return ord,
         }
     }
 
@@ -511,14 +477,14 @@ const Search = struct {
             if (it.prior.at.flow > 0 and !it.opened) {
                 it.opened = true;
                 if (std.mem.indexOfScalar(*const Valve, it.prior.openable, it.prior.at) != null) {
-                    var plan = it.nextPlan();
+                    var plan = try it.nextPlan();
                     try plan.open();
                     return plan;
                 }
             }
 
             if (it.nextMove()) |move| {
-                var plan = it.nextPlan();
+                var plan = try it.nextPlan();
                 try plan.moveTo(move);
                 return plan;
             }
@@ -526,18 +492,19 @@ const Search = struct {
             return null;
         }
 
-        fn nextMove(it: *@This()) *const Valve {
-            const nx = it.prior.at.nx;
-            if (it.nexti < nx.len) {
+        fn nextMove(it: *@This()) ?*const Valve {
+            const nx = it.prior.at.next;
+            const i = it.nexti;
+            if (i < nx.len) {
                 it.nexti += 1;
-                return nx[it.nexti];
+                return nx[i];
             }
             return null;
         }
 
         fn nextPlan(it: *@This()) !*Plan {
             if (it.reused) return error.PlanReused;
-            const nx = it.prior.at.nx;
+            const nx = it.prior.at.next;
             return if (it.nexti < nx.len)
                 try it.prior.clone(it.self.allocator)
             else
@@ -568,7 +535,7 @@ const Plan = struct {
 
     const Steps = std.ArrayListUnmanaged(Step);
 
-    at: *Valve,
+    at: *const Valve,
     steps: Steps,
     openable: []*const Valve,
     totalOpen: usize = 0,
@@ -600,8 +567,10 @@ const Plan = struct {
         return self;
     }
 
-    pub fn clone(self: Self, allocator: Allocator) !Self {
-        var other = self;
+    pub fn clone(self: Self, allocator: Allocator) !*Self {
+        var other = try allocator.create(Self);
+        errdefer allocator.destroy(other);
+        other.* = self;
 
         other.steps = try self.steps.clone(allocator);
         errdefer other.steps.deinit(allocator);
@@ -620,21 +589,20 @@ const Plan = struct {
     }
 
     pub fn noop(self: *Self) !void {
-        if (self.steps.items.len >= self.steps.capacity) return error.PlanFull;
+        if (self.availableSteps() == 0) return error.PlanFull;
         self.steps.appendAssumeCapacity(.{ .noop = {} });
         self.totalReleased += self.totalOpen;
     }
 
     pub fn moveTo(self: *Self, move: *const Valve) !void {
-        if (self.steps.items.len >= self.steps.capacity) return error.PlanFull;
+        if (self.availableSteps() == 0) return error.PlanFull;
         self.at = move;
         self.steps.appendAssumeCapacity(.{ .move = move });
         self.totalReleased += self.totalOpen;
     }
 
     pub fn open(self: *Self) !void {
-        if (self.steps.items.len >= self.steps.capacity)
-            return error.PlanFull;
+        if (self.availableSteps() == 0) return error.PlanFull;
 
         const i = std.mem.indexOfScalar(*const Valve, self.openable, self.at) orelse
             return error.CantOpen;
@@ -644,7 +612,7 @@ const Plan = struct {
         self.steps.appendAssumeCapacity(.{ .open = valve });
 
         std.mem.copy(*const Valve, self.openable[i..], self.openable[i + 1 ..]);
-        self.openable = self.openable[0 .. i - 1];
+        self.openable = self.openable[0 .. self.openable.len - 1];
 
         self.totalReleased += self.totalOpen;
         self.totalOpen += valve.flow;
@@ -658,17 +626,31 @@ const Plan = struct {
         const stepsRem = self.availableSteps();
         const willAccum = self.totalOpen * stepsRem;
 
-        // optimistic over-estimate, assuming that we can open the top-N
-        // openable valves with minimal travel time; modeled as a "double
-        // step", assuming we can move, then open on the next turn
-        const canOpen = @min(self.openable.len, (stepsRem / 2) + 1);
-        var couldOpen: usize = 0;
-        var dubStep: usize = 0;
         var canAccum: usize = 0;
-        while (dubStep < canOpen) : (dubStep += 1) {
-            couldOpen += self.openable[self.openable.len - dubStep].flow;
-            canAccum += couldOpen * 2;
+        var couldOpen: usize = 0;
+        var step: usize = self.steps.items.len;
+
+        var oi: usize = 1;
+        while (step < self.steps.capacity and oi <= self.openable.len) {
+            const op = self.openable[self.openable.len - oi];
+
+            if (op != self.at) {
+                // need at least 1 move step
+                canAccum += couldOpen;
+                step += 1;
+            }
+
+            if (step < self.steps.capacity) {
+                // open step
+                canAccum += couldOpen;
+                couldOpen += op.flow;
+                step += 1;
+            }
+
+            oi += 1;
         }
+
+        canAccum += couldOpen * (self.steps.capacity - step);
 
         return self.totalReleased + willAccum + canAccum;
     }
@@ -707,22 +689,38 @@ fn run(
     defer world.deinit();
     try timing.markPhase(.parse);
 
-    var srch = try Search.init(arena.allocator(), .{
+    var srch = Search{
+        .allocator = arena.allocator(),
         .world = &world,
-        .max_steps = 30,
-        .start_name = "AA",
-    });
-    defer srch.deinit();
+    };
 
-    while (!srch.queue.done()) {
-        var roundTime = try timing.timer(.searchRound);
-        const ran = srch.queue.runUpto(1_000);
+    var queue = Search.Queue.init(srch.allocator, &srch);
+    // defer queue.deinit();
+
+    const max_steps = 30;
+    const start_name = "AA";
+
+    try queue.add(try Plan.init(
+        srch.allocator,
+        world.valves.get(start_name) orelse return error.NoStartValve,
+        max_steps,
+        world.openable,
+    ));
+
+    while (!queue.done()) {
+        var roundTime = try timing.timer(.searchBatch);
+        const ran = try queue.runUpto(1_000);
         try roundTime.lap();
 
         if (config.verbose > 0) {
             const time = timing.data.items[timing.data.items.len - 1].time;
             const best = if (srch.result) |res| res.totalReleased else 0;
-            std.debug.print("searched {} in {} ; best = {}\n", .{ ran, time, best });
+            std.debug.print("searched {} in {} ; best = {} depth = {}\n", .{
+                ran,
+                time,
+                best,
+                queue.queue.len,
+            });
         }
     }
 
@@ -746,7 +744,7 @@ fn run(
                 switch (opened.size) {
                     1 => {
                         const k = keys.next() orelse @panic("should have 1");
-                        try out.print("- Valve {} is open", .{k.*.name});
+                        try out.print("- Valve {s} is open", .{k.*.name});
                     },
                     else => {
                         var i: usize = 0;
@@ -764,7 +762,7 @@ fn run(
                             try tmp.appendSlice(name);
                         }
 
-                        try out.print("- Valves {} are open", .{tmp.items});
+                        try out.print("- Valves {s} are open", .{tmp.items});
                     },
                 }
                 try out.print(", releasing {} pressure.\n", .{totalOpen});
@@ -773,10 +771,10 @@ fn run(
             switch (step) {
                 .noop => {},
                 .move => |valve| {
-                    try out.print("- You move to valve {}.\n", .{valve.name});
+                    try out.print("- You move to valve {s}.\n", .{valve.name});
                 },
                 .open => |valve| {
-                    try out.print("- You open valve {}.\n", .{valve.name});
+                    try out.print("- You open valve {s}.\n", .{valve.name});
                     opened.putAssumeCapacity(valve, {});
                     totalOpen += valve.flow;
                 },

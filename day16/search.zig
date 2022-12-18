@@ -56,7 +56,7 @@ pub fn Queue(
         }
 
         pub fn done(self: *Self) bool {
-            return self.halted or self.queue.items.len == 0;
+            return self.halted or self.queue.len == 0;
         }
 
         pub fn run(self: *Self) !void {
@@ -77,11 +77,13 @@ pub fn Queue(
 
         pub fn expand(self: *Self) !bool {
             if (self.halted) return false;
-            var state = self.queue.removeOrNull() or return false;
+            var state = self.queue.removeOrNull() orelse return false;
             var it = expandFn(self.context, state);
-            defer state.deinit();
-            while (!self.halted and try it.next()) |next|
+
+            while (try it.next()) |next| {
                 try self.add(next);
+                if (self.halted) break;
+            }
             return true;
         }
     };
