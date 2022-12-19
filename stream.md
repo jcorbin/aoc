@@ -1,8 +1,21 @@
-# 2022-12-17
+# 2022-12-19: Day 16
 
-- WIP
+- finally finished; amazing what some path-cost analysis can do (part 2 runtime
+  down to 15 mintues, instead of hours before killed)
+  - tbf my prior brute randm walker may have finished if I let it run overnight...
+  - ... once I got it to a non memory-leaking oom-crashing state
+- learned how to container, via podman, to help manage the oom, and maybe
+  someday be able to run a task on my homelab system from my laptop
 
-# 2022-12-16
+# 2022-12-18: Day 16
+
+...
+
+# 2022-12-17: Day 16
+
+...
+
+# 2022-12-16: Day 16
 
 # Day 16
 

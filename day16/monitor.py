@@ -12,13 +12,13 @@ import sys
 
 def sify(num):
     if num > 1e12:
-        return f'{num/1e9}T'
+        return f'{num/1e12}T'
     if num > 1e9:
         return f'{num/1e9}B'
     if num > 1e6:
         return f'{num/1e6}M'
     if num > 1e3:
-        return f'{num/1e9}K'
+        return f'{num/1e3}K'
     return f'{num}'
 
 def analyze(lines):

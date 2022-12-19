@@ -212,12 +212,10 @@ test "example" {
             \\
             \\# Minute 10
             \\- Valves BB, CC, DD, HH, and JJ are open, releasing 78 pressure.
-            \\- You move to valve DD.
             \\- The elephant moves to valve EE.
             \\
             \\# Minute 11
             \\- Valves BB, CC, DD, HH, and JJ are open, releasing 78 pressure.
-            \\- You move to valve CC.
             \\- The elephant opens valve EE.
             \\
             \\# Minute 12
@@ -332,7 +330,9 @@ pub fn log(
 const Parse = @import("parse.zig");
 const Timing = @import("perf.zig").Timing(enum {
     parse,
-    parseLine,
+
+    flowCostsRound,
+    flowCosts,
 
     searchBatch,
     solve,
@@ -362,6 +362,18 @@ const Builder = struct {
     data: Data = .{},
 
     const Self = @This();
+
+    pub fn parse(allocator: Allocator, reader: anytype) !World {
+        var lines = Parse.lineScanner(reader);
+        var builder = init: {
+            var cur = try lines.next() orelse return error.NoInput;
+            break :init Builder.initLine(allocator, cur) catch |err| return cur.carp(err);
+        };
+        while (try lines.next()) |cur|
+            builder.parseLine(cur) catch |err| return cur.carp(err);
+        // TODO per-line timings again
+        return try builder.finish();
+    }
 
     pub fn initLine(allocator: Allocator, cur: *Parse.Cursor) !Self {
         var self = Self{
@@ -448,7 +460,8 @@ const Builder = struct {
         });
 
         var valves = World.ValveMap{};
-        try valves.ensureTotalCapacity(self.arena.allocator(), @intCast(u32, slab.len));
+        const cap = @intCast(u32, slab.len);
+        try valves.ensureTotalCapacity(self.arena.allocator(), cap);
 
         for (self.data.items) |item| switch (item) {
             .name => |name| if (name.len > 0) {
@@ -458,6 +471,9 @@ const Builder = struct {
                     .name = name,
                     .next = links[0..0],
                 };
+
+                try valve.cost.ensureTotalCapacity(self.arena.allocator(), cap);
+
                 try valves.put(self.arena.allocator(), name, valve);
             },
             else => {},
@@ -490,12 +506,24 @@ const Builder = struct {
             assert(links.len == 0);
         }
 
-        var openable = try self.arena.allocator().alloc(*const Valve, valves.size);
+        // validate linkage
         {
-            var values = valves.valueIterator();
+            var any = false;
+            for (valves.values()) |valve| {
+                for (valve.next) |next| {
+                    if (std.mem.indexOfScalar(*const Valve, next.next, valve) == null) {
+                        std.log.warn("{s} -> {s} does not link back", .{ valve.name, next.name });
+                        any = true;
+                    }
+                }
+            }
+            if (any) return error.InvalidGraphLinkage;
+        }
+
+        var openable = try self.arena.allocator().alloc(*const Valve, valves.entries.len);
+        {
             var i: usize = 0;
-            while (values.next()) |v| {
-                const valve = v.*;
+            for (valves.values()) |valve| {
                 if (valve.flow > 0) {
                     openable[i] = valve;
                     i += 1;
@@ -515,9 +543,12 @@ const Builder = struct {
 };
 
 const Valve = struct {
+    const CostMap = std.AutoHashMapUnmanaged(*const Valve, usize);
+
     name: []const u8,
     flow: u16 = 0,
     next: []*Valve,
+    cost: CostMap = .{},
 
     const Self = @This();
 
@@ -536,7 +567,7 @@ const Valve = struct {
 };
 
 const World = struct {
-    const ValveMap = std.StringHashMapUnmanaged(*Valve);
+    const ValveMap = std.StringArrayHashMapUnmanaged(*Valve);
 
     allocator: Allocator,
     arena: std.heap.ArenaAllocator,
@@ -568,7 +599,6 @@ const Search = struct {
     allocator: Allocator,
     world: *const World,
     result: ?*Plan = null,
-    // TODO recycle: std.ArrayList(*Plan),
 
     fn deinit(self: *Self) void {
         if (self.result) |plan| {
@@ -614,14 +644,25 @@ const Search = struct {
 
     fn expandPlan(self: *Self, plan: *Plan) Expander {
         var count: usize = 1;
-        if (plan.openable.len > 0) {
-            for (plan.actors) |actor| {
-                var n = actor.at.next.len;
-                if (actor.at.flow > 0 and plan.canOpen(actor.at))
-                    n += 1;
-                count *= n;
+
+        var open_remain = plan.openable.len;
+        var idle_actors: usize = 0;
+        for (plan.actors) |actor| {
+            if (actor.state == .idle) idle_actors += 1;
+        }
+
+        if (open_remain > 0 and idle_actors > 0) {
+            var actor_order = idle_actors;
+            while (actor_order > 1) : (actor_order -= 1)
+                count *= actor_order;
+
+            while (open_remain > 0 and idle_actors > 0) {
+                count *= open_remain;
+                open_remain -= 1;
+                idle_actors -= 1;
             }
         }
+
         return .{
             .self = self,
             .prior = plan,
@@ -642,54 +683,96 @@ const Search = struct {
             if (it.reused or i >= it.count) return null;
             it.i += 1;
 
-            var plan = if (it.i == it.count)
-                try it.reuse()
-            else
-                try it.prior.clone(it.self.allocator);
-            errdefer if (plan != it.prior)
-                plan.deinit(it.self.allocator);
-
-            if (it.prior.openable.len == 0) {
-                for (plan.actors) |*actor|
-                    try plan.noop(actor);
+            var open_remain = it.prior.openable.len;
+            if (open_remain == 0) {
+                var plan = try it.reuse();
+                while (plan.len < plan.max)
+                    for (plan.actors) |*actor|
+                        try plan.noop(actor);
                 return plan;
+            }
+
+            var idle_actors: usize = 0;
+            for (it.prior.actors) |actor| {
+                if (actor.state == .idle) idle_actors += 1;
             }
 
             var skip = false;
             var j = i;
-            for (plan.actors) |*actor| {
-                const canOpen = actor.at.flow > 0 and it.prior.canOpen(actor.at);
-                const nx = actor.at.next;
-                const n = if (canOpen) nx.len + 1 else nx.len;
-                var choice = j % n;
-                j /= n;
 
-                if (canOpen) {
-                    if (choice == 0) {
-                        if (plan.canOpen(actor.at)) {
-                            try plan.open(actor);
-                            actor.visited.clearRetainingCapacity();
-                        } else {
-                            try plan.noop(actor);
-                            skip = true;
-                        }
-                        continue;
-                    }
-                    choice -= 1;
-                }
+            // TODO reuse is sus given the need to read prior state in the indexing loop below
+            // var plan = if (it.i == it.count)
+            //     try it.reuse()
+            // else
+            //     try it.prior.clone(it.self.allocator);
+            // errdefer if (plan != it.prior)
+            //     plan.deinit(it.self.allocator);
 
-                const res = try actor.visited.getOrPut(it.self.allocator, nx[choice]);
-                if (res.found_existing) {
-                    try plan.noop(actor);
+            var plan = try it.prior.clone(it.self.allocator);
+            errdefer plan.deinit(it.self.allocator);
+
+            // shuffle idle actors
+            var ia: usize = idle_actors;
+            each_idle_actor: while (ia > 0 and open_remain > 0) : (ia -= 1) {
+                const idle_actor_i = j % ia;
+                j /= ia;
+
+                const actor_id = choose_actor: {
+                    var k = idle_actor_i;
+                    for (it.prior.actors) |actor, id| if (actor.state == .idle) {
+                        if (k == 0) break :choose_actor id;
+                        k -= 1;
+                    };
                     skip = true;
-                } else {
-                    try plan.moveTo(actor, nx[choice]);
+                    break :each_idle_actor;
+                };
+
+                // shuffle openable valves, but don't double-assign
+                const open_i = j % open_remain;
+                j /= open_remain;
+                open_remain -= 1;
+                const open = it.prior.openable[open_i];
+
+                for (it.prior.actors) |other, other_id| {
+                    if (actor_id != other_id and
+                        other.state == .open and
+                        other.state.open == open)
+                        continue :each_idle_actor;
                 }
+                plan.actors[actor_id].state = .{ .open = open };
+            }
+            // now all actors are non-idle (if possible)
+
+            // run actors until plan is full or at least one actor transitions back to idle
+            while (!skip and plan.len < plan.max) {
+                var any_idled = false;
+                for (plan.actors) |*actor| switch (actor.state) {
+                    .idle => try plan.noop(actor),
+                    .open => |goal| {
+                        if (actor.at != goal) {
+                            if (actor.bestNextMove(goal)) |next_move| {
+                                try plan.moveTo(actor, next_move);
+                                continue;
+                            }
+                        } else if (plan.canOpen(actor.at)) {
+                            try plan.open(actor);
+                            actor.state = .{ .idle = {} };
+                            any_idled = true;
+                            continue;
+                        }
+
+                        try plan.noop(actor);
+                        skip = true;
+                        break;
+                    },
+                };
+                if (any_idled) break;
             }
 
-            if (skip and plan != it.prior) {
+            if (skip) {
+                const last = plan == it.prior;
                 plan.deinit(it.self.allocator);
-                return it.next();
+                return if (last) null else it.next();
             }
 
             return plan;
@@ -721,21 +804,20 @@ const Plan = struct {
 
     const Actor = struct {
         at: *const Valve,
+        state: union(enum) {
+            idle: void,
+            open: *const Valve,
+        } = .{ .idle = {} },
+
         steps: Steps,
-        visited: ValveSet = .{},
 
         pub fn initCapacity(allocator: Allocator, at: *const Valve, cap: usize) !Actor {
             var steps = try Steps.initCapacity(allocator, cap);
             errdefer steps.deinit(allocator);
 
-            var visited = ValveSet{};
-            try visited.ensureTotalCapacity(allocator, 2 * @intCast(u32, cap));
-            errdefer visited.deinit(allocator);
-
             return Actor{
                 .at = at,
                 .steps = steps,
-                .visited = visited,
             };
         }
 
@@ -745,20 +827,29 @@ const Plan = struct {
             other.steps = try self.steps.clone(allocator);
             errdefer other.steps.deinit(allocator);
 
-            other.visited = try self.visited.clone(allocator);
-            errdefer other.visited.deinit(allocator);
-
             return other;
         }
 
         pub fn deinit(self: *Actor, allocator: Allocator) void {
             self.steps.deinit(allocator);
-            self.visited.deinit(allocator);
             self.* = undefined;
         }
 
         pub fn availableSteps(actor: @This()) usize {
             return actor.steps.capacity - actor.steps.items.len;
+        }
+
+        pub fn bestNextMove(actor: @This(), goal: *const Valve) ?*const Valve {
+            var best: ?*const Valve = null;
+            var best_cost: usize = 0;
+            for (actor.at.next) |next_valve| {
+                const cost = next_valve.cost.get(goal) orelse continue;
+                if (best == null or cost < best_cost) {
+                    best = next_valve;
+                    best_cost = cost;
+                }
+            }
+            return best;
         }
     };
 
@@ -978,27 +1069,77 @@ fn run(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var world = build: { // FIXME: parse input (store intermediate form, or evaluate)
-        var lines = Parse.lineScanner(input.reader());
-        var builder = init: {
-            var cur = try lines.next() orelse return error.NoInput;
-            break :init Builder.initLine(arena.allocator(), cur) catch |err| return cur.carp(err);
-        };
-        var lineTime = try timing.timer(.parseLine);
-        while (try lines.next()) |cur| {
-            builder.parseLine(cur) catch |err| return cur.carp(err);
-            try lineTime.lap();
-        }
-        break :build try builder.finish();
-    };
+    var world = try Builder.parse(allocator, input.reader());
     defer world.deinit();
     try timing.markPhase(.parse);
+
+    {
+        var roundTime = try timing.timer(.flowCostsRound);
+
+        // init cost=1 for self and cost=1 for next
+        for (world.valves.values()) |valve| {
+            for (valve.next) |next| {
+                var res = valve.cost.getOrPutAssumeCapacity(next);
+                if (!res.found_existing)
+                    res.value_ptr.* = 1;
+            }
+            valve.cost.putAssumeCapacity(valve, 0);
+        }
+        try roundTime.lap();
+
+        // transitively close cost tables, keeping min cost at each valve
+        while (true) {
+            var any = false;
+            for (world.valves.values()) |valve| {
+                for (valve.next) |next| {
+                    var it = next.cost.iterator();
+                    while (it.next()) |entry| {
+                        var res = valve.cost.getOrPutAssumeCapacity(entry.key_ptr.*);
+                        var cost = 1 + entry.value_ptr.*;
+                        if (!res.found_existing or res.value_ptr.* > cost) {
+                            res.value_ptr.* = cost;
+                            any = true;
+                        }
+                    }
+                }
+            }
+            try roundTime.lap();
+            if (!any) break;
+        }
+    }
+    try timing.markPhase(.flowCosts);
+
+    // validate costs
+    {
+        var any = false;
+        for (world.valves.values()) |valve| {
+            var it = valve.cost.iterator();
+            while (it.next()) |entry| {
+                const cost = entry.value_ptr.*;
+                const next = entry.key_ptr.*;
+                if (next == valve) {
+                    if (cost != 0) {
+                        std.log.warn("{s} self cost {} != 0", .{ valve.name, cost });
+                        any = true;
+                    }
+                } else {
+                    const cocost = next.cost.get(valve) orelse 0;
+                    if (cost != cocost) {
+                        std.log.warn("{s} <- {} != {} -> {s} asymmetric cost", .{ valve.name, cost, cocost, next.name });
+                        any = true;
+                    }
+                }
+            }
+        }
+        if (any) return error.InvalidGraphCosts;
+    }
 
     var srch = Search{
         .allocator = allocator, // NOTE use to expose leaks under test
         // .allocator = arena.allocator(),
         .world = &world,
     };
+    defer srch.deinit();
 
     var queue = Search.Queue.init(srch.allocator, &srch);
     defer queue.deinit();
@@ -1015,16 +1156,14 @@ fn run(
         const ran = try queue.runUpto(1_000);
         try roundTime.lap();
 
-        if (config.verbose > 0) {
-            const time = timing.data.items[timing.data.items.len - 1].time;
-            const best = if (srch.result) |res| res.totalReleased else 0;
-            std.log.info("searched {} in {} ; best = {} depth = {}", .{
-                ran,
-                time,
-                best,
-                queue.queue.len,
-            });
-        }
+        const time = timing.data.items[timing.data.items.len - 1].time;
+        const best = if (srch.result) |res| res.totalReleased else 0;
+        std.log.info("searched {} in {} ; best = {} depth = {}", .{
+            ran,
+            time,
+            best,
+            queue.queue.len,
+        });
     }
 
     // NOTE the final result can have redundant final moves while some actors
@@ -1200,4 +1339,5 @@ pub fn main() !void {
         },
         else => return err,
     };
+    if (gpa.detectLeaks()) std.process.exit(9);
 }
