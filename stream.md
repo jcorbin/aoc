@@ -1,4 +1,10 @@
-# 2022-12-19: Day 16
+# 2022-12-19
+
+# Day 17
+
+WIP
+
+# Day 16
 
 - finally finished; amazing what some path-cost analysis can do (part 2 runtime
   down to 15 mintues, instead of hours before killed)
