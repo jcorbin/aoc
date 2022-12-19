@@ -66,88 +66,73 @@ pub const Cursor = struct {
         return if (self.i < self.buf.len) self.buf[self.i] else null;
     }
 
-    pub fn consume(self: *Self) ?u8 {
-        if (self.peek()) |c| {
-            self.i += 1;
-            return c;
+    pub const Wanted = union(enum) {
+        just: u8,
+        range: struct { min: u8, max: u8 },
+        any: []const u8,
+        literal: []const u8,
+
+        pub fn have(wanted: @This(), s: []const u8) ?usize {
+            switch (wanted) {
+                .literal => |lit| if (std.mem.startsWith(u8, s, lit)) return lit.len,
+                .just => |w| if (s.len > 0 and s[0] == w) return 1,
+                .range => |r| if (s.len > 0 and r.min <= s[0] and s[0] <= r.max) return 1,
+                .any => |w| if (s.len > 0 and std.mem.indexOfScalar(u8, w, s[0]) != null) return 1,
+            }
+            return null;
+        }
+    };
+
+    pub fn have(self: *Self, comptime wanted: Wanted) ?[]const u8 {
+        const start = self.i;
+        if (wanted.have(self.buf[self.i..])) |n| {
+            self.i += n;
+            return self.buf[start .. start + n];
         }
         return null;
     }
 
-    pub fn have(self: *Self, wanted: u8) bool {
-        const c = self.peek() orelse return false;
-        if (c == wanted) {
-            self.i += 1;
-            return true;
-        }
-        return false;
-    }
-
-    pub fn haveNM(self: *Self, wanted: u8, atleast: usize, upto: usize) bool {
+    pub fn haveNM(self: *Self, comptime atleast: usize, comptime upto: usize, comptime wanted: Wanted) ?[]const u8 {
         var got: usize = 0;
-        while (got < upto) : (got += 1)
-            if (!self.have(wanted))
-                break;
-        return got >= atleast;
-    }
-
-    pub fn haveN(self: *Self, wanted: u8, n: usize) bool {
-        return self.haveNM(wanted, n, n);
-    }
-
-    pub fn star(self: *Self, wanted: u8) void {
-        _ = self.haveNM(wanted, 0, 2 + self.buf.len - self.i);
-    }
-
-    pub fn plus(self: *Self, wanted: u8) bool {
-        return self.haveNM(wanted, 1, 2 + self.buf.len - self.i);
-    }
-
-    fn peekToken(self: *Self) ?[]const u8 {
-        var i = self.i;
+        const i = self.i;
         var j = i;
-        next: while (j < self.buf.len) : (j += 1) {
-            switch (self.buf[j]) {
-                // TODO user provided include/exclude sets
-                ' ', '\t' => break :next,
-                else => continue,
-            }
+        while (got < upto and j < self.buf.len) : (got += 1) {
+            const n = wanted.have(self.buf[j..]) orelse break;
+            j += n;
         }
-        return if (j > i) self.buf[i..j] else null;
-    }
-
-    pub fn haveLiteral(self: *Self, literal: []const u8) bool {
-        var i = self.i;
-        for (literal) |c| {
-            if (i >= self.buf.len) return false;
-            if (self.buf[i] != c) return false;
-            i += 1;
+        if (got >= atleast) {
+            self.i = j;
+            return self.buf[i..j];
         }
-        self.i = i;
-        return true;
+        return null;
     }
 
-    pub fn consumeToken(self: *Self) ?[]const u8 {
-        const token = self.peekToken() orelse return null;
-        self.i += token.len;
-        return token;
+    pub fn haveN(self: *Self, comptime n: usize, comptime wanted: Wanted) ?[]const u8 {
+        return self.haveNM(n, n, wanted);
     }
 
-    pub fn consumeInt(self: *Self, comptime T: type, radix: u8) ?T {
-        var i = self.i;
+    pub fn star(self: *Self, comptime wanted: Wanted) []const u8 {
+        const i = self.i;
         var j = i;
-        while (j < self.buf.len) switch (self.buf[j]) {
-            '-', '+' => {
-                if (j > i) break;
-                j += 1;
-            },
-            '_', '0'...'9', 'A'...'Z', 'a'...'z' => j += 1,
-            else => break,
-        };
-        if (j == i) return null;
-        const token = self.buf[self.i..j];
-        const n = std.fmt.parseInt(T, token, radix) catch return null;
+        while (j < self.buf.len) {
+            const n = wanted.have(self.buf[j..]) orelse break;
+            j += n;
+        }
         self.i = j;
-        return n;
+        return self.buf[i..j];
+    }
+
+    pub fn plus(self: *Self, comptime wanted: Wanted) ?[]const u8 {
+        const i = self.i;
+        var j = i;
+        while (j < self.buf.len) {
+            const n = wanted.have(self.buf[j..]) orelse break;
+            j += n;
+        }
+        if (j > i) {
+            self.i = j;
+            return self.buf[i..j];
+        }
+        return null;
     }
 };
