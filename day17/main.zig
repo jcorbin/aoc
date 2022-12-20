@@ -6,7 +6,7 @@ const Allocator = mem.Allocator;
 
 test "example" {
     const example_input =
-        \\such data
+        \\>>><<><>><<<>><>>><<<>>><<<><<<>><>><<>>
         \\
     ;
 
@@ -16,18 +16,155 @@ test "example" {
         config: Config,
         skip: bool = false,
     }{
-        // Part 1 example
+
+        // Part 1 example: first 2 rocks trace
         .{
             .config = .{
-                .verbose = 1,
+                .verbose = 2,
+                .rocks = 2,
             },
             .input = example_input,
-            .expected =
+            .expected = 
+            \\# T0
+            \\    |..@@@@.|
+            \\    |.......|
+            \\    |.......|
+            \\    |.......|
+            \\    +-------+
+            \\
+            \\# T1
+            \\    |...@@@@|
+            \\    |.......|
+            \\    |.......|
+            \\    |.......|
+            \\    +-------+
+            \\
+            \\# T2
+            \\    |...@@@@|
+            \\    |.......|
+            \\    |.......|
+            \\    +-------+
+            \\
+            \\# T3
+            \\    |...@@@@|
+            \\    |.......|
+            \\    |.......|
+            \\    +-------+
+            \\
+            \\# T4
+            \\    |...@@@@|
+            \\    |.......|
+            \\    +-------+
+            \\
+            \\# T5
+            \\    |...@@@@|
+            \\    |.......|
+            \\    +-------+
+            \\
+            \\# T6
+            \\    |...@@@@|
+            \\    +-------+
+            \\
+            \\# T7
+            \\    |..@@@@.|
+            \\    +-------+
+            \\
+            \\# T8
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T9
+            \\    |...@...|
+            \\    |..@@@..|
+            \\    |...@...|
+            \\    |.......|
+            \\    |.......|
+            \\    |.......|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T10
+            \\    |..@....|
+            \\    |.@@@...|
+            \\    |..@....|
+            \\    |.......|
+            \\    |.......|
+            \\    |.......|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T11
+            \\    |..@....|
+            \\    |.@@@...|
+            \\    |..@....|
+            \\    |.......|
+            \\    |.......|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T12
+            \\    |...@...|
+            \\    |..@@@..|
+            \\    |...@...|
+            \\    |.......|
+            \\    |.......|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T13
+            \\    |...@...|
+            \\    |..@@@..|
+            \\    |...@...|
+            \\    |.......|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T14
+            \\    |..@....|
+            \\    |.@@@...|
+            \\    |..@....|
+            \\    |.......|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T15
+            \\    |..@....|
+            \\    |.@@@...|
+            \\    |..@....|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T16
+            \\    |...@...|
+            \\    |..@@@..|
+            \\    |...@...|
+            \\    |..####.|
+            \\    +-------+
+            \\
+            \\# T17
+            \\    |...#...|
+            \\    |..###..|
+            \\    |...#...|
+            \\    |..####.|
+            \\    +-------+
+            \\
             \\# Solution
-            \\> 42
+            \\> 4
             \\
             ,
         },
+
+        // Part 1 example: first few rocks enter
+        // .{
+        //     .config = .{
+        //         .verbose = 1,
+        //         .rocks = 11,
+        //     },
+        //     .input = example_input,
+        //     .expected =
+        //     \\
+        //     ,
+        // },
     };
 
     const allocator = std.testing.allocator;
@@ -64,12 +201,353 @@ const Timing = @import("perf.zig").Timing(enum {
 
 const Config = struct {
     verbose: usize = 0,
+    rocks: usize = 0,
+};
+
+const Move = enum {
+    left,
+    right,
+
+    const Self = @This();
+
+    pub fn parse(c: u8) !Self {
+        return switch (c) {
+            '<' => .left,
+            '>' => .right,
+            else => error.InvalidMove,
+        };
+    }
+};
+
+const Cell = enum {
+    null,
+    empty,
+    rock,
+    piece,
+    floor,
+    wall,
+    corner,
+
+    const Self = @This();
+
+    pub fn parse(c: u8) Self {
+        return switch (c) {
+            '.' => .empty,
+            '#' => .rock,
+            '@' => .piece,
+            '-' => .floor,
+            '|' => .wall,
+            '+' => .corner,
+            ' ' => .null,
+            else => .null,
+        };
+    }
+
+    pub fn parseLine(line: []Cell, s: []const u8) void {
+        for (s) |c, i| line[i] = Self.parse(c);
+    }
+
+    pub fn glyph(self: Self) u8 {
+        return switch (self) {
+            .null => ' ',
+            .empty => '.',
+            .rock => '#',
+            .piece => '@',
+            .floor => '-',
+            .wall => '|',
+            .corner => '+',
+        };
+    }
+};
+
+const Patch = struct {
+    stride: usize,
+    width: usize,
+    data: []Cell,
+
+    const Self = @This();
+
+    pub fn clone(self: Self, allocator: Allocator) !Self {
+        return Self{
+            .stride = self.stride,
+            .width = self.width,
+            .data = try allocator.dupe(self.data),
+        };
+    }
+
+    pub fn height(self: Self) usize {
+        const n = self.data.len;
+        const m = self.stride;
+        const size = n / m;
+        return if (n % m == 0) size else size + 1;
+    }
+
+    pub fn deinit(self: Self, allocator: Allocator) void {
+        allocator.free(self.data);
+        self.* = undefined;
+    }
+
+    pub fn parseMany(allocator: Allocator, ss: []const []const u8) ![]Self {
+        var patches = try allocator.alloc(Self, ss.len);
+        errdefer allocator.free(patches);
+        for (ss) |s, i|
+            patches[i] = Self.parse(allocator, s);
+        return patches;
+    }
+
+    pub fn parse(allocator: Allocator, s: []const u8) !Self {
+        var data = try allocator.alloc(Cell, s.len);
+        errdefer allocator.free(data);
+        return Self.parseInto(data, s);
+    }
+
+    pub fn parseInto(data: []Cell, s: []const u8) !Self {
+        const stride = if (std.mem.indexOfScalar(u8, s, '\n')) |i| i + 1 else s.len;
+        const width = stride - 1;
+        {
+            var i = width;
+            while (i < s.len and i < data.len) : (i += stride)
+                if (s[i] != '\n') return error.IrregularPatchString;
+        }
+        for (data) |*cell, i|
+            cell.* = Cell.parse(s[i]);
+        return Self{
+            .stride = stride,
+            .width = width,
+            .data = data,
+        };
+    }
+};
+
+const PatchList = struct {
+    const Node = struct {
+        patch: Patch,
+        next: ?*Node,
+        prev: ?*Node,
+
+        pub fn initFrom(allocator: Allocator, patch: Patch) !*Node {
+            var node = try allocator.create(Node);
+            errdefer allocator.free(node);
+            node.* = .{
+                .patch = try patch.clone(allocator),
+                .next = null,
+                .prev = null,
+            };
+            return node;
+        }
+    };
+
+    const cont_patch = Patch.parse(std.heap.page_allocator,
+        \\ |.......|
+        \\ |.......|
+        \\ |.......|
+        \\ |.......|
+        \\ |.......|
+    ) catch @compileError("must parse cont_patch");
+
+    const init_patch = Patch.parse(std.heap.page_allocator,
+        \\ |.......|
+        \\ |.......|
+        \\ |.......|
+        \\ |.......|
+        \\ +-------+
+    ) catch @compileError("must parse init_patch");
+
+    allocator: Allocator,
+    top: *Node,
+    bottom: *Node,
+
+    const Self = @This();
+
+    pub fn init(allocator: Allocator) !Self {
+        var node = Node.initFrom(allocator, init_patch);
+        return Self{
+            .allocator = allocator,
+            .top = node,
+            .bottom = node,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        var it = self.top;
+        while (it) |node| : (it = node.next) {
+            node.patch.deinit(self.allocator);
+            node.* = undefined;
+        }
+        self.* = undefined;
+    }
+
+    pub fn expand(self: *Self) !void {
+        var node = try Node.initFrom(self.allocator, cont_patch);
+        node.next = self.top;
+        self.top.prev = node;
+        self.top = node;
+    }
+
+    pub fn height(self: Self) usize {
+        var size: usize = 0;
+        var it = self.top;
+
+        while (it) |node| : (it = node.next) {
+            // TODO maybe factor out patch.iterator()
+            const h = node.patch.height();
+            const w = node.patch.width;
+            var y = 0;
+            while (y < h) : (y += 1) {
+                var x = 0;
+                while (x < w) : (x += 1) {
+                    const i = y * node.patch.stride + x;
+                    switch (node.patch.data[i]) {
+                        .null, .corner, .wall, .empty => {},
+                        else => {
+                            size += h - y;
+                            break;
+                        },
+                    }
+                }
+            }
+        }
+
+        while (it) |node| : (it = node.next)
+            size += node.patch.height();
+
+        return size;
+    }
+
+    pub fn move(self: *Self, m: Move) void {
+        var it = self.top;
+        while (it) |node| : (it = node.next) {
+            // TODO factor out patch.rowsIterator()
+            const h = node.patch.height();
+            const w = node.patch.width;
+
+            var had = false;
+            var y = 0;
+            while (y < h) : (y += 1) {
+                const offset = y * node.patch.stride;
+                var any = false;
+                switch (m) {
+                    .left => {
+                        var x = 0;
+                        var prior = &node.patch.data[offset + x];
+                        x += 1;
+                        while (x < w) : (x += 1) {
+                            var cur = &node.patch.data[offset + x];
+                            if (cur.* == .piece) {
+                                any = true;
+                                if (prior.* != .empty) break;
+                                std.mem.swap(Cell, prior, cur);
+                            }
+                            prior = cur;
+                        }
+                    },
+                    .right => {
+                        var x = w - 1;
+                        var prior = &node.patch.data[offset + x];
+                        while (x > 0) {
+                            x -= 1;
+                            var cur = &node.patch.data[offset + x];
+                            if (cur.* == .piece) {
+                                any = true;
+                                if (prior.* != .empty) break;
+                                std.mem.swap(Cell, prior, cur);
+                            }
+                            prior = cur;
+                        }
+                    },
+                }
+
+                if (any) {
+                    had = true; // found the piece
+                } else if (had) {
+                    break; // done with the piece
+                }
+            }
+        }
+    }
+
+    pub fn drop(self: *Self) void {
+        const Loc = struct {
+            node: *Node,
+            offset: usize,
+
+            fn row(loc: @This()) []Cell {
+                return loc.node.patch.data[loc.offset .. loc.offset + loc.node.patch.stride];
+            }
+
+            fn prev(loc: @This()) ?@This() {
+                return if (loc.offset > 0) .{
+                    .node = loc.node,
+                    .offset = loc.offset - loc.node.patch.stride,
+                } else if (loc.node.prev) |p| .{
+                    .node = p,
+                    .offset = p.patch.len - p.patch.stride,
+                } else null;
+            }
+        };
+
+        var it = self.top;
+
+        var hadPiece = false;
+        var last: ?Loc = null;
+
+        scan_piece: while (it) |node| : (it = node.next) {
+            var offset = 0;
+            while (offset < node.patch.data.len) : (offset += node.patch.stride) {
+                var row = node.patch.data[offset .. offset + node.patch.width];
+
+                // scan to line after last piece line
+                const hasPiece = std.mem.indexOfScalar(Cell, row, .piece) != null;
+                if (hasPiece) {
+                    hadPiece = true;
+                } else if (hadPiece) {
+                    last = .{ .node = node, .offset = offset };
+                    break :scan_piece;
+                }
+            }
+        }
+
+        while (last) |line| {
+            var prior = line.prev() orelse break;
+            defer last = prior;
+
+            var fromRow = prior.row();
+            var toRow = line.row();
+
+            var blocked = false;
+            var hasPiece = false;
+            for (fromRow) |fromCell, i| {
+                if (fromCell == .piece) {
+                    hasPiece = true;
+                    if (toRow[i] != .empty) {
+                        blocked = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasPiece) break; // done moving piece
+
+            if (blocked) {
+                for (fromRow) |*fromCell| {
+                    if (fromCell.* == .piece) fromCell.* = .rock;
+                }
+                // NOTE conveys blockage into prior row (now rock)
+            } else {
+                for (fromRow) |*fromCell, i| {
+                    if (fromCell.* == .piece)
+                        std.mem.swap(Cell, fromCell, &toRow[i]);
+                }
+                // NOTE conveys empty space into prior row
+            }
+        }
+    }
 };
 
 const Builder = struct {
     allocator: Allocator,
     arena: std.heap.ArenaAllocator,
-    // TODO state to be built up line-to-line
+    moves: std.ArrayListUnmanaged(Move),
 
     const Self = @This();
 
@@ -97,25 +575,49 @@ const Builder = struct {
     }
 
     pub fn parseLine(self: *Self, cur: *Parse.Cursor) !void {
-        _ = self;
-        if (cur.live()) return error.ParseLineNotImplemented;
+        try self.moves.ensureUnusedCapacity(self.arena.allocator(), cur.buf.len);
+        while (cur.i < cur.buf.len) : (cur.i += 1) {
+            switch (cur.buf[cur.i]) {
+                '\n' => {},
+                else => |c| self.moves.appendAssumeCapacity(try Move.parse(c)),
+            }
+        }
+        if (cur.live()) return error.ExtraINput;
     }
 
     pub fn finish(self: *Self) World {
-        // XXX(if may fail): errdefer self.arena.deinit();
-
         return World{
             .allocator = self.allocator,
             .arena = self.arena,
-            // TODO finalized problem data
+            .moves = self.moves.items,
         };
     }
 };
 
+const pieces = Patch.parseMany(std.heap.page_allocator,
+    \\ ####
+,
+    \\  # 
+    \\ ###
+    \\  # 
+,
+    \\   #
+    \\   #
+    \\ ###
+,
+    \\ #
+    \\ #
+    \\ #
+    \\ #
+,
+    \\ ##
+    \\ ##
+) catch @compileError("must parse pieces");
+
 const World = struct {
     allocator: Allocator,
     arena: std.heap.ArenaAllocator,
-    // TODO problem representation
+    moves: []Move,
 
     const Self = @This();
 
