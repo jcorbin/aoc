@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const assert = std.debug.assert;
 const mem = std.mem;
 
 const Allocator = mem.Allocator;
@@ -25,128 +26,141 @@ test "example" {
             },
             .input = example_input,
             .expected = 
-            \\# T0
-            \\    |..@@@@.|
-            \\    |.......|
-            \\    |.......|
-            \\    |.......|
-            \\    +-------+
+            \\The first rock begins falling:
+            \\|..@@@@.|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\+-------+
             \\
-            \\# T1
-            \\    |...@@@@|
-            \\    |.......|
-            \\    |.......|
-            \\    |.......|
-            \\    +-------+
+            \\Jet of gas pushes rock right:
+            \\|...@@@@|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\+-------+
             \\
-            \\# T2
-            \\    |...@@@@|
-            \\    |.......|
-            \\    |.......|
-            \\    +-------+
+            \\Rock falls 1 unit:
+            \\|...@@@@|
+            \\|.......|
+            \\|.......|
+            \\+-------+
             \\
-            \\# T3
-            \\    |...@@@@|
-            \\    |.......|
-            \\    |.......|
-            \\    +-------+
+            \\Jet of gas pushes rock right, but nothing happens:
+            \\|...@@@@|
+            \\|.......|
+            \\|.......|
+            \\+-------+
             \\
-            \\# T4
-            \\    |...@@@@|
-            \\    |.......|
-            \\    +-------+
+            \\Rock falls 1 unit:
+            \\|...@@@@|
+            \\|.......|
+            \\+-------+
             \\
-            \\# T5
-            \\    |...@@@@|
-            \\    |.......|
-            \\    +-------+
+            \\Jet of gas pushes rock right, but nothing happens:
+            \\|...@@@@|
+            \\|.......|
+            \\+-------+
             \\
-            \\# T6
-            \\    |...@@@@|
-            \\    +-------+
+            \\Rock falls 1 unit:
+            \\|...@@@@|
+            \\+-------+
             \\
-            \\# T7
-            \\    |..@@@@.|
-            \\    +-------+
+            \\Jet of gas pushes rock left:
+            \\|..@@@@.|
+            \\+-------+
             \\
-            \\# T8
-            \\    |..####.|
-            \\    +-------+
+            \\Rock falls 1 unit, causing it to come to rest:
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T9
-            \\    |...@...|
-            \\    |..@@@..|
-            \\    |...@...|
-            \\    |.......|
-            \\    |.......|
-            \\    |.......|
-            \\    |..####.|
-            \\    +-------+
+            \\A new rock begins falling:
+            \\|...@...|
+            \\|..@@@..|
+            \\|...@...|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T10
-            \\    |..@....|
-            \\    |.@@@...|
-            \\    |..@....|
-            \\    |.......|
-            \\    |.......|
-            \\    |.......|
-            \\    |..####.|
-            \\    +-------+
+            \\Jet of gas pushes rock left:
+            \\|..@....|
+            \\|.@@@...|
+            \\|..@....|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T11
-            \\    |..@....|
-            \\    |.@@@...|
-            \\    |..@....|
-            \\    |.......|
-            \\    |.......|
-            \\    |..####.|
-            \\    +-------+
+            \\Rock falls 1 unit:
+            \\|..@....|
+            \\|.@@@...|
+            \\|..@....|
+            \\|.......|
+            \\|.......|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T12
-            \\    |...@...|
-            \\    |..@@@..|
-            \\    |...@...|
-            \\    |.......|
-            \\    |.......|
-            \\    |..####.|
-            \\    +-------+
+            \\Jet of gas pushes rock right:
+            \\|...@...|
+            \\|..@@@..|
+            \\|...@...|
+            \\|.......|
+            \\|.......|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T13
-            \\    |...@...|
-            \\    |..@@@..|
-            \\    |...@...|
-            \\    |.......|
-            \\    |..####.|
-            \\    +-------+
+            \\Rock falls 1 unit:
+            \\|...@...|
+            \\|..@@@..|
+            \\|...@...|
+            \\|.......|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T14
-            \\    |..@....|
-            \\    |.@@@...|
-            \\    |..@....|
-            \\    |.......|
-            \\    |..####.|
-            \\    +-------+
+            \\Jet of gas pushes rock left:
+            \\|..@....|
+            \\|.@@@...|
+            \\|..@....|
+            \\|.......|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T15
-            \\    |..@....|
-            \\    |.@@@...|
-            \\    |..@....|
-            \\    |..####.|
-            \\    +-------+
+            \\Rock falls 1 unit:
+            \\|..@....|
+            \\|.@@@...|
+            \\|..@....|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T16
-            \\    |...@...|
-            \\    |..@@@..|
-            \\    |...@...|
-            \\    |..####.|
-            \\    +-------+
+            \\Jet of gas pushes rock right:
+            \\|...@...|
+            \\|..@@@..|
+            \\|...@...|
+            \\|..####.|
+            \\+-------+
             \\
-            \\# T17
-            \\    |...#...|
-            \\    |..###..|
-            \\    |...#...|
-            \\    |..####.|
-            \\    +-------+
+            \\Rock falls 1 unit, causing it to come to rest:
+            \\|...#...|
+            \\|..###..|
+            \\|...#...|
+            \\|..####.|
+            \\+-------+
+            \\
+            \\A new rock begins falling:
+            \\|....@..|
+            \\|....@..|
+            \\|..@@@..|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\|...#...|
+            \\|..###..|
+            \\|...#...|
+            \\|..####.|
+            \\+-------+
             \\
             \\# Solution
             \\> 4
@@ -193,7 +207,9 @@ const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
 
-    solve,
+    simulateRockStep,
+    simulateRock,
+    simulate,
 
     report,
     overall,
@@ -215,6 +231,13 @@ const Move = enum {
             '<' => .left,
             '>' => .right,
             else => error.InvalidMove,
+        };
+    }
+
+    pub fn name(self: Self) []const u8 {
+        return switch (self) {
+            .left => "left",
+            .right => "right",
         };
     }
 };
@@ -271,7 +294,7 @@ const Patch = struct {
         return Self{
             .stride = self.stride,
             .width = self.width,
-            .data = try allocator.dupe(self.data),
+            .data = try allocator.dupe(Cell, self.data),
         };
     }
 
@@ -291,7 +314,7 @@ const Patch = struct {
         var patches = try allocator.alloc(Self, ss.len);
         errdefer allocator.free(patches);
         for (ss) |s, i|
-            patches[i] = Self.parse(allocator, s);
+            patches[i] = try Self.parse(allocator, s);
         return patches;
     }
 
@@ -327,7 +350,7 @@ const PatchList = struct {
 
         pub fn initFrom(allocator: Allocator, patch: Patch) !*Node {
             var node = try allocator.create(Node);
-            errdefer allocator.free(node);
+            errdefer allocator.destroy(node);
             node.* = .{
                 .patch = try patch.clone(allocator),
                 .next = null,
@@ -337,21 +360,35 @@ const PatchList = struct {
         }
     };
 
-    const cont_patch = Patch.parse(std.heap.page_allocator,
-        \\ |.......|
-        \\ |.......|
-        \\ |.......|
-        \\ |.......|
-        \\ |.......|
-    ) catch @compileError("must parse cont_patch");
+    const Loc = struct {
+        node: *Node,
+        offset: usize = 0,
 
-    const init_patch = Patch.parse(std.heap.page_allocator,
-        \\ |.......|
-        \\ |.......|
-        \\ |.......|
-        \\ |.......|
-        \\ +-------+
-    ) catch @compileError("must parse init_patch");
+        fn row(loc: @This()) []Cell {
+            return loc.node.patch.data[loc.offset .. loc.offset + loc.node.patch.width];
+        }
+
+        fn next(loc: @This()) ?@This() {
+            const offset = loc.offset + loc.node.patch.stride;
+            return if (offset < loc.node.patch.data.len) .{
+                .node = loc.node,
+                .offset = offset,
+            } else if (loc.node.next) |n| .{
+                .node = n,
+                .offset = 0,
+            } else null;
+        }
+
+        fn prev(loc: @This()) ?@This() {
+            return if (loc.offset > 0) .{
+                .node = loc.node,
+                .offset = loc.offset - loc.node.patch.stride,
+            } else if (loc.node.prev) |p| .{
+                .node = p,
+                .offset = p.patch.data.len - p.patch.stride,
+            } else null;
+        }
+    };
 
     allocator: Allocator,
     top: *Node,
@@ -359,8 +396,8 @@ const PatchList = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator) !Self {
-        var node = Node.initFrom(allocator, init_patch);
+    pub fn init(allocator: Allocator, init_patch: Patch) !Self {
+        var node = try Node.initFrom(allocator, init_patch);
         return Self{
             .allocator = allocator,
             .top = node,
@@ -377,24 +414,37 @@ const PatchList = struct {
         self.* = undefined;
     }
 
-    pub fn expand(self: *Self) !void {
-        var node = try Node.initFrom(self.allocator, cont_patch);
+    pub fn expand(self: *Self, patch: Patch) !void {
+        if (patch.width != self.top.patch.width) return error.InvalidPatchWidth;
+        var node = try Node.initFrom(self.allocator, patch);
         node.next = self.top;
         self.top.prev = node;
         self.top = node;
     }
 
+    pub fn availHeight(self: Self) usize {
+        return self.height() - self.usedHeight();
+    }
+
     pub fn height(self: Self) usize {
-        var size: usize = 0;
-        var it = self.top;
+        var size = @as(usize, 0);
+        var it: ?*Node = self.top;
+        while (it) |node| : (it = node.next)
+            size += node.patch.height();
+        return size;
+    }
+
+    pub fn usedHeight(self: Self) usize {
+        var size = @as(usize, 0);
+        var it: ?*Node = self.top;
 
         while (it) |node| : (it = node.next) {
             // TODO maybe factor out patch.iterator()
             const h = node.patch.height();
             const w = node.patch.width;
-            var y = 0;
+            var y = @as(usize, 0);
             while (y < h) : (y += 1) {
-                var x = 0;
+                var x = @as(usize, 0);
                 while (x < w) : (x += 1) {
                     const i = y * node.patch.stride + x;
                     switch (node.patch.data[i]) {
@@ -414,132 +464,158 @@ const PatchList = struct {
         return size;
     }
 
-    pub fn move(self: *Self, m: Move) void {
-        var it = self.top;
-        while (it) |node| : (it = node.next) {
-            // TODO factor out patch.rowsIterator()
-            const h = node.patch.height();
-            const w = node.patch.width;
+    pub fn move(self: *Self, m: Move) bool {
+        var at: ?Loc = Loc{ .node = self.top };
+        var start: ?Loc = null;
+        while (at) |loc| : (at = loc.next()) {
+            const row = loc.row();
 
-            var had = false;
-            var y = 0;
-            while (y < h) : (y += 1) {
-                const offset = y * node.patch.stride;
-                var any = false;
-                switch (m) {
-                    .left => {
-                        var x = 0;
-                        var prior = &node.patch.data[offset + x];
-                        x += 1;
-                        while (x < w) : (x += 1) {
-                            var cur = &node.patch.data[offset + x];
-                            if (cur.* == .piece) {
-                                any = true;
-                                if (prior.* != .empty) break;
-                                std.mem.swap(Cell, prior, cur);
-                            }
-                            prior = cur;
+            var any = false;
+            switch (m) {
+                .left => {
+                    var x = @as(usize, 0);
+                    var prior = row[x];
+                    x += 1;
+                    while (x < row.len) : (x += 1) {
+                        const cur = row[x];
+                        if (cur == .piece) {
+                            if (prior != .empty) return false; // blocked
+                            any = true;
                         }
-                    },
-                    .right => {
-                        var x = w - 1;
-                        var prior = &node.patch.data[offset + x];
-                        while (x > 0) {
-                            x -= 1;
-                            var cur = &node.patch.data[offset + x];
-                            if (cur.* == .piece) {
-                                any = true;
-                                if (prior.* != .empty) break;
-                                std.mem.swap(Cell, prior, cur);
-                            }
-                            prior = cur;
+                        prior = cur;
+                    }
+                },
+                .right => {
+                    var x = row.len - 1;
+                    var prior = row[x];
+                    while (x > 0) {
+                        x -= 1;
+                        const cur = row[x];
+                        if (cur == .piece) {
+                            if (prior != .empty) return false; // blocked
+                            any = true;
                         }
-                    },
-                }
+                        prior = cur;
+                    }
+                },
+            }
 
-                if (any) {
-                    had = true; // found the piece
-                } else if (had) {
-                    break; // done with the piece
-                }
+            if (any) {
+                if (start == null) start = loc; // found the piece
+            } else if (start != null) break; // done with the piece
+        }
+
+        at = start orelse return false; // no piece to move
+
+        // now we can just move the piece, swapping its cells for empty space left/right
+        while (at) |loc| : (at = loc.next()) {
+            var row = loc.row();
+            if (std.mem.indexOfScalar(Cell, row, .piece) == null) break; // done with the piece
+
+            switch (m) {
+                .left => {
+                    var x = @as(usize, 0);
+                    var prior = &row[x];
+                    x += 1;
+                    while (x < row.len) : (x += 1) {
+                        var cur = &row[x];
+                        if (cur.* == .piece) {
+                            assert(prior.* == .empty);
+                            std.mem.swap(Cell, prior, cur);
+                        }
+                        prior = cur;
+                    }
+                },
+                .right => {
+                    var x = row.len - 1;
+                    var prior = &row[x];
+                    while (x > 0) {
+                        x -= 1;
+                        var cur = &row[x];
+                        if (cur.* == .piece) {
+                            assert(prior.* == .empty);
+                            std.mem.swap(Cell, prior, cur);
+                        }
+                        prior = cur;
+                    }
+                },
             }
         }
+
+        return true;
     }
 
-    pub fn drop(self: *Self) void {
-        const Loc = struct {
-            node: *Node,
-            offset: usize,
-
-            fn row(loc: @This()) []Cell {
-                return loc.node.patch.data[loc.offset .. loc.offset + loc.node.patch.stride];
-            }
-
-            fn prev(loc: @This()) ?@This() {
-                return if (loc.offset > 0) .{
-                    .node = loc.node,
-                    .offset = loc.offset - loc.node.patch.stride,
-                } else if (loc.node.prev) |p| .{
-                    .node = p,
-                    .offset = p.patch.len - p.patch.stride,
-                } else null;
-            }
-        };
-
-        var it = self.top;
-
-        var hadPiece = false;
-        var last: ?Loc = null;
-
-        scan_piece: while (it) |node| : (it = node.next) {
-            var offset = 0;
-            while (offset < node.patch.data.len) : (offset += node.patch.stride) {
-                var row = node.patch.data[offset .. offset + node.patch.width];
-
-                // scan to line after last piece line
+    pub fn drop(self: *Self) bool {
+        // scan to line after last piece line
+        var last = scan_piece: {
+            var hadPiece = false;
+            var at: ?Loc = Loc{ .node = self.top };
+            while (at) |loc| : (at = loc.next()) {
+                const offset = loc.offset;
+                const patch = loc.node.patch;
+                const row = patch.data[offset .. offset + patch.width];
                 const hasPiece = std.mem.indexOfScalar(Cell, row, .piece) != null;
                 if (hasPiece) {
                     hadPiece = true;
                 } else if (hadPiece) {
-                    last = .{ .node = node, .offset = offset };
-                    break :scan_piece;
+                    break :scan_piece at;
                 }
             }
-        }
+            break :scan_piece null;
+        };
 
-        while (last) |line| {
-            var prior = line.prev() orelse break;
-            defer last = prior;
-
-            var fromRow = prior.row();
-            var toRow = line.row();
-
-            var blocked = false;
-            var hasPiece = false;
-            for (fromRow) |fromCell, i| {
-                if (fromCell == .piece) {
-                    hasPiece = true;
-                    if (toRow[i] != .empty) {
-                        blocked = true;
-                        break;
+        // check if any piece line is blocked
+        const blocked = check_piece: {
+            var check = last;
+            while (check) |line| {
+                var prior = line.prev() orelse break;
+                defer last = prior;
+                const fromRow = prior.row();
+                const toRow = line.row();
+                var hasPiece = false;
+                for (fromRow) |fromCell, i| {
+                    if (fromCell == .piece) {
+                        if (toRow[i] != .empty) break :check_piece true;
+                        hasPiece = true;
                     }
                 }
+                if (!hasPiece) break;
             }
+            break :check_piece false;
+        };
 
-            if (!hasPiece) break; // done moving piece
+        if (blocked) {
+            // convert to rock
+            while (last) |line| {
+                var prior = line.prev() orelse break;
+                defer last = prior;
 
-            if (blocked) {
+                var fromRow = prior.row();
+                if (std.mem.indexOfScalar(Cell, fromRow, .piece) == null) break;
+
                 for (fromRow) |*fromCell| {
                     if (fromCell.* == .piece) fromCell.* = .rock;
                 }
-                // NOTE conveys blockage into prior row (now rock)
-            } else {
-                for (fromRow) |*fromCell, i| {
-                    if (fromCell.* == .piece)
-                        std.mem.swap(Cell, fromCell, &toRow[i]);
-                }
-                // NOTE conveys empty space into prior row
             }
+            return false;
+        } else {
+            // move down (swap with empty space checked above);
+            while (last) |line| {
+                var prior = line.prev() orelse break;
+                defer last = prior;
+
+                var fromRow = prior.row();
+                if (std.mem.indexOfScalar(Cell, fromRow, .piece) == null) break;
+                var toRow = line.row();
+
+                for (fromRow) |*fromCell, i| {
+                    if (fromCell.* == .piece) {
+                        assert(toRow[i] == .empty);
+                        std.mem.swap(Cell, fromCell, &toRow[i]);
+                    }
+                }
+            }
+            return true;
         }
     }
 };
@@ -547,7 +623,7 @@ const PatchList = struct {
 const Builder = struct {
     allocator: Allocator,
     arena: std.heap.ArenaAllocator,
-    moves: std.ArrayListUnmanaged(Move),
+    moves: std.ArrayListUnmanaged(Move) = .{},
 
     const Self = @This();
 
@@ -562,7 +638,7 @@ const Builder = struct {
             builder.parseLine(cur) catch |err| return cur.carp(err);
             // TODO bring back: try lineTime.lap();
         }
-        return builder.finish();
+        return try builder.finish();
     }
 
     pub fn initLine(allocator: Allocator, cur: *Parse.Cursor) !Self {
@@ -585,44 +661,93 @@ const Builder = struct {
         if (cur.live()) return error.ExtraINput;
     }
 
-    pub fn finish(self: *Self) World {
+    pub fn finish(self: *Self) !World {
+        const cont_patch = try Patch.parse(self.arena.allocator(),
+            \\ |.......|
+            \\ |.......|
+            \\ |.......|
+            \\ |.......|
+            \\ |.......|
+        );
+
+        const init_patch = try Patch.parse(self.arena.allocator(),
+            \\ |.......|
+            \\ |.......|
+            \\ |.......|
+            \\ |.......|
+            \\ +-------+
+        );
+
+        const pieces = try Patch.parseMany(self.arena.allocator(), split: {
+            var chunks = std.mem.split(u8,
+                \\ ####
+                \\
+                \\  # 
+                \\ ###
+                \\  # 
+                \\
+                \\   #
+                \\   #
+                \\ ###
+                \\
+                \\ #
+                \\ #
+                \\ #
+                \\ #
+                \\
+                \\ ##
+                \\ ##
+            , "\n\n");
+            var parts = try std.ArrayList([]const u8).initCapacity(self.arena.allocator(), count: {
+                var n = @as(usize, 0);
+                while (chunks.next()) |_| n += 1;
+                break :count n;
+            });
+            chunks.reset();
+            while (chunks.next()) |part| parts.appendAssumeCapacity(part);
+            break :split parts.items;
+        });
+
         return World{
             .allocator = self.allocator,
             .arena = self.arena,
+            .pieces = pieces,
+            .cont_patch = cont_patch,
             .moves = self.moves.items,
+            .room = try PatchList.init(self.arena.allocator(), init_patch),
         };
     }
 };
 
-const pieces = Patch.parseMany(std.heap.page_allocator,
-    \\ ####
-,
-    \\  # 
-    \\ ###
-    \\  # 
-,
-    \\   #
-    \\   #
-    \\ ###
-,
-    \\ #
-    \\ #
-    \\ #
-    \\ #
-,
-    \\ ##
-    \\ ##
-) catch @compileError("must parse pieces");
-
 const World = struct {
     allocator: Allocator,
     arena: std.heap.ArenaAllocator,
+
+    pieces: []Patch,
+    cont_patch: Patch,
+
     moves: []Move,
+    room: PatchList,
 
     const Self = @This();
 
     pub fn deinit(self: *Self) void {
         self.arena.deinit();
+    }
+
+    pub fn movesIterator(self: Self) struct {
+        moves: []Move,
+        i: usize = 0,
+
+        pub fn next(it: *@This()) ?Move {
+            if (it.i < it.moves.len) {
+                defer it.i += 1;
+                return it.moves[it.i];
+            }
+            return null;
+        }
+    } {
+        return .{ .moves = self.moves };
     }
 };
 
@@ -640,9 +765,6 @@ fn run(
 
     var out = output.writer();
 
-    // FIXME: hookup your config
-    _ = config;
-
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
@@ -650,8 +772,105 @@ fn run(
     defer world.deinit();
     try timing.markPhase(.parse);
 
-    // FIXME: solve...
-    try timing.markPhase(.solve);
+    var moves = world.movesIterator();
+    var rock_i = @as(usize, 0);
+    var rockTime = try timing.timer(.simulateRock);
+    while (rock_i < config.rocks) : (rock_i += 1) {
+        defer rockTime.lap() catch {};
+        const piece = world.pieces[rock_i % world.pieces.len];
+
+        // Each rock appears so that its left edge is two units away from the
+        // left wall and its bottom edge is three units above the highest rock
+        // in the room (or the floor, if there isn't one).
+
+        if (world.room.availHeight() < 3)
+            try world.room.expand(world.cont_patch);
+        assert(world.room.availHeight() >= 3);
+
+        {
+            var into = world.room.top.patch;
+            assert(piece.width < into.width - 3);
+            assert(piece.height() < into.height());
+
+            var off = @as(usize, 0);
+            while (off < piece.data.len) : (off += piece.stride) {
+                var at = off + 3; // wall + 2 empties
+                var x = @as(usize, 0);
+                while (x < piece.width) : (x += 1)
+                    into.data[at + x] = piece.data[off + x];
+            }
+        }
+
+        if (config.verbose > 0) {
+            if (config.verbose < 2)
+                try out.print(
+                    \\{}
+                    \\
+                    \\
+                , .{world.room})
+            else if (rock_i == 0)
+                try out.print(
+                    \\The first rock begins falling:
+                    \\{}
+                    \\
+                    \\
+                , .{world.room})
+            else
+                try out.print(
+                    \\A new rock begins falling:
+                    \\{}
+                    \\
+                    \\
+                , .{world.room});
+        }
+
+        var stepTime = try timing.timer(.simulateRock);
+        while (true) {
+            defer stepTime.lap() catch {};
+
+            const move = moves.next() orelse return error.OutOfMoves;
+
+            const didMove = world.room.move(move);
+            if (config.verbose > 1) {
+                if (didMove)
+                    try out.print(
+                        \\Jet of gas pushes rock {s}:
+                        \\{}
+                        \\
+                        \\
+                    , .{ move.name(), world.room })
+                else
+                    try out.print(
+                        \\Jet of gas pushes rock {s}, but nothing happens:
+                        \\{}
+                        \\
+                        \\
+                    , .{ move.name(), world.room });
+            }
+
+            const didDrop = world.room.drop();
+            if (config.verbose > 1) {
+                if (didDrop)
+                    try out.print(
+                        \\Rock falls 1 unit:
+                        \\{}
+                        \\
+                        \\
+                    , .{world.room})
+                else
+                    try out.print(
+                        \\Rock falls 1 unit, causing it to come to rest:
+                        \\{}
+                        \\
+                        \\
+                    , .{world.room});
+            }
+
+            if (didDrop) break;
+        }
+    }
+
+    try timing.markPhase(.simulate);
 
     try out.print(
         \\# Solution
