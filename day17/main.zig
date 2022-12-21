@@ -154,24 +154,25 @@ test "example" {
             \\|..####.|
             \\+-------+
             \\
-            \\A new rock begins falling:
-            \\|....@..|
-            \\|....@..|
-            \\|..@@@..|
-            \\|.......|
-            \\|.......|
-            \\|.......|
-            \\|...#...|
-            \\|..###..|
-            \\|...#...|
-            \\|..####.|
-            \\+-------+
-            \\
             \\# Solution
             \\> 4
             \\
             ,
         },
+
+        // \\
+        // \\A new rock begins falling:
+        // \\|....@..|
+        // \\|....@..|
+        // \\|..@@@..|
+        // \\|.......|
+        // \\|.......|
+        // \\|.......|
+        // \\|...#...|
+        // \\|..###..|
+        // \\|...#...|
+        // \\|..####.|
+        // \\+-------+
 
         // Part 1 example: first few rocks enter
         // .{
@@ -311,6 +312,17 @@ const Patch = struct {
 
     const Self = @This();
 
+    pub fn format(self: Self, comptime how: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        if (std.mem.eql(u8, how, "d")) {
+            return writer.print("Patch{{ .width = {}, .height() = {} }}", .{ self.width, self.height() });
+        }
+        try writer.print("Patch{{ .stride = {}, .width = {}, .data = {any} }}", .{
+            self.stride,
+            self.width,
+            self.data,
+        });
+    }
+
     pub fn clone(self: Self, allocator: Allocator) !Self {
         return Self{
             .stride = self.stride,
@@ -378,6 +390,15 @@ const PatchList = struct {
         patch: Patch,
         next: ?*Node = null,
         prev: ?*Node = null,
+
+        pub fn format(self: *const Node, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+            try writer.print("{*}{{ .prev = {*}, .next = {*}, .patch = {d} }}", .{
+                self,
+                self.prev,
+                self.next,
+                self.patch,
+            });
+        }
 
         pub fn initFrom(allocator: Allocator, patch: Patch) !*Node {
             var node = try allocator.create(Node);
@@ -593,6 +614,7 @@ const PatchList = struct {
     }
 
     pub fn drop(self: *Self) bool {
+
         // scan to line after last piece line
         var last = scan_piece: {
             var hadPiece = false;
@@ -621,12 +643,13 @@ const PatchList = struct {
 
                 const fromRow = prior.row();
                 const toRow = line.row();
+
                 var hasPiece = false;
                 for (fromRow) |fromCell, i| {
-                    if (fromCell == .piece) {
-                        if (toRow[i] != .empty) break :check_piece true;
-                        hasPiece = true;
-                    }
+                    if (fromCell == .piece) switch (toRow[i]) {
+                        .empty, .piece => hasPiece = true,
+                        else => break :check_piece true,
+                    };
                 }
                 if (!hasPiece) break;
             }
@@ -981,7 +1004,7 @@ fn run(
         \\> {}
         \\
     , .{
-        42,
+        world.room.usedHeight() - 1, // floor discount
     });
     try timing.markPhase(.report);
 

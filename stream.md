@@ -1,3 +1,9 @@
+# 2021-12-21: Day 17
+
+- been spending a lot of time getting used to zig's formatting system,
+  especially around custom formatters, to make things ergonomic
+- spent a lot of time debugging logic errors; TODO finally sort out gdb/lldb maybe via DAP
+
 # 2021-12-20: Day 17
 
 ...
