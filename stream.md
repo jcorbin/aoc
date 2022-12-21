@@ -1,8 +1,13 @@
+# 2021-12-20: Day 17
+
+...
+
 # 2022-12-19
 
 # Day 17
 
-WIP
+- started working on day 17, didn't get much past "eh this should compile, but
+  isn't right yet"
 
 # Day 16
 

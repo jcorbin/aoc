@@ -3,6 +3,11 @@ const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
 
+// TODO is there a std.meta.* thing for this?
+pub fn Optional(comptime T: type) type {
+    return @Type(.{ .Optional = .{ .child = T } });
+}
+
 const Allocator = mem.Allocator;
 
 test "example" {
@@ -253,6 +258,18 @@ const Cell = enum {
 
     const Self = @This();
 
+    pub fn isAllEmpty(row: []const Cell) bool {
+        switch (row[0]) {
+            .wall, .empty => {},
+            else => return false,
+        }
+        switch (row[row.len - 1]) {
+            .wall, .empty => {},
+            else => return false,
+        }
+        return std.mem.allEqual(Cell, row[1 .. row.len - 1], .empty);
+    }
+
     pub fn parse(c: u8) Self {
         return switch (c) {
             '.' => .empty,
@@ -280,6 +297,10 @@ const Cell = enum {
             .wall => '|',
             .corner => '+',
         };
+    }
+
+    pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.writeByte(self.glyph());
     }
 };
 
@@ -314,7 +335,12 @@ const Patch = struct {
         var patches = try allocator.alloc(Self, ss.len);
         errdefer allocator.free(patches);
         for (ss) |s, i|
-            patches[i] = try Self.parse(allocator, s);
+            patches[i] = Self.parse(allocator, s) catch |err| {
+                std.log.warn("unable to parse `{s}`", .{
+                    std.fmt.fmtSliceEscapeLower(s),
+                });
+                return err;
+            };
         return patches;
     }
 
@@ -325,13 +351,18 @@ const Patch = struct {
     }
 
     pub fn parseInto(data: []Cell, s: []const u8) !Self {
-        const stride = if (std.mem.indexOfScalar(u8, s, '\n')) |i| i + 1 else s.len;
+        const stride = validate: {
+            if (std.mem.indexOfScalar(u8, s, '\n')) |i| {
+                const stride = i + 1;
+                var j = i;
+                while (j < s.len and j < data.len) : (j += stride)
+                    if (s[j] != '\n') return error.IrregularPatchString;
+                break :validate stride;
+            }
+            break :validate s.len + 1;
+        };
+
         const width = stride - 1;
-        {
-            var i = width;
-            while (i < s.len and i < data.len) : (i += stride)
-                if (s[i] != '\n') return error.IrregularPatchString;
-        }
         for (data) |*cell, i|
             cell.* = Cell.parse(s[i]);
         return Self{
@@ -345,160 +376,176 @@ const Patch = struct {
 const PatchList = struct {
     const Node = struct {
         patch: Patch,
-        next: ?*Node,
-        prev: ?*Node,
+        next: ?*Node = null,
+        prev: ?*Node = null,
 
         pub fn initFrom(allocator: Allocator, patch: Patch) !*Node {
             var node = try allocator.create(Node);
             errdefer allocator.destroy(node);
-            node.* = .{
-                .patch = try patch.clone(allocator),
-                .next = null,
-                .prev = null,
-            };
+            node.* = .{ .patch = try patch.clone(allocator) };
             return node;
         }
     };
 
-    const Loc = struct {
-        node: *Node,
-        offset: usize = 0,
+    pub fn Loc(comptime is_const: bool) type {
+        return struct {
+            node: if (is_const) *const Node else *Node,
+            offset: usize = 0,
 
-        fn row(loc: @This()) []Cell {
-            return loc.node.patch.data[loc.offset .. loc.offset + loc.node.patch.width];
-        }
+            fn row(loc: @This()) if (is_const) []const Cell else []Cell {
+                return loc.node.patch.data[loc.offset .. loc.offset + loc.node.patch.width];
+            }
 
-        fn next(loc: @This()) ?@This() {
-            const offset = loc.offset + loc.node.patch.stride;
-            return if (offset < loc.node.patch.data.len) .{
-                .node = loc.node,
-                .offset = offset,
-            } else if (loc.node.next) |n| .{
-                .node = n,
-                .offset = 0,
-            } else null;
-        }
+            fn height(loc: @This()) usize {
+                var size =
+                    loc.node.patch.height() -
+                    loc.offset / loc.node.patch.stride;
+                var it = loc.node.next;
+                while (it) |node| : (it = node.next)
+                    size += node.patch.height();
+                return size;
+            }
 
-        fn prev(loc: @This()) ?@This() {
-            return if (loc.offset > 0) .{
-                .node = loc.node,
-                .offset = loc.offset - loc.node.patch.stride,
-            } else if (loc.node.prev) |p| .{
-                .node = p,
-                .offset = p.patch.data.len - p.patch.stride,
-            } else null;
-        }
-    };
+            fn next(loc: @This()) ?@This() {
+                const offset = loc.offset + loc.node.patch.stride;
+                return if (offset < loc.node.patch.data.len) .{
+                    .node = loc.node,
+                    .offset = offset,
+                } else if (loc.node.next) |n| .{
+                    .node = n,
+                    .offset = 0,
+                } else null;
+            }
 
-    allocator: Allocator,
-    top: *Node,
-    bottom: *Node,
-
-    const Self = @This();
-
-    pub fn init(allocator: Allocator, init_patch: Patch) !Self {
-        var node = try Node.initFrom(allocator, init_patch);
-        return Self{
-            .allocator = allocator,
-            .top = node,
-            .bottom = node,
+            fn prev(loc: @This()) ?@This() {
+                return if (loc.offset > 0) .{
+                    .node = loc.node,
+                    .offset = loc.offset - loc.node.patch.stride,
+                } else if (loc.node.prev) |p| .{
+                    .node = p,
+                    .offset = p.patch.data.len - p.patch.stride + 1,
+                } else null;
+            }
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    top: ?*Node = null,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self, allocator: Allocator) void {
         var it = self.top;
         while (it) |node| : (it = node.next) {
-            node.patch.deinit(self.allocator);
+            assert(node.next != node);
+            node.patch.deinit(allocator);
             node.* = undefined;
         }
         self.* = undefined;
     }
 
-    pub fn expand(self: *Self, patch: Patch) !void {
-        if (patch.width != self.top.patch.width) return error.InvalidPatchWidth;
-        var node = try Node.initFrom(self.allocator, patch);
-        node.next = self.top;
-        self.top.prev = node;
+    pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        var at = self.topLoc();
+
+        // skip all-empty header lines
+        while (at) |loc| : (at = loc.next()) {
+            if (!Cell.isAllEmpty(loc.row())) break;
+        }
+
+        var first = true;
+        while (at) |loc| : (at = loc.next()) {
+            if (first) first = false else try writer.writeByte('\n');
+            const row = loc.row();
+            for (row) |c|
+                try writer.writeByte(c.glyph());
+        }
+    }
+
+    pub fn expand(self: *Self, allocator: Allocator, patch: Patch) !void {
+        if (self.top) |prior| {
+            if (patch.width != prior.patch.width) return error.InvalidPatchWidth;
+        }
+        var node = try Node.initFrom(allocator, patch);
+        if (self.top) |top| {
+            node.next = top;
+            top.prev = node;
+        }
         self.top = node;
     }
 
     pub fn availHeight(self: Self) usize {
+        assert(self.height() >= self.usedHeight());
         return self.height() - self.usedHeight();
     }
 
     pub fn height(self: Self) usize {
         var size = @as(usize, 0);
         var it: ?*Node = self.top;
-        while (it) |node| : (it = node.next)
+        while (it) |node| : (it = node.next) {
+            assert(node.next != node);
             size += node.patch.height();
+        }
         return size;
     }
 
     pub fn usedHeight(self: Self) usize {
-        var size = @as(usize, 0);
-        var it: ?*Node = self.top;
-
-        while (it) |node| : (it = node.next) {
-            // TODO maybe factor out patch.iterator()
-            const h = node.patch.height();
-            const w = node.patch.width;
-            var y = @as(usize, 0);
-            while (y < h) : (y += 1) {
-                var x = @as(usize, 0);
-                while (x < w) : (x += 1) {
-                    const i = y * node.patch.stride + x;
-                    switch (node.patch.data[i]) {
-                        .null, .corner, .wall, .empty => {},
-                        else => {
-                            size += h - y;
-                            break;
-                        },
-                    }
+        var at = self.topLoc();
+        while (at) |loc| : (at = loc.next()) {
+            for (loc.row()) |c| {
+                switch (c) {
+                    .null, .corner, .wall, .empty => {},
+                    else => return loc.height(),
                 }
             }
         }
+        return 0;
+    }
 
-        while (it) |node| : (it = node.next)
-            size += node.patch.height();
+    pub fn topLoc(self: Self) ?Loc(true) {
+        return .{ .node = self.top orelse return null };
+    }
 
-        return size;
+    pub fn topLocMut(self: *Self) ?Loc(false) {
+        return .{ .node = self.top orelse return null };
     }
 
     pub fn move(self: *Self, m: Move) bool {
-        var at: ?Loc = Loc{ .node = self.top };
-        var start: ?Loc = null;
+        var at = self.topLocMut();
+
+        var start: Optional(@TypeOf(at)) = null;
         while (at) |loc| : (at = loc.next()) {
             const row = loc.row();
 
-            var any = false;
-            switch (m) {
-                .left => {
-                    var x = @as(usize, 0);
-                    var prior = row[x];
-                    x += 1;
-                    while (x < row.len) : (x += 1) {
-                        const cur = row[x];
-                        if (cur == .piece) {
-                            if (prior != .empty) return false; // blocked
-                            any = true;
+            const any = scan: {
+                switch (m) {
+                    .left => {
+                        var x = @as(usize, 0);
+                        var prior = row[x];
+                        x += 1;
+                        while (x < row.len) : (x += 1) {
+                            const cur = row[x];
+                            if (cur == .piece) {
+                                if (prior != .empty) return false; // blocked
+                                break :scan true;
+                            }
+                            prior = cur;
                         }
-                        prior = cur;
-                    }
-                },
-                .right => {
-                    var x = row.len - 1;
-                    var prior = row[x];
-                    while (x > 0) {
-                        x -= 1;
-                        const cur = row[x];
-                        if (cur == .piece) {
-                            if (prior != .empty) return false; // blocked
-                            any = true;
+                    },
+                    .right => {
+                        var x = row.len - 1;
+                        var prior = row[x];
+                        while (x > 0) {
+                            x -= 1;
+                            const cur = row[x];
+                            if (cur == .piece) {
+                                if (prior != .empty) return false; // blocked
+                                break :scan true;
+                            }
+                            prior = cur;
                         }
-                        prior = cur;
-                    }
-                },
-            }
+                    },
+                }
+                break :scan false;
+            };
 
             if (any) {
                 if (start == null) start = loc; // found the piece
@@ -549,7 +596,7 @@ const PatchList = struct {
         // scan to line after last piece line
         var last = scan_piece: {
             var hadPiece = false;
-            var at: ?Loc = Loc{ .node = self.top };
+            var at = self.topLocMut();
             while (at) |loc| : (at = loc.next()) {
                 const offset = loc.offset;
                 const patch = loc.node.patch;
@@ -563,13 +610,15 @@ const PatchList = struct {
             }
             break :scan_piece null;
         };
+        if (last == null) return false;
 
         // check if any piece line is blocked
         const blocked = check_piece: {
             var check = last;
             while (check) |line| {
                 var prior = line.prev() orelse break;
-                defer last = prior;
+                defer check = prior;
+
                 const fromRow = prior.row();
                 const toRow = line.row();
                 var hasPiece = false;
@@ -663,40 +712,40 @@ const Builder = struct {
 
     pub fn finish(self: *Self) !World {
         const cont_patch = try Patch.parse(self.arena.allocator(),
-            \\ |.......|
-            \\ |.......|
-            \\ |.......|
-            \\ |.......|
-            \\ |.......|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\|.......|
         );
 
         const init_patch = try Patch.parse(self.arena.allocator(),
-            \\ |.......|
-            \\ |.......|
-            \\ |.......|
-            \\ |.......|
-            \\ +-------+
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\|.......|
+            \\+-------+
         );
 
         const pieces = try Patch.parseMany(self.arena.allocator(), split: {
             var chunks = std.mem.split(u8,
-                \\ ####
+                \\@@@@
                 \\
-                \\  # 
-                \\ ###
-                \\  # 
+                \\ @ 
+                \\@@@
+                \\ @ 
                 \\
-                \\   #
-                \\   #
-                \\ ###
+                \\  @
+                \\  @
+                \\@@@
                 \\
-                \\ #
-                \\ #
-                \\ #
-                \\ #
+                \\@
+                \\@
+                \\@
+                \\@
                 \\
-                \\ ##
-                \\ ##
+                \\@@
+                \\@@
             , "\n\n");
             var parts = try std.ArrayList([]const u8).initCapacity(self.arena.allocator(), count: {
                 var n = @as(usize, 0);
@@ -712,9 +761,9 @@ const Builder = struct {
             .allocator = self.allocator,
             .arena = self.arena,
             .pieces = pieces,
+            .init_patch = init_patch,
             .cont_patch = cont_patch,
             .moves = self.moves.items,
-            .room = try PatchList.init(self.arena.allocator(), init_patch),
         };
     }
 };
@@ -724,10 +773,11 @@ const World = struct {
     arena: std.heap.ArenaAllocator,
 
     pieces: []Patch,
+    init_patch: Patch,
     cont_patch: Patch,
 
     moves: []Move,
-    room: PatchList,
+    room: PatchList = .{},
 
     const Self = @This();
 
@@ -748,6 +798,67 @@ const World = struct {
         }
     } {
         return .{ .moves = self.moves };
+    }
+
+    pub fn ensureRoomHeight(self: *Self, needed: usize) !void {
+        while (true) {
+            const prior = self.room.availHeight();
+            if (prior >= needed) return;
+
+            const add_patch = if (prior == 0) self.init_patch else self.cont_patch;
+            try self.room.expand(self.arena.allocator(), add_patch);
+            assert(self.room.availHeight() > prior);
+        }
+    }
+
+    pub fn addPiece(
+        self: *Self,
+        piece: Patch,
+        opts: struct {
+            offset: usize = 1,
+            space: usize = 1,
+        },
+    ) !void {
+        const space = piece.height() + opts.space;
+        try self.ensureRoomHeight(space);
+        assert(piece.width < self.room.top.?.patch.width - opts.offset);
+
+        // defer {
+        //     std.debug.print("ADDED PIECE {}x{} {}\n", .{ piece.width, piece.height(), opts });
+        //     var y = @as(usize, 0);
+        //     var at = self.room.topLoc();
+        //     while (at) |loc| : (at = loc.next()) {
+        //         std.debug.print("  y={} : `{any}`\n", .{ y, loc.row() });
+        //         y += 1;
+        //     }
+        // }
+
+        var into = find: {
+            var at = self.room.topLocMut();
+            while (at) |loc| : (at = loc.next()) {
+                if (!Cell.isAllEmpty(loc.row())) {
+                    var i = @as(usize, 0);
+                    while (i < space) : (i += 1) at = at.?.prev();
+                    break :find at;
+                }
+            }
+            break :find null;
+        } orelse return error.NoPlaceToAdd;
+
+        var off = @as(usize, 0);
+        while (off < piece.data.len) : (off += piece.stride) {
+            var row = into.row();
+
+            var x = @as(usize, 0);
+            while (x < piece.width) : (x += 1) {
+                switch (piece.data[off + x]) {
+                    .null => {},
+                    else => |c| row[opts.offset + x] = c,
+                }
+            }
+
+            into = into.next() orelse return error.NoPlaceToAdd;
+        }
     }
 };
 
@@ -777,30 +888,17 @@ fn run(
     var rockTime = try timing.timer(.simulateRock);
     while (rock_i < config.rocks) : (rock_i += 1) {
         defer rockTime.lap() catch {};
-        const piece = world.pieces[rock_i % world.pieces.len];
 
-        // Each rock appears so that its left edge is two units away from the
-        // left wall and its bottom edge is three units above the highest rock
-        // in the room (or the floor, if there isn't one).
-
-        if (world.room.availHeight() < 3)
-            try world.room.expand(world.cont_patch);
-        assert(world.room.availHeight() >= 3);
-
-        {
-            var into = world.room.top.patch;
-            assert(piece.width < into.width - 3);
-            assert(piece.height() < into.height());
-
-            var off = @as(usize, 0);
-            while (off < piece.data.len) : (off += piece.stride) {
-                var at = off + 3; // wall + 2 empties
-                var x = @as(usize, 0);
-                while (x < piece.width) : (x += 1)
-                    into.data[at + x] = piece.data[off + x];
-            }
-        }
-
+        try world.addPiece(
+            world.pieces[rock_i % world.pieces.len],
+            // Each rock appears so that its left edge is two units away from
+            // the left wall and its bottom edge is three units above the
+            // highest rock in the room (or the floor, if there isn't one).
+            .{
+                .offset = 3, // wall + 2 empties
+                .space = 3,
+            },
+        );
         if (config.verbose > 0) {
             if (config.verbose < 2)
                 try out.print(
@@ -824,9 +922,15 @@ fn run(
                 , .{world.room});
         }
 
+        var step = @as(usize, 0);
+        const stepLimit = world.room.height();
+
         var stepTime = try timing.timer(.simulateRock);
         while (true) {
             defer stepTime.lap() catch {};
+
+            step += 1;
+            if (step > stepLimit) return error.TickLimitExceeded;
 
             const move = moves.next() orelse return error.OutOfMoves;
 
@@ -866,7 +970,7 @@ fn run(
                     , .{world.room});
             }
 
-            if (didDrop) break;
+            if (!didDrop) break;
         }
     }
 
