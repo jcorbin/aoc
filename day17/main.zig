@@ -387,6 +387,18 @@ test "example" {
             \\
             ,
         },
+
+        // Part 1 example: final answer
+        .{
+            .config = .{
+                .rocks = 2022,
+            },
+            .input = example_input,
+            .expected = 
+            \\Final rock pile is 3068 high.
+            \\
+            ,
+        },
     };
 
     const allocator = std.testing.allocator;
@@ -410,7 +422,6 @@ test "example" {
     }
 }
 
-const Parse = @import("parse.zig");
 const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
@@ -901,38 +912,29 @@ const Builder = struct {
 
     const Self = @This();
 
-    pub fn parse(allocator: Allocator, reader: anytype) !World {
-        var lines = Parse.lineScanner(reader);
-        var builder = init: {
-            var cur = try lines.next() orelse return error.NoInput;
-            break :init Builder.initLine(allocator, cur) catch |err| return cur.carp(err);
-        };
-        // var lineTime = try timing.timer(.parseLine);
-        while (try lines.next()) |cur| {
-            builder.parseLine(cur) catch |err| return cur.carp(err);
-            // TODO bring back: try lineTime.lap();
-        }
+    pub fn initParse(allocator: Allocator, reader: anytype) !World {
+        var builder = Builder.init(allocator);
+        try builder.parse(reader);
+
         return try builder.finish();
     }
 
-    pub fn initLine(allocator: Allocator, cur: *Parse.Cursor) !Self {
-        var self = Self{
+    pub fn parse(self: *Self, reader: anytype) !void {
+        while (true)
+            switch (reader.readByte() catch |err| switch (err) {
+                error.EndOfStream => break,
+                else => return err,
+            }) {
+                '\n' => {},
+                else => |c| try self.moves.append(self.arena.allocator(), try Move.parse(c)),
+            };
+    }
+
+    pub fn init(allocator: Allocator) Self {
+        return .{
             .allocator = allocator,
             .arena = std.heap.ArenaAllocator.init(allocator),
         };
-        try self.parseLine(cur);
-        return self;
-    }
-
-    pub fn parseLine(self: *Self, cur: *Parse.Cursor) !void {
-        try self.moves.ensureUnusedCapacity(self.arena.allocator(), cur.buf.len);
-        while (cur.i < cur.buf.len) : (cur.i += 1) {
-            switch (cur.buf[cur.i]) {
-                '\n' => {},
-                else => |c| self.moves.appendAssumeCapacity(try Move.parse(c)),
-            }
-        }
-        if (cur.live()) return error.ExtraINput;
     }
 
     pub fn finish(self: *Self) !World {
@@ -1101,7 +1103,7 @@ fn run(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    var world = try Builder.parse(allocator, input.reader());
+    var world = try Builder.initParse(allocator, input.reader());
     defer world.deinit();
     try timing.markPhase(.parse);
 
@@ -1189,17 +1191,25 @@ fn run(
             if (!didDrop) break;
         }
     }
-
     try timing.markPhase(.simulate);
 
-    try out.print(
-        \\Final rock pile is {} high:
-        \\{}
-        \\
-    , .{
-        world.room.usedHeight() - 1, // floor discount
-        world.room,
-    });
+    switch (world.room.usedHeight()) {
+        0 => try out.print(
+            \\No rocks, empty world.
+            \\
+        , .{}),
+        else => |usedHeight| {
+            const height = usedHeight - 1; // floor discount
+            if (config.verbose > 0) try out.print(
+                \\Final rock pile is {} high:
+                \\{}
+                \\
+            , .{ height, world.room }) else try out.print(
+                \\Final rock pile is {} high.
+                \\
+            , .{height});
+        },
+    }
     try timing.markPhase(.report);
 
     try timing.finish(.overall);
@@ -1214,10 +1224,15 @@ const MainAllocator = std.heap.GeneralPurposeAllocator(.{
 
 var gpa = MainAllocator{};
 
-var log_level: std.log.Level = .warn;
+pub const log_level = std.log.Level.debug; // NOTE this just causes all log sites to compile in
+var actual_log_level = std.log.Level.warn; // NOTE this is the one that matters, may be increased at runtime
 
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
-    if (@enumToInt(level) > @enumToInt(log_level)) return;
+    switch (scope) {
+        .perf => {}, // yes timing
+        else => if (@enumToInt(level) > @enumToInt(actual_log_level)) return,
+    }
+
     const prefix = "[" ++ comptime level.asText() ++ "] (" ++ @tagName(scope) ++ "): ";
     std.debug.getStderrMutex().lock();
     defer std.debug.getStderrMutex().unlock();
@@ -1254,18 +1269,26 @@ pub fn main() !void {
                     \\
                     \\Options:
                     \\
+                    \\  -r COUNT or
+                    \\  --rocks COUNT
+                    \\    how many rocks to drop
+                    \\
                     \\  -v or
                     \\  --verbose
-                    \\    print world state after evaluating each input line
+                    \\    * increases amount of stdout world state and
+                    \\    * increases logging level each time given
                     \\
                     \\  --raw-output
                     \\    don't buffer stdout writes
                     \\
                 , .{args.progName()});
                 std.process.exit(0);
+            } else if (arg.is(.{ "-r", "--rocks" })) {
+                var count_arg = args.next() orelse return error.MissingQueryLine;
+                config.rocks = try count_arg.parseInt(u32, 10);
             } else if (arg.is(.{ "-v", "--verbose" })) {
-                if (@enumToInt(log_level) < @enumToInt(std.log.Level.debug))
-                    log_level = @intToEnum(std.log.Level, @enumToInt(log_level) + 1);
+                if (@enumToInt(actual_log_level) < @enumToInt(std.log.Level.debug))
+                    actual_log_level = @intToEnum(std.log.Level, @enumToInt(actual_log_level) + 1);
                 config.verbose += 1;
             } else if (arg.is(.{"--raw-output"})) {
                 bufferOutput = false;
