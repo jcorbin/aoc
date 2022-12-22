@@ -1,5 +1,7 @@
 # Day 17: Pyroclastic Flow
 
+# Part 1
+
 Your handheld device has located an alternative exit from the cave for you and
 the elephants.
 The ground is rumbling almost continuously now, but the strange valves bought
@@ -375,3 +377,13 @@ rock begins falling).
 In this example, the tower of rocks will be *`3068`* units tall.
 
 **How many units tall will the tower of rocks be after 2022 rocks have stopped falling?**
+
+# Part 2
+
+The elephants are not impressed by your simulation.
+They demand to know how tall the tower will be after *`1000000000000`* rocks have stopped!
+Only then will they feel confident enough to proceed through the cave.
+
+In the example above, the tower would be *`1514285714288`* units tall!
+
+**How tall will the tower be after `1000000000000` rocks have stopped?**

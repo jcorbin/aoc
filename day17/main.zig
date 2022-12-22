@@ -395,7 +395,19 @@ test "example" {
             },
             .input = example_input,
             .expected = 
-            \\Final rock pile is 3068 high.
+            \\Final rock pile will be 3068 high.
+            \\
+            ,
+        },
+
+        // Part 2 example: final answer
+        .{
+            .config = .{
+                .rocks = 1_000_000_000_000,
+            },
+            .input = example_input,
+            .expected = 
+            \\Final rock pile will be 1514285714288 high.
             \\
             ,
         },
@@ -426,8 +438,7 @@ const Timing = @import("perf.zig").Timing(enum {
     parse,
     parseLine,
 
-    simulateRockStep,
-    simulateRock,
+    simulateRockBatch,
     simulate,
 
     report,
@@ -664,6 +675,8 @@ const PatchList = struct {
     }
 
     top: ?*Node = null,
+    len: usize = 0,
+    height: usize = 0,
 
     const Self = @This();
 
@@ -704,34 +717,25 @@ const PatchList = struct {
             top.prev = node;
         }
         self.top = node;
+        self.len += 1;
+        self.height += patch.height();
+        // TODO wen compact
     }
 
     pub fn availHeight(self: Self) usize {
-        assert(self.height() >= self.usedHeight());
-        return self.height() - self.usedHeight();
-    }
-
-    pub fn height(self: Self) usize {
-        var size = @as(usize, 0);
-        var it: ?*Node = self.top;
-        while (it) |node| : (it = node.next) {
-            assert(node.next != node);
-            size += node.patch.height();
-        }
-        return size;
+        assert(self.height >= self.usedHeight());
+        return self.height - self.usedHeight();
     }
 
     pub fn usedHeight(self: Self) usize {
+        var empty = @as(usize, 0);
         var at = self.topLoc();
-        while (at) |loc| : (at = loc.next()) {
-            for (loc.row()) |c| {
-                switch (c) {
-                    .null, .corner, .wall, .empty => {},
-                    else => return loc.height(),
-                }
-            }
+        row: while (at) |loc| : (at = loc.next()) {
+            if (Cell.isAllEmpty(loc.row())) {
+                empty += 1;
+            } else break :row;
         }
-        return 0;
+        return self.height - empty;
     }
 
     pub fn topLoc(self: Self) ?Loc(true) {
@@ -1086,6 +1090,19 @@ const World = struct {
     }
 };
 
+fn gcd(a: u64, b: u64) u64 {
+    return if (b == 0) a else gcd(b, a % b);
+}
+
+fn lcm(a: u64, b: u64) u64 {
+    return if (a > b)
+        (a / gcd(a, b)) * b
+    else
+        (b / gcd(a, b)) * a;
+}
+
+const status_log = std.log.scoped(.status);
+
 fn run(
     allocator: Allocator,
 
@@ -1107,107 +1124,306 @@ fn run(
     defer world.deinit();
     try timing.markPhase(.parse);
 
-    var moves = world.movesIterator();
-    var rock_i = @as(usize, 0);
-    var rockTime = try timing.timer(.simulateRock);
-    while (rock_i < config.rocks) : (rock_i += 1) {
-        defer rockTime.lap() catch {};
+    const final_height = simulate: {
+        defer timing.markPhase(.simulate) catch {};
 
-        try world.addPiece(
-            world.pieces[rock_i % world.pieces.len],
-            // Each rock appears so that its left edge is two units away from
-            // the left wall and its bottom edge is three units above the
-            // highest rock in the room (or the floor, if there isn't one).
-            .{
-                .offset = 3, // wall + 2 empties
-                .space = 3,
-            },
-        );
-        if (config.verbose > 0) {
-            if (rock_i == 0)
-                try out.print(
-                    \\The first rock begins falling:
-                    \\{}
-                    \\
-                    \\
-                , .{world.room})
-            else
-                try out.print(
-                    \\A new rock begins falling:
-                    \\{}
-                    \\
-                    \\
-                , .{world.room});
+        const rep_rocks = lcm(world.moves.len, world.pieces.len);
+
+        var extra: std.MultiArrayList(struct {
+            height: usize,
+            delta: usize,
+        }) = .{};
+        const extra_space = 100 * rep_rocks;
+
+        if (config.rocks > rep_rocks) {
+            try extra.ensureUnusedCapacity(arena.allocator(), extra_space);
         }
 
-        var step = @as(usize, 0);
-        const stepLimit = world.room.height();
+        const sim_rocks = config.rocks;
 
-        var stepTime = try timing.timer(.simulateRock);
-        while (true) {
-            defer stepTime.lap() catch {};
+        var moves = world.movesIterator();
+        var rock_i = @as(usize, 0);
+        var rockTime = try timing.timer(.simulateRockBatch);
+        var elapsed = @as(u64, 0);
+        const frocks = @intToFloat(f64, extra_space);
+        while (rock_i < sim_rocks) : (rock_i += 1) {
+            if (extra.capacity > 0 and rock_i > 0) {
+                if (extra.len >= extra.capacity) {
+                    std.log.warn("haven't found a cycle in {} rocks ( {} rounds )", .{
+                        extra.len,
+                        extra.len / rep_rocks,
+                    });
+                    try extra.ensureUnusedCapacity(arena.allocator(), extra_space);
+                }
 
-            step += 1;
-            if (step > stepLimit) return error.TickLimitExceeded;
+                const last_round = if (extra.len >= rep_rocks) extra.len / rep_rocks else null;
 
-            const move = moves.next();
+                const last_i = if (last_round) |round| round * rep_rocks - 1 else null;
+                // const last_i = if (extra.len > 0) extra.len - 1 else null;
 
-            const didMove = world.room.move(move);
-            if (config.verbose > 1) {
-                if (didMove)
-                    try out.print(
-                        \\Jet of gas pushes rock {s}:
-                        \\{}
-                        \\
-                        \\
-                    , .{ move.name(), world.room })
-                else
-                    try out.print(
-                        \\Jet of gas pushes rock {s}, but nothing happens:
-                        \\{}
-                        \\
-                        \\
-                    , .{ move.name(), world.room });
+                const last = if (last_i) |i| extra.get(i).height else 0;
+
+                const height = world.room.usedHeight() - 1;
+                const delta = height - last;
+
+                extra.appendAssumeCapacity(.{
+                    .height = height,
+                    .delta = delta,
+                });
+
+                if (rock_i % rep_rocks == 0) {
+                    if (cycle: {
+                        const deltas = extra.items(.delta);
+                        if (deltas.len < 2 * rep_rocks) break :cycle null;
+
+                        // main phase: search successive powers of two
+                        const len = find: {
+                            var power = @as(usize, 1);
+                            var len = @as(usize, 1);
+                            var tortoise_i = @as(usize, 0);
+                            var hare_i = @as(usize, 1);
+                            while (deltas[(1 + tortoise_i) * rep_rocks - 1] != deltas[(1 + hare_i) * rep_rocks - 1] or len <= 2) {
+                                if (power == len) { // time to start a new power of two?
+                                    tortoise_i = hare_i;
+                                    power *= 2;
+                                    len = 0;
+                                }
+                                hare_i += 1;
+                                len += 1;
+                                if (hare_i * rep_rocks >= deltas.len) break :cycle null;
+                            }
+                            break :find len;
+                        };
+
+                        // Find the position of the first repetition of such length
+                        const at = measure: {
+                            var at = @as(usize, 0);
+                            var tortoise_i = @as(usize, 0);
+                            var hare_i = len;
+                            // hare and tortoise move at same speed until they agree
+                            while (deltas[(1 + tortoise_i) * rep_rocks - 1] != deltas[(1 + hare_i) * rep_rocks - 1]) {
+                                tortoise_i += 1;
+                                hare_i += 1;
+                                at += 1;
+                                if (hare_i * rep_rocks >= deltas.len) break :cycle null;
+                            }
+                            break :measure at;
+                        };
+
+                        break :cycle struct { at: usize, len: usize }{ .at = at, .len = len };
+                    }) |cycle| {
+                        const heights = extra.items(.height);
+
+                        const cycle_height = accum: {
+                            const deltas = extra.items(.delta);
+
+                            // compute
+                            var cycle_height = @as(usize, 0);
+                            var i = @as(usize, 0);
+                            while (i < cycle.len) : (i += 1) {
+                                const j = cycle.at + i;
+                                const k = (1 + j) * rep_rocks - 1;
+                                cycle_height += deltas[k];
+                            }
+
+                            // validate
+                            const first_i = cycle.at + cycle.len - 1;
+                            const second_i = cycle.at + 2 * cycle.len - 1;
+
+                            const first_k = (1 + first_i) * rep_rocks - 1;
+                            const second_k = (1 + second_i) * rep_rocks - 1;
+
+                            const first = heights[first_k];
+                            const second = heights[second_k];
+                            if (second - first != cycle_height) {
+                                std.log.err("cycle at {} len {} height {} != {}@<{},{}> - {}@<{},{}>", .{
+                                    cycle.at,
+                                    cycle.len,
+                                    cycle_height,
+
+                                    second,
+                                    second_i,
+                                    second_k,
+
+                                    first,
+                                    first_i,
+                                    first_k,
+                                });
+
+                                // XXX [error] (default): cycle at 66 len 32 height 2473759 != 10049758@<129,6559149> - 7575962@<97,4944589>
+                                //
+                                // XXX cycle at 66 len 32
+                                // XXX height 2473759
+                                // XXX != 10049758@<129,6559149> - 7575962@<97,4944589>
+                                // XXX 10049758 - 7575962
+                                // XXX 2473796
+                                //
+                                // XXX a 2473759
+                                // XXX b 2473796
+                                //
+                                // XXX 2473759 - 2473796
+                                // XXX -37
+
+                                i = 0;
+                                for ([_]usize{ 1, 2 }) |n| {
+                                    while (i < n * cycle.len) : (i += 1) {
+                                        const j = cycle.at + i;
+                                        const k = (1 + j) * rep_rocks - 1;
+                                        std.log.err("cycle {} @<{},{}> {}", .{ n, j, k, extra.get(k) });
+                                    }
+                                }
+
+                                return error.CycleHeightInvalid;
+                            }
+
+                            break :accum cycle_height;
+                        };
+
+                        const predicted_height = fast_forward: {
+                            const cycle_rocks = cycle.len * rep_rocks;
+                            const end_i = cycle.at + 2 * cycle.len - 1;
+                            const end_k = (1 + end_i) * rep_rocks - 1;
+                            const end_height = heights[end_k];
+
+                            var k = end_k;
+                            var h = end_height;
+                            while (k < sim_rocks) {
+                                k += cycle_rocks;
+                                h += cycle_height;
+                            }
+
+                            const back_k = k + 1 - sim_rocks;
+                            var i = @as(usize, 0);
+                            while (i < back_k) : (i += 1) {
+                                const back_i = back_k - i;
+                                const back_delta =
+                                    heights[heights.len - back_i] -
+                                    heights[heights.len - back_i - 1];
+                                h -= back_delta;
+                            }
+                            break :fast_forward h;
+                        };
+
+                        break :simulate predicted_height + 1; // plus floor
+                    }
+                }
             }
 
-            const didDrop = world.room.drop();
-            if (config.verbose > 1) {
-                if (didDrop)
+            if (rock_i > 0 and rock_i % 1_000 == 0) {
+                const t = rockTime.lap();
+                const f = @intToFloat(f64, rock_i);
+                const p = f / frocks;
+                elapsed += t;
+                const per = @intToFloat(f64, elapsed) / f;
+                const rem = (frocks - f) * per;
+                status_log.info("{d:.2}% dropped 1000 rocks in {}, eta: {}", .{
+                    p * 100.0,
+                    std.fmt.fmtDuration(t),
+                    std.fmt.fmtDuration(@floatToInt(u64, @round(rem))),
+                });
+            }
+
+            try world.addPiece(
+                world.pieces[rock_i % world.pieces.len],
+                // Each rock appears so that its left edge is two units away from
+                // the left wall and its bottom edge is three units above the
+                // highest rock in the room (or the floor, if there isn't one).
+                .{
+                    .offset = 3, // wall + 2 empties
+                    .space = 3,
+                },
+            );
+            if (config.verbose > 0) {
+                if (rock_i == 0)
                     try out.print(
-                        \\Rock falls 1 unit:
+                        \\The first rock begins falling:
                         \\{}
                         \\
                         \\
                     , .{world.room})
                 else
                     try out.print(
-                        \\Rock falls 1 unit, causing it to come to rest:
+                        \\A new rock begins falling:
                         \\{}
                         \\
                         \\
                     , .{world.room});
             }
 
-            if (!didDrop) break;
-        }
-    }
-    try timing.markPhase(.simulate);
+            var step = @as(usize, 0);
+            const stepLimit = world.room.height;
 
-    switch (world.room.usedHeight()) {
+            while (true) {
+                step += 1;
+                if (step > stepLimit) return error.TickLimitExceeded;
+
+                const move = moves.next();
+
+                const didMove = world.room.move(move);
+                if (config.verbose > 1) {
+                    if (didMove)
+                        try out.print(
+                            \\Jet of gas pushes rock {s}:
+                            \\{}
+                            \\
+                            \\
+                        , .{ move.name(), world.room })
+                    else
+                        try out.print(
+                            \\Jet of gas pushes rock {s}, but nothing happens:
+                            \\{}
+                            \\
+                            \\
+                        , .{ move.name(), world.room });
+                }
+
+                const didDrop = world.room.drop();
+                if (config.verbose > 1) {
+                    if (didDrop)
+                        try out.print(
+                            \\Rock falls 1 unit:
+                            \\{}
+                            \\
+                            \\
+                        , .{world.room})
+                    else
+                        try out.print(
+                            \\Rock falls 1 unit, causing it to come to rest:
+                            \\{}
+                            \\
+                            \\
+                        , .{world.room});
+                }
+
+                if (!didDrop) break;
+            }
+        }
+        break :simulate world.room.usedHeight();
+    };
+
+    switch (final_height) {
         0 => try out.print(
             \\No rocks, empty world.
             \\
         , .{}),
-        else => |usedHeight| {
-            const height = usedHeight - 1; // floor discount
-            if (config.verbose > 0) try out.print(
-                \\Final rock pile is {} high:
-                \\{}
-                \\
-            , .{ height, world.room }) else try out.print(
-                \\Final rock pile is {} high.
-                \\
-            , .{height});
+        else => |h| {
+            const height = h - 1; // floor discount
+            if (h > world.room.usedHeight())
+                try out.print(
+                    \\Final rock pile will be {} high.
+                    \\
+                , .{height})
+            else if (config.verbose > 0)
+                try out.print(
+                    \\Final rock pile is {} high:
+                    \\{}
+                    \\
+                , .{ height, world.room })
+            else
+                try out.print(
+                    \\Final rock pile is {} high.
+                    \\
+                , .{height});
         },
     }
     try timing.markPhase(.report);
@@ -1229,7 +1445,7 @@ var actual_log_level = std.log.Level.warn; // NOTE this is the one that matters,
 
 pub fn log(comptime level: std.log.Level, comptime scope: @TypeOf(.EnumLiteral), comptime format: []const u8, args: anytype) void {
     switch (scope) {
-        .perf => {}, // yes timing
+        .perf, .status => {},
         else => if (@enumToInt(level) > @enumToInt(actual_log_level)) return,
     }
 
@@ -1285,7 +1501,7 @@ pub fn main() !void {
                 std.process.exit(0);
             } else if (arg.is(.{ "-r", "--rocks" })) {
                 var count_arg = args.next() orelse return error.MissingQueryLine;
-                config.rocks = try count_arg.parseInt(u32, 10);
+                config.rocks = try count_arg.parseInt(usize, 10);
             } else if (arg.is(.{ "-v", "--verbose" })) {
                 if (@enumToInt(actual_log_level) < @enumToInt(std.log.Level.debug))
                     actual_log_level = @intToEnum(std.log.Level, @enumToInt(actual_log_level) + 1);

@@ -41,8 +41,10 @@ pub fn Timing(comptime Tag: type) type {
                 tm.t.reset();
             }
 
-            pub fn lap(tm: *@This()) !void {
-                try tm.self.collect(tm.tag, tm.t.lap());
+            pub fn lap(tm: *@This()) u64 {
+                const t = tm.t.lap();
+                tm.self.collect(tm.tag, t) catch {};
+                return t;
             }
         };
 
