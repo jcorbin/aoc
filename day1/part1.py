@@ -33,7 +33,6 @@ def test(spec: MarkedSpec):
     assert list(run(lines)) == expected_output
 
 def run(input: Iterable[str]) -> Generator[str]:
-
     pattern = re.compile(r'(?x) ( \d+ ) \s+ ( \d+ )')
 
     a_list: list[int] = []
@@ -56,11 +55,3 @@ def run(input: Iterable[str]) -> Generator[str]:
         res += dab
 
     yield f'{res}'
-
-def main():
-    import sys
-    for line in run(sys.stdin):
-        print(line)
-
-if __name__ == '__main__':
-    main()
