@@ -1,6 +1,6 @@
 # Day 1: Historian Hysteria
 
-## Part 1
+## [Part 1](part1.py)
 
 The Chief Historian is always present for the big Christmas sleigh launch, but
 nobody has seen him in months!
@@ -86,7 +86,7 @@ In the example above, this is `2 + 1 + 0 + 1 + 2 + 5`, a total distance of **`*1
 Your actual left and right lists contain many location IDs.
 **What is the total distance between your lists?**
 
-## Part 2
+## [Part 2](part2.py)
 
 Your analysis only confirmed what everyone feared:
 the two lists of location IDs are indeed very different.

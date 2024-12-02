@@ -1,6 +1,6 @@
 # Day 2: Red-Nosed Reports
 
-## Part 1
+## [Part 1](part1.py)
 
 Fortunately, the first location The Historians want to search isn't a long walk
 from the Chief Historian's office.
@@ -55,7 +55,7 @@ Analyze the unusual data from the engineers.
 
 [2015_day19]: https://adventofcode.com/2015/day/19
 
-## Part 2
+## [Part 2](part2.py)
 
 The engineers are surprised by the low number of safe reports until they realize
 they forgot to tell you about the Problem Dampener.

@@ -1,10 +1,9 @@
-# [Advent of Code](https://adventofcode.com/2024)
+# [Advent of Code 2024](https://adventofcode.com/2024)
 
-## Days
-| Day                          | Description                                   |📜|
-|------------------------------|-----------------------------------------------|--|
-| [day1](day1/prompt.md)       | Ranked variations and similarity freqing      |🌟|
-| [day2](day2/prompt.md)       | Damp level deltas                             |🌟|
+| 📆          | 🏷️                                                          |📜|
+|-------------|-------------------------------------------------------------|--|
+| [1](day1/)  | Ranked variations and similarity freqing                    |🌟|
+| [2](day2/)  | Damp level deltas                                           |🌟|
 
 ## Running
 
@@ -27,7 +26,7 @@ $ pytest day1/part1.py
 
 Guess we're doing this thing, let's see how far we get, probably going to go with low effort python code tbh.
 
-### Day 1
+### [Day 1](day1/)
 
 Started out by cribbing the `strkit.py` module from recent fascination with
 [tool-assisted word game play](https://github.com/jcorbin/alphahack).
@@ -52,7 +51,7 @@ relative import resolution:
   package system boilerplate/reorganization, plus ended up with better
   ergonomics than a more raw main stub inline each day
 
-### Day 2
+### [Day 2](day2/)
 
 - evolved toplevel `run.py` to pass a `-v` arg wired `verbose` flag along to
   each problem/solution
