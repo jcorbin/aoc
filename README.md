@@ -1,10 +1,10 @@
 # [Advent of Code](https://adventofcode.com/2024)
 
 ## Days
-| Day                              | Description                                   |
-|----------------------------------|-----------------------------------------------|
-| [day1](day1/prompt.md)           | Ranked variations and similarity freqing      |
-| [day2](day2/prompt.md)           | Level deltas                                  |
+| Day                          | Description                                   |📜|
+|------------------------------|-----------------------------------------------|--|
+| [day1](day1/prompt.md)       | Ranked variations and similarity freqing      |🌟|
+| [day2](day2/prompt.md)       | Damp level deltas                             |🌟|
 
 ## Running
 
@@ -51,3 +51,16 @@ relative import resolution:
 - instead hoisting the main harness up out of each day/part let me dodge further
   package system boilerplate/reorganization, plus ended up with better
   ergonomics than a more raw main stub inline each day
+
+### Day 2
+
+- evolved toplevel `run.py` to pass a `-v` arg wired `verbose` flag along to
+  each problem/solution
+- ...may eventually prove useful for prompt file introspection, e.g. scrape test
+  fixture data, or for doing some kinda more interactive harness
+- overall another simple starter day, so happy to continue settle into the
+  `MarkedSpec` test and `run.py` harness groove
+- ...there's something altogether soothing about:
+  1. transliterating upstream problem statement into markdown
+  2. writing test specs in markdown-ish
+  3. generating optionally verbose output in a similar streamed-text form
