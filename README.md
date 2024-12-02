@@ -1,9 +1,10 @@
 # [Advent of Code 2024](https://adventofcode.com/2024)
 
-| 📆          | 🏷️                                                          |📜|
-|-------------|-------------------------------------------------------------|--|
-| [1](day1/)  | Ranked variations and similarity freqing                    |🌟|
-| [2](day2/)  | Damp level deltas                                           |🌟|
+| 📆                     | 🏷️                                               |📜|
+|------------------------|--------------------------------------------------|--|
+| [1](day1/)             | Ranked variations and similarity freqing         |🌟|
+| [2](day2/)             | Damp level deltas                                |🌟|
+| [2015-19](2015_day19/) | Transitional molecules                           |🤔|
 
 ## Running
 
@@ -63,3 +64,7 @@ relative import resolution:
   1. transliterating upstream problem statement into markdown
   2. writing test specs in markdown-ish
   3. generating optionally verbose output in a similar streamed-text form
+
+### [2015 Day 19](2015_day19/)
+
+- 🔙 reference from [day2](day2/)
