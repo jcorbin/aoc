@@ -2,6 +2,7 @@
 
 import argparse
 import importlib
+import re
 import sys
 from collections.abc import Generator, Iterable
 from typing import cast, final, Callable
@@ -28,10 +29,10 @@ class Solution:
 
 @final
 class Problem:
-    def __init__(self, day: int, part: int = 1):
+    def __init__(self, day: str, part: int = 1):
         self.day = day
         self.part = part
-        self.module = importlib.import_module(f'day{day}.part{part}')
+        self.module = importlib.import_module(f'{day}.part{part}')
 
     @property
     def entry(self):
@@ -42,7 +43,7 @@ class Problem:
 
     @property
     def day_input(self):
-        return f'day{self.day}/input.txt'
+        return f'{self.day}/input.txt'
 
     def solve(self, *, inputname: str|None = None, verbose: bool = False):
         pr = Solution(self.entry, verbose=verbose)
@@ -50,13 +51,17 @@ class Problem:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    _ = parser.add_argument('day', type=int)
+    _ = parser.add_argument('day')
     _ = parser.add_argument('part', nargs='?', default=1, type=int)
     _ = parser.add_argument('input', nargs='?', default='')
     _ = parser.add_argument('-v', default=False, action='store_true')
     args = parser.parse_args()
 
-    pr = Problem(cast(int, args.day), cast(int, args.part))
+    day = cast(str, args.day)
+    if re.match(r'\d+$', day):
+        day = f'day{day}'
+
+    pr = Problem(day, cast(int, args.part))
     for line in pr.solve(
         inputname = cast(str, args.input),
         verbose = cast(bool, args.v),

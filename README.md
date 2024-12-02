@@ -1,10 +1,14 @@
 # [Advent of Code 2024](https://adventofcode.com/2024)
 
-| 📆                     | 🏷️                                               |📜|
-|------------------------|--------------------------------------------------|--|
-| [1](day1/)             | Ranked variations and similarity freqing         |🌟|
-| [2](day2/)             | Damp level deltas                                |🌟|
-| [2015-19](2015_day19/) | Transitional molecules                           |🤔|
+| 📆                 | 🏷️                                                   |📜|
+|--------------------|------------------------------------------------------|--|
+| [1][d1]            | Ranked variations and similarity freqing             |🌟|
+| [2][d2]            | Damp level deltas                                    |🌟|
+| [2015-19][d201519] | Transitional molecules                               |⭐|
+
+[d1]: day1/
+[d2]: day2/
+[d201519]: back_2015_day19/
 
 ## Running
 
@@ -27,7 +31,7 @@ $ pytest day1/part1.py
 
 Guess we're doing this thing, let's see how far we get, probably going to go with low effort python code tbh.
 
-### [Day 1](day1/)
+### [Day 1][d1]
 
 Started out by cribbing the `strkit.py` module from recent fascination with
 [tool-assisted word game play](https://github.com/jcorbin/alphahack).
@@ -52,7 +56,7 @@ relative import resolution:
   package system boilerplate/reorganization, plus ended up with better
   ergonomics than a more raw main stub inline each day
 
-### [Day 2](day2/)
+### [Day 2][d2]
 
 - evolved toplevel `run.py` to pass a `-v` arg wired `verbose` flag along to
   each problem/solution
@@ -65,6 +69,7 @@ relative import resolution:
   2. writing test specs in markdown-ish
   3. generating optionally verbose output in a similar streamed-text form
 
-### [2015 Day 19](2015_day19/)
+### [2015 Day 19][d201519]
 
-- 🔙 reference from [day2](day2/)
+- 🔙 reference from [day2][d2]
+- further evolve `run.py` evolution to support out-of-sequence / prior-year days
