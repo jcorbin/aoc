@@ -4,47 +4,60 @@ import argparse
 import importlib
 import sys
 from collections.abc import Generator, Iterable
-from typing import cast, Callable
+from typing import cast, final, Callable
 
-def load(day: str, part: str):
-    impl = importlib.import_module(f'{day}.{part}')
+@final
+class Solution:
+    def __init__(self, entry: Callable[..., object], verbose: bool = False):
+        self.entry = entry
+        self.verbose = verbose
 
-    entry = cast(object, getattr(impl, 'run'))
-    if not callable(entry):
-        print('! no run() entry point found in {impl!r}')
-        sys.exit(1)
+    def run(self, input: str) -> Generator[object]:
+        if input.lower() in ('-', '/dev/stdin', '<stdin>'):
+            yield from self.wrap_output(sys.stdin)
+        else:
+            with open(input) as f:
+                yield from self.wrap_output(f)
 
-    return entry
+    def wrap_output(self, input: Iterable[str]) -> Generator[object]:
+        res = self.entry(input, verbose=self.verbose)
+        if isinstance(res, Iterable):
+            yield from res
+        else:
+            yield res
 
-def run_input(entry: Callable[..., object], input: str) -> Generator[object]:
-    if input.lower() in ('-', '/dev/stdin', '<stdin>'):
-        yield from run_output(entry, sys.stdin)
-    else:
-        with open(input) as f:
-            yield from run_output(entry, f)
+@final
+class Problem:
+    def __init__(self, day: int, part: int = 1):
+        self.day = day
+        self.part = part
+        self.module = importlib.import_module(f'day{day}.part{part}')
 
-def run_output(entry: Callable[..., object], input: Iterable[str]) -> Generator[object]:
-    res = entry(input)
-    if isinstance(res, Iterable):
-        yield from res
-    else:
-        yield res
+    @property
+    def entry(self):
+        entry = cast(object, getattr(self.module, 'run'))
+        if not callable(entry):
+            raise ValueError(f'no run() entry point found in {self.module!r}')
+        return entry
 
-def main():
-    parser = argparse.ArgumentParser()
-    _ = parser.add_argument('day', type=int)
-    _ = parser.add_argument('part', type=int)
-    _ = parser.add_argument('input', nargs='?')
-    args = parser.parse_args()
+    @property
+    def day_input(self):
+        return f'day{self.day}/input.txt'
 
-    day = cast(int, args.day)
-    part = cast(int, args.part)
-    input = cast(str, args.input) or f'day{day}/input.txt'
-    sol = load(f'day{day}', f'part{part}')
-
-    res = run_input(sol, input)
-    for line in res:
-        print(line)
+    def solve(self, *, inputname: str|None = None, verbose: bool = False):
+        pr = Solution(self.entry, verbose=verbose)
+        return pr.run(inputname or self.day_input)
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    _ = parser.add_argument('day', type=int)
+    _ = parser.add_argument('part', nargs='?', default=1, type=int)
+    _ = parser.add_argument('input', nargs='?', default='')
+    _ = parser.add_argument('-v', default=False, action='store_true')
+    args = parser.parse_args()
+
+    pr = Problem(cast(int, args.day), cast(int, args.part))
+    for line in pr.solve(
+        inputname = cast(str, args.input),
+        verbose = cast(bool, args.v),
+    ): print(line)
