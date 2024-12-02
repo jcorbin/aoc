@@ -4,6 +4,7 @@
 | Day                              | Description                                   |
 |----------------------------------|-----------------------------------------------|
 | [day1](day1/prompt.md)           | Ranked variations and similarity freqing      |
+| [day2](day2/prompt.md)           | Level deltas                                  |
 
 ## Running
 
