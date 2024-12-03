@@ -4,8 +4,9 @@
 |--------------------|------------------------------------------------------|--|
 | [1][d1]            | Ranked variations and similarity freqing             |🌟|
 | [2][d2]            | Damp level deltas                                    |🌟|
-| [3][d3]            | ...                                                  |🤔|
+| [3][d3]            | ...                                                  |⭐|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
+| 2020-02            | TODO day 3 back reference                            |⌛|
 
 ## Running
 
@@ -78,7 +79,11 @@ relative import resolution:
 
 ## 2024-12-03
 
-### [Day 3]
+### [Day 3][d3]
+
+- cute pattern matching problem in part 1, managed to smoke out an edge case bug in `strkit.spliterate`
+- had another back reference to 2020-02, so may bet to that after part 2
+- curious to see if part 2 expands on valid commands or what...
 
 [d1]: day1/
 [d2]: day2/
