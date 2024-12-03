@@ -66,7 +66,7 @@ def test(spec: MarkedSpec):
         if name == 'output': expected_output.extend(spliterate(value, '\n'))
         elif name == 'verbose': verbose = any(value.lower().startswith(c) for c in 'ty')
         else: raise ValueError(f'invalid test prop {name!r}')
-    assert list(run(lines, verbose=verbose)) == expected_output
+    assert list(run(lines, verbose=1 if verbose else 0)) == expected_output
 
 @final
 class Machine:
@@ -105,7 +105,7 @@ class Machine:
 
             prefix += ref
 
-def run(input: Iterable[str], verbose: bool=False) -> Generator[str]:
+def run(input: Iterable[str], verbose: int = 0) -> Generator[str]:
     rule = re.compile(r'(?x) ( \w+ ) \s* => \s* ( \w+ ) $')
 
     rules: defaultdict[str, list[str]] = defaultdict(list)

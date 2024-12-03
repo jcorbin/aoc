@@ -9,7 +9,7 @@ from typing import cast, final, Callable
 
 @final
 class Solution:
-    def __init__(self, entry: Callable[..., object], verbose: bool = False):
+    def __init__(self, entry: Callable[..., object], verbose: int = 0):
         self.entry = entry
         self.verbose = verbose
 
@@ -45,7 +45,7 @@ class Problem:
     def day_input(self):
         return f'{self.day}/input.txt'
 
-    def solve(self, *, inputname: str|None = None, verbose: bool = False):
+    def solve(self, *, inputname: str|None = None, verbose: int = 0):
         pr = Solution(self.entry, verbose=verbose)
         return pr.run(inputname or self.day_input)
 
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     _ = parser.add_argument('day')
     _ = parser.add_argument('part', nargs='?', default=1, type=int)
     _ = parser.add_argument('input', nargs='?', default='')
-    _ = parser.add_argument('-v', default=False, action='store_true')
+    _ = parser.add_argument('-v', default=0, action='count')
     args = parser.parse_args()
 
     day = cast(str, args.day)
@@ -64,5 +64,5 @@ if __name__ == '__main__':
     pr = Problem(day, cast(int, args.part))
     for line in pr.solve(
         inputname = cast(str, args.input),
-        verbose = cast(bool, args.v),
+        verbose = cast(int, args.v),
     ): print(line)
