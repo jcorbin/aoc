@@ -4,7 +4,7 @@
 |--------------------|------------------------------------------------------|--|
 | [1][d1]            | Ranked variations and similarity freqing             |🌟|
 | [2][d2]            | Damp level deltas                                    |🌟|
-| [3][d3]            | ...                                                  |⭐|
+| [3][d3]            | ...                                                  |🌟|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
 | 2020-02            | TODO day 3 back reference                            |⌛|
 
@@ -84,6 +84,7 @@ relative import resolution:
 - cute pattern matching problem in part 1, managed to smoke out an edge case bug in `strkit.spliterate`
 - had another back reference to 2020-02, so may bet to that after part 2
 - curious to see if part 2 expands on valid commands or what...
+- ...yep nothing that a couple more legs in my instruction matching regex can't handle with ease
 
 [d1]: day1/
 [d2]: day2/
