@@ -1,10 +1,9 @@
 import re
-import pytest
 from collections.abc import Generator, Iterable
 from typing import cast
 from .strkit import spliterate, MarkedSpec
 
-@pytest.mark.parametrize('spec', list(MarkedSpec.iterspecs('''
+@MarkedSpec.mark('''
 
     #given
     // For example:
@@ -28,7 +27,7 @@ from .strkit import spliterate, MarkedSpec
     // This time, the sum of the results is **`48`** (`2*4 + 8*5`).
     - output: 48
 
-''')), ids=MarkedSpec.get_id)
+''')
 def test(spec: MarkedSpec):
     expected_output: list[str] = []
     verbose = 0
@@ -36,8 +35,6 @@ def test(spec: MarkedSpec):
         if name == 'output': expected_output.extend(spliterate(value, '\n', trim=True))
         elif name == 'verbose': verbose = int(value)
         else: raise ValueError(f'invalid test prop {name!r}')
-    print('WAT', repr(spec.input))
-    print('WOT', list(spliterate(spec.input, '\n')))
     lines = spliterate(spec.input, '\n')
     have_output = list(run(lines, verbose=verbose))
     assert have_output == expected_output
