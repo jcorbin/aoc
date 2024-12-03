@@ -4,7 +4,7 @@
 |--------------------|------------------------------------------------------|--|
 | [1][d1]            | Ranked variations and similarity freqing             |🌟|
 | [2][d2]            | Damp level deltas                                    |🌟|
-| [3][d3]            | ...                                                  |⌛|
+| [3][d3]            | ...                                                  |🤔|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
 
 ## Running
