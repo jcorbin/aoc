@@ -4,11 +4,8 @@
 |--------------------|------------------------------------------------------|--|
 | [1][d1]            | Ranked variations and similarity freqing             |🌟|
 | [2][d2]            | Damp level deltas                                    |🌟|
+| [3][d3]            | ...                                                  |⌛|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
-
-[d1]: day1/
-[d2]: day2/
-[d201519]: back_2015_day19/
 
 ## Running
 
@@ -71,5 +68,19 @@ relative import resolution:
 
 ### [2015 Day 19][d201519]
 
-- 🔙 reference from [day2][d2]
-- further evolve `run.py` evolution to support out-of-sequence / prior-year days
+- backtracking a reference from [day 2][d2]
+- further evolved `run.py` evolution to support out-of-sequence / prior-year days
+- managed to solve the part 1 calibration easily enough, but trying to just low
+  effort brute force the search in part 2 didn't work out
+- curious if this will become topical this year
+- may try a reverse search re-attempt to part 2, or just trying to make my brute
+  searcher faster, by say not using regex to deconstruct each molecule string
+
+## 2024-12-03
+
+### [Day 3]
+
+[d1]: day1/
+[d2]: day2/
+[d3]: day3/
+[d201519]: back_2015_day19/
