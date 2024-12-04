@@ -88,7 +88,7 @@ relative import resolution:
 
 ### [2020 Day 2][d202002]
 
-- back reference from [day 3][d2]
+- back reference from [day 3][d3]
 - easy part1, just parse, count, check, done.
 - easy part2, done done.
 - no notes really, just easy string mucking.
