@@ -5,7 +5,7 @@
 | [1][d1]            | Ranked variations and similarity freqing             |🌟|
 | [2][d2]            | Damp level deltas                                    |🌟|
 | [3][d3]            | Simple mechanistic mulling                           |🌟|
-| [4][d4]            | Word Searching                                       |⌛|
+| [4][d4]            | Word Searching                                       |⭐|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
 | [2020-02][d202002] | Password policy validation                           |🌟|
 
@@ -25,7 +25,6 @@ $ pytest day1/part1.py
 ```
 
 # Dev Log
-
 ## 2024-12-02
 
 Guess we're doing this thing, let's see how far we get, probably going to go with low effort python code tbh.
@@ -94,8 +93,20 @@ relative import resolution:
 - easy part2, done done.
 - no notes really, just easy string mucking.
 
+## 2024-12-03
+
+### [Day 4][d4]
+
+- part 1: so while this one seemed simple at first read, decided to go with a
+  sort of djsktra-map style approach, rather than something like a recursive
+  letter checker
+  - ... which took way longer than expected to get correct, let's hope that pays
+    off in part 2...
+  - on the upside, solution was very fast, even on larger input grid
+
 [d1]: day1/
 [d2]: day2/
 [d3]: day3/
+[d4]: day4/
 [d201519]: back_2015_day19/
 [d202002]: back_2020_day2/
