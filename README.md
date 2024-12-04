@@ -6,7 +6,7 @@
 | [2][d2]            | Damp level deltas                                    |🌟|
 | [3][d3]            | ...                                                  |🌟|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
-| [2020-02][d202002] | Password policy validation                           |🤔|
+| [2020-02][d202002] | Password policy validation                           |⭐|
 
 ## Running
 
@@ -85,6 +85,11 @@ relative import resolution:
 - had another back reference to 2020-02, so may bet to that after part 2
 - curious to see if part 2 expands on valid commands or what...
 - ...yep nothing that a couple more legs in my instruction matching regex can't handle with ease
+
+### [2020 Day 2][d202002]
+
+- back reference from [day 3][d2]
+- easy part1, just parse, count, check, done.
 
 [d1]: day1/
 [d2]: day2/
