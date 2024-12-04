@@ -5,7 +5,7 @@
 Fortunately, the first location The Historians want to search isn't a long walk
 from the Chief Historian's office.
 
-While the [Red-Nosed Reindeer nuclear fusion/fission plant](2015_day19/) appears
+While the [Red-Nosed Reindeer nuclear fusion/fission plant](../back_2015_day19/) appears
 to contain no sign of the Chief Historian, the engineers there run up to you as
 soon as they see you.
 Apparently, they **still** talk about the time Rudolph was saved through

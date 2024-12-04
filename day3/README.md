@@ -72,4 +72,4 @@ This time, the sum of the results is **`48`** (`2*4 + 8*5`).
 Handle the new instructions;
 **what do you get if you add up all of the results of just the enabled multiplications?**
 
-[2020_day2]: https://adventofcode.com/2020/day/2
+[2020_day2]: ../back_2020_day2/
