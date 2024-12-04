@@ -6,7 +6,7 @@
 | [2][d2]            | Damp level deltas                                    |🌟|
 | [3][d3]            | ...                                                  |🌟|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
-| 2020-02            | TODO day 3 back reference                            |⌛|
+| [2020-02][d202002] | Password policy validation                           |🤔|
 
 ## Running
 
@@ -90,3 +90,4 @@ relative import resolution:
 [d2]: day2/
 [d3]: day3/
 [d201519]: back_2015_day19/
+[d202002]: back_2020_day2/
