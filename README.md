@@ -4,7 +4,8 @@
 |--------------------|------------------------------------------------------|--|
 | [1][d1]            | Ranked variations and similarity freqing             |🌟|
 | [2][d2]            | Damp level deltas                                    |🌟|
-| [3][d3]            | ...                                                  |🌟|
+| [3][d3]            | Simple mechanistic mulling                           |🌟|
+| [4][d4]            | ...                                                  |⌛|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
 | [2020-02][d202002] | Password policy validation                           |🌟|
 
