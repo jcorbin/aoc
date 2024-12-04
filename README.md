@@ -8,6 +8,7 @@
 | [4][d4]            | Word Searching                                       |⭐|
 | [2015-19][d201519] | Transitional molecules                               |⭐|
 | [2020-02][d202002] | Password policy validation                           |🌟|
+| 2019-10            | TODO back ref from day 4                             |⌛|
 
 ## Running
 
@@ -103,6 +104,10 @@ relative import resolution:
   - ... which took way longer than expected to get correct, let's hope that pays
     off in part 2...
   - on the upside, solution was very fast, even on larger input grid
+- part 2: nope, djsktra-map approach was irrelevant
+  - so wiped out most of prior code, replaced with a simple minded stencil...
+  - ...passes test case, but fails the part 2 prompt
+  - may try more later, but have exhausted my "low effort" budget for now
 
 [d1]: day1/
 [d2]: day2/
